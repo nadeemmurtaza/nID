@@ -1,0 +1,243 @@
+// nID core schema — Phase 0.
+//
+// Every tenant-owned table carries `tenantId` and has a matching Row-Level
+// Security policy in prisma/migrations/000_init/migration.sql, keyed on the
+// `app.tenant_id` session variable that apps/api sets per request
+// (see apps/api/src/core/db/prisma.service.ts). Adding a tenant-owned table
+// without an RLS policy in the same migration is a house-rules violation —
+// see docs/HOUSE-RULES.md rule 2.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SubjectType {
+  PERSON
+  ORGANIZATION
+}
+
+enum CaseStatus {
+  PENDING
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum AttemptStatus {
+  PENDING
+  PASSED
+  FAILED
+  NEEDS_REVIEW
+}
+
+enum AuditActorType {
+  TENANT_STAFF
+  SUBJECT
+  SYSTEM
+  API_KEY
+}
+
+model Tenant {
+  id                   String   @id @default(cuid())
+  name                 String
+  slug                 String   @unique
+  dataResidencyRegion  String   @default("global")
+  webhookUrl           String?
+  /// HMAC signing secret for outbound webhooks to this tenant. Unlike
+  /// TenantApiKey.keyHash, this cannot be a one-way hash — nID has to sign
+  /// with the real secret, so it must remain recoverable. Column-level
+  /// encryption at rest (KMS-backed) is a Phase 1 requirement carried over
+  /// from the plan's compliance section; storing it in plaintext here is a
+  /// known, called-out Phase 0 gap, not an oversight — do not treat this
+  /// column as safe to seed with a real secret before that lands.
+  webhookSecretPlaintext String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  apiKeys    TenantApiKey[]
+  policies   VerificationPolicy[]
+  subjects   Subject[]
+  cases      VerificationCase[]
+  auditLogs  AuditLogEntry[]
+}
+
+model TenantApiKey {
+  id         String    @id @default(cuid())
+  tenantId   String
+  /// Non-secret prefix shown in the dashboard for identification, e.g. "nid_live_ab12".
+  keyPrefix  String
+  /// SHA-256 hash of the full key. The plaintext key is never stored.
+  keyHash    String    @unique
+  scopes     String[]  @default([])
+  rateLimitPerMinute Int @default(60)
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model VerificationPolicy {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  /// Ordered list of VerificationMethodProvider keys, e.g. ["otp_sms", "document_ocr"].
+  /// Validated against the VERIFICATION_METHODS allowlist at write time, not by a DB constraint.
+  methods     String[]
+  requireAll  Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cases  VerificationCase[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model Subject {
+  id          String      @id @default(cuid())
+  tenantId    String
+  /// The tenant's own reference for this subject (their user/customer id), not unique
+  /// across tenants — dedup is the tenant's responsibility, not nID's, in Phase 0.
+  externalRef String?
+  type        SubjectType
+  givenName   String?
+  familyName  String?
+  email       String?
+  phone       String?
+  dateOfBirth DateTime?
+  /// Government ID number. Column-level encryption is a Phase 1 requirement
+  /// (docs/HOUSE-RULES.md / plan §Compliance) — stored as plain text only in
+  /// this Phase 0 scaffold, which must not hold real PII.
+  nationalIdNumber String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  organization Organization?
+  cases        VerificationCase[]
+
+  @@index([tenantId])
+  @@index([tenantId, externalRef])
+}
+
+model Organization {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  /// The Subject row (type = ORGANIZATION) this KYB record belongs to.
+  subjectId          String   @unique
+  legalName          String
+  registrationNumber String?
+  countryCode        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  subject         Subject                      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  beneficialOwners OrganizationBeneficialOwner[]
+
+  @@index([tenantId])
+}
+
+/// A person (Subject, type = PERSON) who is a beneficial owner of an Organization.
+/// KYB flows verify the Organization and its beneficial owners as related but
+/// distinct VerificationCases.
+model OrganizationBeneficialOwner {
+  id             String   @id @default(cuid())
+  tenantId       String
+  organizationId String
+  personSubjectId String
+  role           String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, personSubjectId])
+  @@index([tenantId])
+}
+
+model VerificationCase {
+  id                 String     @id @default(cuid())
+  tenantId           String
+  subjectId          String
+  policyId           String
+  status             CaseStatus @default(PENDING)
+  /// Correlates this case to its Temporal workflow execution (apps/workflows).
+  temporalWorkflowId String?
+  decision           String?
+  reviewerId         String?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  resolvedAt         DateTime?
+
+  tenant   Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subject  Subject                    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  policy   VerificationPolicy         @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  attempts VerificationMethodAttempt[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+}
+
+model VerificationMethodAttempt {
+  id          String        @id @default(cuid())
+  tenantId    String
+  caseId      String
+  /// VerificationMethodProvider key, e.g. "otp_sms".
+  method      String
+  status      AttemptStatus @default(PENDING)
+  providerKey String
+  resultMeta  Json?
+  score       Float?
+  startedAt   DateTime      @default(now())
+  completedAt DateTime?
+
+  case      VerificationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  documents DocumentAsset[]
+
+  @@index([tenantId])
+  @@index([caseId])
+}
+
+model DocumentAsset {
+  id              String   @id @default(cuid())
+  tenantId        String
+  methodAttemptId String
+  /// Object storage key only — the document content never touches this database.
+  storageKey      String
+  contentType     String
+  sizeBytes       Int?
+  createdAt       DateTime @default(now())
+
+  methodAttempt VerificationMethodAttempt @relation(fields: [methodAttemptId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([methodAttemptId])
+}
+
+/// Append-only. Written on every read of Subject/Organization/Attempt/DocumentAsset
+/// PII, not just on writes — docs/HOUSE-RULES.md rule 3.
+model AuditLogEntry {
+  id        String         @id @default(cuid())
+  tenantId  String
+  actorType AuditActorType
+  actorId   String?
+  action    String
+  subjectId String?
+  caseId    String?
+  ipAddress String?
+  createdAt DateTime       @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, subjectId])
+}

@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nid
+      POSTGRES_PASSWORD: nid
+      POSTGRES_DB: nid
+    ports:
+      - "5432:5432"
+    volumes:
+      - nid-postgres:/var/lib/postgresql/data
+      - ./packages/db/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nid"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  temporal:
+    image: temporalio/auto-setup:1.24
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: nid
+      POSTGRES_PWD: nid
+      POSTGRES_SEEDS: postgres
+    ports:
+      - "7233:7233"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  nid-postgres:
