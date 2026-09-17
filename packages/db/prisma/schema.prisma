@@ -65,6 +65,7 @@ model Tenant {
   policies   VerificationPolicy[]
   subjects   Subject[]
   cases      VerificationCase[]
+  sessions   VerificationSession[]
   auditLogs  AuditLogEntry[]
 }
 
@@ -182,9 +183,34 @@ model VerificationCase {
   subject  Subject                    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   policy   VerificationPolicy         @relation(fields: [policyId], references: [id], onDelete: Restrict)
   attempts VerificationMethodAttempt[]
+  sessions VerificationSession[]
 
   @@index([tenantId])
   @@index([tenantId, status])
+}
+
+/// A subject-facing credential for one VerificationCase — what the hosted
+/// verify UI (apps/verify-ui) authenticates with instead of the tenant's
+/// API key, which a subject's browser must never hold (it can create
+/// arbitrary Subjects/Cases for the whole tenant). Mirrors TenantApiKey's
+/// bootstrap shape: an open-SELECT RLS policy lets a session be resolved by
+/// tokenHash before tenantId is known, same reasoning as api_key_lookup in
+/// the migration — see apps/api/src/modules/sessions.
+model VerificationSession {
+  id        String   @id @default(cuid())
+  tenantId  String
+  caseId    String
+  /// SHA-256 hash of the token handed to the subject once, in the
+  /// verification-cases create response. The plaintext is never stored.
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  case   VerificationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([caseId])
 }
 
 model VerificationMethodAttempt {

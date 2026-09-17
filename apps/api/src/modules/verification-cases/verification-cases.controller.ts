@@ -16,6 +16,11 @@ export class VerificationCasesController {
     return this.cases.create(tenant.tenantId, tenant.apiKeyId, dto);
   }
 
+  @Get()
+  list(@CurrentTenant() tenant: AuthenticatedTenant) {
+    return this.cases.list(tenant.tenantId, tenant.apiKeyId);
+  }
+
   @Get(':id')
   getById(@CurrentTenant() tenant: AuthenticatedTenant, @Param('id') id: string) {
     return this.cases.getById(tenant.tenantId, tenant.apiKeyId, id);

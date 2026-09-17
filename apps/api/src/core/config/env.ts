@@ -9,6 +9,10 @@ export interface AppEnv {
   appDatabaseUrl: string;
   verificationMethods: string;
   otpSmsDevMode: boolean;
+  /** Base URL of apps/verify-ui — used to build the hostedUrl a tenant redirects subjects to. */
+  verifyUiUrl: string;
+  /** How long a VerificationSession token is valid for before the hosted flow refuses it. */
+  sessionTtlMinutes: number;
 }
 
 function required(name: string): string {
@@ -25,5 +29,7 @@ export function loadEnv(): AppEnv {
     appDatabaseUrl: required('APP_DATABASE_URL'),
     verificationMethods: process.env['VERIFICATION_METHODS'] ?? '',
     otpSmsDevMode: process.env['OTP_SMS_DEV_MODE'] === 'true',
+    verifyUiUrl: process.env['VERIFY_UI_URL'] ?? 'http://localhost:3100',
+    sessionTtlMinutes: Number(process.env['SESSION_TTL_MINUTES'] ?? 60),
   };
 }

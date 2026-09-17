@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { generateSessionToken } from '@nid/shared-types';
 import { PrismaService } from '../../core/db/prisma.service';
 import { AuditService } from '../../core/audit/audit.service';
 import { TemporalClientService } from '../../core/temporal/temporal-client.service';
+import { loadEnv } from '../../core/config/env';
 import type { CreateVerificationCaseDto } from './dto/create-verification-case.dto';
 
 @Injectable()
@@ -43,6 +45,20 @@ export class VerificationCasesService {
         data: { temporalWorkflowId: workflowId },
       });
 
+      // A subject-facing credential for this one case — apps/verify-ui
+      // authenticates with this, never with the tenant's own API key. See
+      // VerificationSession's schema comment.
+      const env = loadEnv();
+      const session = generateSessionToken();
+      await tx.verificationSession.create({
+        data: {
+          tenantId,
+          caseId: kase.id,
+          tokenHash: session.hash,
+          expiresAt: new Date(Date.now() + env.sessionTtlMinutes * 60_000),
+        },
+      });
+
       await this.audit.record(tx, tenantId, {
         actorType: 'API_KEY',
         actorId: apiKeyId,
@@ -51,7 +67,13 @@ export class VerificationCasesService {
         caseId: kase.id,
       });
 
-      return { case: updated, subjectId: subject.id, workflowId };
+      return {
+        case: updated,
+        subjectId: subject.id,
+        workflowId,
+        sessionToken: session.plaintext,
+        hostedUrl: `${env.verifyUiUrl}/session/${session.plaintext}`,
+      };
     });
 
     // Starting the Temporal workflow happens after the DB transaction
@@ -66,14 +88,39 @@ export class VerificationCasesService {
       phone: dto.phone,
     });
 
-    return created.case;
+    return {
+      ...created.case,
+      sessionToken: created.sessionToken,
+      hostedUrl: created.hostedUrl,
+    };
+  }
+
+  /** The dashboard's case list — most recent first. */
+  async list(tenantId: string, apiKeyId: string) {
+    return this.prisma.forTenant(tenantId, async (tx) => {
+      const cases = await tx.verificationCase.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: { subject: true },
+        take: 100,
+      });
+      // One audit entry for the list action itself, not per-row — the
+      // per-row PII disclosure a list already minimizes (no
+      // nationalIdNumber, no attempts) doesn't warrant N audit writes for
+      // one dashboard page load.
+      await this.audit.record(tx, tenantId, {
+        actorType: 'API_KEY',
+        actorId: apiKeyId,
+        action: 'verification_case.list',
+      });
+      return cases;
+    });
   }
 
   async getById(tenantId: string, apiKeyId: string, caseId: string) {
     return this.prisma.forTenant(tenantId, async (tx) => {
       const kase = await tx.verificationCase.findUnique({
         where: { id: caseId },
-        include: { attempts: true },
+        include: { attempts: true, subject: true },
       });
       if (!kase) {
         throw new NotFoundException('Verification case not found.');

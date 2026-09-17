@@ -5,6 +5,7 @@ import { TemporalClientModule } from './core/temporal/temporal-client.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { SubjectsModule } from './modules/subjects/subjects.module';
 import { VerificationCasesModule } from './modules/verification-cases/verification-cases.module';
+import { SessionsModule } from './modules/sessions/sessions.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { VerificationCasesModule } from './modules/verification-cases/verificati
     TenantsModule,
     SubjectsModule,
     VerificationCasesModule,
+    SessionsModule,
   ],
 })
 export class AppModule {}
