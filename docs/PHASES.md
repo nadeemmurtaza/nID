@@ -14,18 +14,20 @@ Full rationale lives in the plan this scaffold was built from. Summary:
   `apps/api/src/modules/oauth`) any relying-party app can embed a "Continue
   with nID" button for, same-device URL or cross-device QR. `erp-1` also
   already integrates as nID's tenant #1 — see below.
-- **Phase 1** — **document upload + OCR and liveness, and policy composition
-  beyond a single method, are done** — see below. Two Phase 1 items remain:
-  wiring the dashboard's staff login onto `Account` instead of raw API-key
-  paste (a `TenantStaffMembership` join table — "does this Account work for
-  this Tenant" — is the natural next step now that `Account` exists,
-  deliberately not built in Phase 0 since nothing needed it yet), and signed
-  webhooks to more than one tenant. A case-review queue for `NEEDS_REVIEW`
-  attempts is also still unbuilt: `CaseStatus.NEEDS_REVIEW` is now a real,
-  reachable state (`document_ocr`/`liveness` can both return it) and a case
-  stops there correctly, but nothing lets staff *act* on it yet — no
-  dashboard view, no resolution signal. It's a genuine dead end today, by
-  design (the workflow doesn't guess), not yet a queue.
+- **Phase 1** — **document upload + OCR and liveness, policy composition
+  beyond a single method, and per-attribute verification badges (identity,
+  date of birth, education, employment) at three levels of proof, are
+  done** — see below. Two Phase 1 items remain: wiring the dashboard's staff
+  login onto `Account` instead of raw API-key paste (a `TenantStaffMembership`
+  join table — "does this Account work for this Tenant" — is the natural next
+  step now that `Account` exists, deliberately not built in Phase 0 since
+  nothing needed it yet), and signed webhooks to more than one tenant. A
+  case-review queue for `NEEDS_REVIEW` attempts is also still unbuilt:
+  `CaseStatus.NEEDS_REVIEW` is now a real, reachable state (`document_ocr`/
+  `liveness` can both return it) and a case stops there correctly, but
+  nothing lets staff *act* on it yet — no dashboard view, no resolution
+  signal. It's a genuine dead end today, by design (the workflow doesn't
+  guess), not yet a queue.
 
 ### KYC: document_ocr, liveness, and multi-method policies
 
@@ -98,6 +100,95 @@ the Temporal orchestration layer itself, for the same reason as Phase 0 —
 this sandbox's egress policy blocks reaching or installing a Temporal
 server. Every activity the workflow calls is proven directly, in the exact
 sequence the workflow calls them in, which is what's provable without one.
+
+### Verification badges: ClaimType, VerificationLevel, and per-attribute claims
+
+Before this, "verified" meant one thing — identity, via whatever the case's
+policy ran. A tenant asked for badges shown separately per attribute
+(education, employment, date of birth), each at its own strength of proof,
+not folded into one identity check. Rather than a parallel system, this
+reuses the Case/Policy/provider machinery Phase 1's KYC work already built:
+
+- **`ClaimType`** (`IDENTITY`, `DATE_OF_BIRTH`, `EDUCATION`, `EMPLOYMENT`) and
+  **`VerificationLevel`** (`SELF_ATTESTED`, `DOCUMENT_VERIFIED`,
+  `REGISTRY_VERIFIED`, declared in that ascending-strength order so Postgres's
+  enum ordering does the ranking) are both properties of a
+  `VerificationPolicy`, denormalized onto `VerificationCase` at creation time
+  the same way `VerificationMethodAttempt.providerKey` is denormalized from
+  its provider. A tenant can have several policies for the same `ClaimType`
+  at different levels (e.g. `education-document` and `education-registry`)
+  — the level a passed case earns is the policy's own value, not computed
+  from which methods happened to run.
+- **`ImageClaimProvider`** (`packages/verification-providers/src/image-claim.provider.ts`)
+  generalizes what was `DocumentOcrProvider` into one class instantiated
+  once per document-backed `ClaimType` — `document_ocr` (identity),
+  `dob_document`, `education_document`, `employment_document` — sharing the
+  `CLAIM_DOCUMENT_DEV_MODE` toggle. Same mechanism as before: upload an
+  image, mock-verify in dev, a real OCR vendor call in production.
+- **`RegistryCheckProvider`** (`registry-check.provider.ts`) is new: a
+  `REGISTRY_VERIFIED`-level check (`education_registry`, `employment_registry`)
+  against an authoritative source. Unlike every other provider so far, its
+  `start()` resolves *synchronously* — everything it needs (a `referenceId`
+  the tenant supplies at case creation, e.g. a student or employee ID) is
+  already there, so there's nothing for the subject to upload and
+  `handleCallback` is never used. No real registry/employer vendor exists
+  behind either key yet (`REGISTRY_CHECK_DEV_MODE` mocks both) — that's
+  genuinely unbuilt, not just undocumented.
+- **Badges are computed, not stored.** `GET /v1/subjects/:id/badges`
+  (`SubjectsService.getBadges`) finds, per `ClaimType`, the highest-`level`
+  `APPROVED` case — ties broken by most recent — with no new table and no
+  sync-drift risk. `DATE_OF_BIRTH` gets one inference beyond that: if
+  `Subject.dateOfBirth` is set but no case ever verified it, the badge shows
+  `SELF_ATTESTED` (a value the subject supplied, never independently
+  checked) rather than nothing. `EDUCATION`/`EMPLOYMENT` have no equivalent
+  scalar field on `Subject` to infer a claimed-but-unverified value from, so
+  they're either a real badge or absent — never fabricated.
+- **`otp_sms` alone is `SELF_ATTESTED`, `otp_sms + document_ocr + liveness`
+  is `DOCUMENT_VERIFIED`**: Phase 0's `standard` and `kyc` policies were
+  retrofitted with these levels rather than left as an ungraded exception.
+  Proving you control a phone number isn't proving a document backs your
+  identity — the honest level for `standard` is the weakest one, same as
+  every other `ClaimType`'s ungraded state would be.
+- **A real gap this exposed and fixed**: `Subject.dateOfBirth` existed in
+  the schema since Phase 0 but `POST /v1/subjects` never accepted it — the
+  `DATE_OF_BIRTH` badge's `SELF_ATTESTED` fallback would have been dead code
+  without a way to set the field it reads. `CreateSubjectDto` now takes an
+  optional `dateOfBirth`.
+
+**New submit route**: `dob_document`/`education_document`/`employment_document`
+share one generic multipart route — `POST
+/v1/verification-cases/:id/claims/:method/submit` (and the session-token
+equivalent) — instead of three more near-identical dedicated routes like
+`document_ocr`/`liveness` have. `education_registry`/`employment_registry`
+need no submit route at all: they resolve at `start()`.
+
+**Seeded**: tenant-a has five more policies — `dob-document`,
+`education-document`, `education-registry`, `employment-document`,
+`employment-registry` — alongside `standard` and `kyc` (now leveled), via
+`pnpm db:seed`.
+
+**Verified live**: cases created across all four `ClaimType`s (curl against
+a running `apps/api` + real Postgres) correctly denormalize their policy's
+`claimType`/`level`, including `education-registry` with a `referenceId`.
+A real multipart upload through the generic claims route persisted a
+byte-for-byte-correct file and `DocumentAsset` row, and the route correctly
+rejects a non-claim-document method (`liveness`) with a 400. The badges
+endpoint was proven against a subject with cases at multiple levels of the
+same `ClaimType`: `education-document` (`DOCUMENT_VERIFIED`) and
+`education-registry` (`REGISTRY_VERIFIED`) both `APPROVED` correctly
+surfaces the stronger one, an unresolved `employment-document` case
+correctly shows no badge, and a *rejected* `dob-document` case correctly
+falls back to the `SELF_ATTESTED` inference rather than either fabricating
+a pass or hiding the badge entirely. `apps/dashboard`'s badges panel was
+driven in real headless Chromium and matched the API exactly — all four
+`ClaimType` slots, "Not verified" for the two without a passed case.
+`apps/verify-ui` was driven through a real `employment_document` upload
+(genuine browser file input, not a seeded DB row) and the
+`employment_registry` "checking with the registry" waiting view, confirming
+no file input renders for a method that never needs a subject upload.
+**Not verified**: the Temporal orchestration layer, for the same reason as
+everywhere else in this document.
+
 - **Phase 2** — sanctions/PEP screening, KYB/business-registry lookup, one
   country's national-ID registry adapter, manual-review tooling, retention/audit
   maturity.

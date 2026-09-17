@@ -1,13 +1,14 @@
 /**
- * Shared parsing/validation for the document_ocr and liveness providers'
- * handleCallback() payloads — both take "an uploaded image plus, in dev
- * mode only, a forced outcome for deterministic testing," so the parsing
- * logic belongs in one place rather than copied twice.
+ * Shared parsing/validation for every provider whose handleCallback() takes
+ * "an uploaded image plus, in dev mode only, a forced outcome for
+ * deterministic testing" — document_ocr, liveness, and the per-ClaimType
+ * document providers (dob_document, education_document,
+ * employment_document) all take this exact shape, so the parsing logic
+ * belongs in one place rather than copied N times.
  */
-const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+import { isValidMockOutcome, type MockOutcome } from './mock-outcome';
 
-export type MockOutcome = 'PASSED' | 'FAILED' | 'NEEDS_REVIEW';
-const MOCK_OUTCOMES: ReadonlySet<string> = new Set<MockOutcome>(['PASSED', 'FAILED', 'NEEDS_REVIEW']);
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 export interface ImageCallbackPayload {
   imageBytes: Buffer;
@@ -31,7 +32,7 @@ export function parseImageCallback(payload: Record<string, unknown>): ParsedImag
   if (typeof contentType !== 'string' || !ALLOWED_IMAGE_TYPES.has(contentType)) {
     return { ok: false, reason: 'unsupported_content_type' };
   }
-  if (mockOutcome !== undefined && (typeof mockOutcome !== 'string' || !MOCK_OUTCOMES.has(mockOutcome))) {
+  if (mockOutcome !== undefined && !isValidMockOutcome(mockOutcome)) {
     return { ok: false, reason: 'invalid_mock_outcome' };
   }
 
@@ -39,11 +40,4 @@ export function parseImageCallback(payload: Record<string, unknown>): ParsedImag
     ok: true,
     value: { imageBytes, contentType, mockOutcome: mockOutcome as MockOutcome | undefined },
   };
-}
-
-/** A believable-looking confidence score for a mocked dev-mode result — never used in production. */
-export function mockScoreFor(status: MockOutcome): number {
-  if (status === 'PASSED') return 0.97;
-  if (status === 'NEEDS_REVIEW') return 0.55;
-  return 0.08;
 }

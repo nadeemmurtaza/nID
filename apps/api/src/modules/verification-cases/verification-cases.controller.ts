@@ -75,4 +75,22 @@ export class VerificationCasesController {
       filename: file.originalname,
     });
   }
+
+  @Post(':id/claims/:method/submit')
+  @UseInterceptors(uploadInterceptor)
+  submitClaimDocument(
+    @CurrentTenant() tenant: AuthenticatedTenant,
+    @Param('id') id: string,
+    @Param('method') method: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded — expected multipart field "file".');
+    }
+    return this.cases.submitClaimDocument(tenant.tenantId, tenant.apiKeyId, id, method, {
+      buffer: file.buffer,
+      contentType: file.mimetype,
+      filename: file.originalname,
+    });
+  }
 }

@@ -54,4 +54,21 @@ export class SessionsController {
       filename: file.originalname,
     });
   }
+
+  @Post(':token/claims/:method/submit')
+  @UseInterceptors(uploadInterceptor)
+  submitClaimDocument(
+    @Param('token') token: string,
+    @Param('method') method: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded — expected multipart field "file".');
+    }
+    return this.sessions.submitClaimDocument(token, method, {
+      buffer: file.buffer,
+      contentType: file.mimetype,
+      filename: file.originalname,
+    });
+  }
 }

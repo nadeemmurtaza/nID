@@ -13,6 +13,11 @@ export interface UploadedMethodFile {
   filename: string;
 }
 
+/** Methods reachable through the generic .../claims/:method/submit routes — see submitClaimDocument(). */
+const CLAIM_DOCUMENT_METHODS = new Set(['dob_document', 'education_document', 'employment_document']);
+/** Methods that resolve synchronously in RegistryCheckProvider.start() and need a `referenceId` at creation. */
+const REGISTRY_CHECK_METHODS = new Set(['education_registry', 'employment_registry']);
+
 @Injectable()
 export class VerificationCasesService {
   constructor(
@@ -43,7 +48,17 @@ export class VerificationCasesService {
       }
 
       const kase = await tx.verificationCase.create({
-        data: { tenantId, subjectId: subject.id, policyId: policy.id, status: 'PENDING' },
+        data: {
+          tenantId,
+          subjectId: subject.id,
+          policyId: policy.id,
+          status: 'PENDING',
+          // Denormalized from the policy so the badges endpoint can find a
+          // Subject's strongest passed case per ClaimType without a join —
+          // see schema.prisma's comment on these two columns.
+          claimType: policy.claimType,
+          level: policy.level,
+        },
       });
       for (const method of policy.methods) {
         await tx.verificationMethodAttempt.create({
@@ -99,7 +114,7 @@ export class VerificationCasesService {
       tenantId,
       subjectId: created.subjectId,
       methods: created.methods,
-      methodInput: created.methods.includes('otp_sms') ? { otp_sms: { phone: dto.phone } } : {},
+      methodInput: buildMethodInput(created.methods, dto),
     });
 
     return {
@@ -181,6 +196,26 @@ export class VerificationCasesService {
     file: UploadedMethodFile,
   ): Promise<{ accepted: true }> {
     return this.submitUploadedMethod(tenantId, apiKeyId, caseId, 'liveness', 'verification_case.submit_liveness', file);
+  }
+
+  /**
+   * dob_document / education_document / employment_document — the same
+   * upload mechanism as submitDocument/submitLiveness, generalized to one
+   * route+method instead of three near-identical ones, since these three
+   * only differ by which claim they're proving (docs/HOUSE-RULES.md rule 1
+   * applies to routes the same way it applies to providers).
+   */
+  async submitClaimDocument(
+    tenantId: string,
+    apiKeyId: string,
+    caseId: string,
+    method: string,
+    file: UploadedMethodFile,
+  ): Promise<{ accepted: true }> {
+    if (!CLAIM_DOCUMENT_METHODS.has(method)) {
+      throw new BadRequestException(`"${method}" is not a claim-document method.`);
+    }
+    return this.submitUploadedMethod(tenantId, apiKeyId, caseId, method, 'verification_case.submit_claim_document', file);
   }
 
   /** Shared by every "the subject submitted something for the method the case is currently waiting on" path. */
@@ -266,4 +301,27 @@ export class VerificationCasesService {
     await this.temporal.submitMethodPayload(kase.temporalWorkflowId as string, method, { storageKey, contentType });
     return { accepted: true };
   }
+}
+
+/**
+ * Builds VerificationWorkflowInput.methodInput — the only two methods that
+ * need anything at case-creation time: otp_sms (a phone to send the code
+ * to) and the two registry-check methods (a referenceId to look up, since
+ * RegistryCheckProvider resolves synchronously with nothing for the
+ * subject to upload). Everything else needs no entry.
+ */
+function buildMethodInput(
+  methods: string[],
+  dto: CreateVerificationCaseDto,
+): Record<string, Record<string, unknown>> {
+  const methodInput: Record<string, Record<string, unknown>> = {};
+  if (methods.includes('otp_sms')) {
+    methodInput['otp_sms'] = { phone: dto.phone };
+  }
+  for (const method of methods) {
+    if (REGISTRY_CHECK_METHODS.has(method)) {
+      methodInput[method] = { referenceId: dto.referenceId };
+    }
+  }
+  return methodInput;
 }

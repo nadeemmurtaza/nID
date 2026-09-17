@@ -6,15 +6,27 @@ accountable. Read this before adding a module.
 
 ## 1. A verification method is a provider, not a branch
 
-Every verification method (`otp_sms`, `document_ocr`, `liveness`, `sanctions_screen`,
-a country's national-ID registry lookup, ...) implements
-`VerificationMethodProvider` from `packages/verification-providers/src/types.ts`.
-One file per provider, registered in
+Every verification method (`otp_sms`, `document_ocr`, `liveness`, `dob_document`,
+`education_document`, `employment_document`, `education_registry`,
+`employment_registry`, a future `sanctions_screen` or country's national-ID
+registry lookup, ...) implements `VerificationMethodProvider` from
+`packages/verification-providers/src/types.ts`, registered in
 `packages/verification-providers/src/registry.ts` behind the `VERIFICATION_METHODS`
-env allowlist. **Never branch on the method name inside a workflow or controller** —
-add a provider instead. This mirrors `erp-1`'s `PaymentProvider` /
+env allowlist. **Never branch on the method name inside a workflow or
+controller** — add a provider instead. This mirrors `erp-1`'s `PaymentProvider` /
 `StorageDriver` convention deliberately, because it is the right shape for
 "anything with more than one implementation, selected by config."
+
+This doesn't mean one *file* per method key — it means one file per distinct
+*mechanism*. `ImageClaimProvider` (upload an image, mock-verify in dev, call
+a real OCR vendor in prod) is one class instantiated four times
+(`document_ocr`, `dob_document`, `education_document`,
+`employment_document`) because the mechanism is identical across those four
+`ClaimType`s; only the vendor's expected document differs. `RegistryCheckProvider`
+is the same pattern for the two methods that resolve synchronously against
+an authoritative source instead. Add a new *file* when the mechanism itself
+is new (a real vendor SDK, a different callback shape); reuse an existing
+class when it's the same mechanism verifying a different claim.
 
 ## 2. Tenant isolation is enforced by the database, not application code
 

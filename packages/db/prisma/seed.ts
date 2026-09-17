@@ -35,29 +35,89 @@ async function main(): Promise<void> {
     }
 
     if (slug === 'tenant-a') {
+      // otp_sms alone proves the subject controls a phone number, not that
+      // any document backs their identity — SELF_ATTESTED is the honest
+      // level for it.
       await prisma.verificationPolicy.upsert({
         where: { tenantId_name: { tenantId: tenant.id, name: 'standard' } },
-        update: {},
+        update: { claimType: 'IDENTITY', level: 'SELF_ATTESTED' },
         create: {
           tenantId: tenant.id,
           name: 'standard',
           methods: ['otp_sms'],
+          claimType: 'IDENTITY',
+          level: 'SELF_ATTESTED',
         },
       });
 
       // Phase 1: a real multi-method policy — otp_sms confirms the phone,
       // then document_ocr + liveness do the actual identity check. Order
       // matters: verification.workflow.ts runs methods.methods in array
-      // order and stops at the first FAILED/NEEDS_REVIEW.
+      // order and stops at the first FAILED/NEEDS_REVIEW. document_ocr +
+      // liveness together earn DOCUMENT_VERIFIED — no registry/sanctions
+      // check exists yet, so nothing earns REGISTRY_VERIFIED for IDENTITY.
       await prisma.verificationPolicy.upsert({
         where: { tenantId_name: { tenantId: tenant.id, name: 'kyc' } },
-        update: {},
+        update: { claimType: 'IDENTITY', level: 'DOCUMENT_VERIFIED' },
         create: {
           tenantId: tenant.id,
           name: 'kyc',
           methods: ['otp_sms', 'document_ocr', 'liveness'],
+          claimType: 'IDENTITY',
+          level: 'DOCUMENT_VERIFIED',
         },
       });
+
+      // Badges: one policy per (ClaimType, VerificationLevel) a tenant
+      // wants to offer. DATE_OF_BIRTH has no registry-level policy — there's
+      // no universal birth registry to check against; that's genuinely
+      // country-specific national-ID-registry work (docs/PHASES.md Phase 2),
+      // not a gap in this seed.
+      const badgePolicies: Array<{
+        name: string;
+        methods: string[];
+        claimType: 'DATE_OF_BIRTH' | 'EDUCATION' | 'EMPLOYMENT';
+        level: 'DOCUMENT_VERIFIED' | 'REGISTRY_VERIFIED';
+      }> = [
+        { name: 'dob-document', methods: ['dob_document'], claimType: 'DATE_OF_BIRTH', level: 'DOCUMENT_VERIFIED' },
+        {
+          name: 'education-document',
+          methods: ['education_document'],
+          claimType: 'EDUCATION',
+          level: 'DOCUMENT_VERIFIED',
+        },
+        {
+          name: 'education-registry',
+          methods: ['education_registry'],
+          claimType: 'EDUCATION',
+          level: 'REGISTRY_VERIFIED',
+        },
+        {
+          name: 'employment-document',
+          methods: ['employment_document'],
+          claimType: 'EMPLOYMENT',
+          level: 'DOCUMENT_VERIFIED',
+        },
+        {
+          name: 'employment-registry',
+          methods: ['employment_registry'],
+          claimType: 'EMPLOYMENT',
+          level: 'REGISTRY_VERIFIED',
+        },
+      ];
+      for (const policy of badgePolicies) {
+        await prisma.verificationPolicy.upsert({
+          where: { tenantId_name: { tenantId: tenant.id, name: policy.name } },
+          update: { claimType: policy.claimType, level: policy.level, methods: policy.methods },
+          create: {
+            tenantId: tenant.id,
+            name: policy.name,
+            methods: policy.methods,
+            claimType: policy.claimType,
+            level: policy.level,
+          },
+        });
+      }
 
       // A demo relying-party client, for exercising "Login with nID"
       // (apps/login-ui) without a real RP app — its callback is just

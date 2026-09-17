@@ -26,6 +26,19 @@ type LoadState =
 
 const TERMINAL_STATUSES: CaseStatus[] = ['APPROVED', 'REJECTED', 'EXPIRED', 'NEEDS_REVIEW'];
 
+/** Route segment for each upload method's submit endpoint — document_ocr/liveness keep their
+ * original dedicated routes; the per-claim document methods share one generic route. */
+const UPLOAD_ROUTE_FOR_METHOD: Record<string, string> = {
+  document_ocr: 'document',
+  liveness: 'liveness',
+  dob_document: 'claims/dob_document',
+  education_document: 'claims/education_document',
+  employment_document: 'claims/employment_document',
+};
+
+/** education_registry / employment_registry resolve automatically, server-side — no upload here. */
+const REGISTRY_CHECK_METHODS = new Set(['education_registry', 'employment_registry']);
+
 export default function SessionPage() {
   const params = useParams<{ token: string }>();
   const token = params.token;
@@ -88,11 +101,11 @@ export default function SessionPage() {
     }
   }
 
-  async function submitFile(method: 'document_ocr' | 'liveness', file: File): Promise<void> {
+  async function submitFile(method: string, file: File): Promise<void> {
     setSubmitError(null);
     setSubmitting(true);
     try {
-      const route = method === 'document_ocr' ? 'document' : 'liveness';
+      const route = UPLOAD_ROUTE_FOR_METHOD[method] ?? `claims/${method}`;
       const body = new FormData();
       body.append('file', file);
       const res = await fetch(`${API_URL}/v1/sessions/${token}/${route}/submit`, { method: 'POST', body });
@@ -165,7 +178,7 @@ function ResultView({
 }: {
   data: SessionStatus;
   submitOtp: (code: string) => void | Promise<void>;
-  submitFile: (method: 'document_ocr' | 'liveness', file: File) => void | Promise<void>;
+  submitFile: (method: string, file: File) => void | Promise<void>;
   submitting: boolean;
   submitError: string | null;
 }) {
@@ -239,16 +252,15 @@ function ResultView({
     );
   }
 
-  if (current.method === 'document_ocr') {
+  const uploadConfig = UPLOAD_STEP_CONFIG[current.method];
+  if (uploadConfig) {
     return (
       <>
         {stepLabel}
         <UploadStep
-          title="Upload your ID document"
-          description="A clear photo of a government-issued ID (passport, driver's license, or national ID)."
-          buttonLabel="Upload document"
+          {...uploadConfig}
           accept="image/*"
-          onSubmit={(file) => submitFile('document_ocr', file)}
+          onSubmit={(file) => submitFile(current.method, file)}
           submitting={submitting}
           submitError={submitError}
         />
@@ -256,19 +268,16 @@ function ResultView({
     );
   }
 
-  if (current.method === 'liveness') {
+  if (REGISTRY_CHECK_METHODS.has(current.method)) {
     return (
       <>
         {stepLabel}
-        <UploadStep
-          title="Take a selfie"
-          description="A clear photo of your face, well-lit, looking straight at the camera."
-          buttonLabel="Upload selfie"
-          accept="image/*"
-          onSubmit={(file) => submitFile('liveness', file)}
-          submitting={submitting}
-          submitError={submitError}
-        />
+        <h1>Checking with the registry…</h1>
+        <p className="lead">We&apos;re confirming this automatically — nothing to do here.</p>
+        <div className="status-line">
+          <span className="dot pending" />
+          <span>This can take a moment</span>
+        </div>
       </>
     );
   }
@@ -280,6 +289,34 @@ function ResultView({
     </>
   );
 }
+
+const UPLOAD_STEP_CONFIG: Record<string, { title: string; description: string; buttonLabel: string }> = {
+  document_ocr: {
+    title: 'Upload your ID document',
+    description: "A clear photo of a government-issued ID (passport, driver's license, or national ID).",
+    buttonLabel: 'Upload document',
+  },
+  liveness: {
+    title: 'Take a selfie',
+    description: 'A clear photo of your face, well-lit, looking straight at the camera.',
+    buttonLabel: 'Upload selfie',
+  },
+  dob_document: {
+    title: 'Upload proof of date of birth',
+    description: 'A birth certificate or an ID document that shows your date of birth.',
+    buttonLabel: 'Upload document',
+  },
+  education_document: {
+    title: 'Upload your education document',
+    description: 'A diploma, degree certificate, or transcript.',
+    buttonLabel: 'Upload document',
+  },
+  employment_document: {
+    title: 'Upload your employment document',
+    description: 'An offer letter, pay stub, or employment verification letter.',
+    buttonLabel: 'Upload document',
+  },
+};
 
 function OtpStep({
   phone,

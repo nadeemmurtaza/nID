@@ -100,6 +100,7 @@ function CaseList({ apiKey }: { apiKey: string }) {
       <thead>
         <tr>
           <th>Subject</th>
+          <th>Claim</th>
           <th>Status</th>
           <th>Created</th>
         </tr>
@@ -110,6 +111,7 @@ function CaseList({ apiKey }: { apiKey: string }) {
             <td>
               <Link href={`/cases/${c.id}`}>{subjectName(c.subject)}</Link>
             </td>
+            <td>{c.claimType}</td>
             <td>
               <span className={`badge ${c.status}`}>{c.status}</span>
             </td>

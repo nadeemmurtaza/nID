@@ -50,6 +50,35 @@ enum AuditActorType {
   API_KEY
 }
 
+/// What a VerificationPolicy/Case is actually verifying about a Subject —
+/// orthogonal to *how* (VerificationMethodProvider). A Subject can carry one
+/// badge per ClaimType, each computed independently: being IDENTITY-verified
+/// says nothing about whether EDUCATION or EMPLOYMENT has been checked.
+enum ClaimType {
+  IDENTITY
+  DATE_OF_BIRTH
+  EDUCATION
+  EMPLOYMENT
+}
+
+/// How strong the proof behind a claim is. Declared in ascending strength —
+/// Postgres orders enum values by declaration order, so `ORDER BY level DESC`
+/// reliably finds a Subject's strongest passed case for a ClaimType.
+enum VerificationLevel {
+  /// A possession/control factor only (e.g. otp_sms proves the subject
+  /// controls a phone number) or, when inferred rather than backed by a
+  /// case at all, a value the subject entered with no check performed —
+  /// see apps/api's badges endpoint for exactly when that inference is made.
+  SELF_ATTESTED
+  /// A submitted document was checked (document_ocr-style: real interface,
+  /// mocked result in dev mode until a real OCR vendor is wired up).
+  DOCUMENT_VERIFIED
+  /// Confirmed against an authoritative third-party source (a registry or
+  /// employer/institution API) — mocked in dev mode; no real vendor
+  /// integration exists yet for any ClaimType at this level.
+  REGISTRY_VERIFIED
+}
+
 model Tenant {
   id                   String   @id @default(cuid())
   name                 String
@@ -101,6 +130,15 @@ model VerificationPolicy {
   /// Validated against the VERIFICATION_METHODS allowlist at write time, not by a DB constraint.
   methods     String[]
   requireAll  Boolean  @default(true)
+  /// What this policy verifies. A tenant can have several policies for the
+  /// same ClaimType at different levels (e.g. "education-document" and
+  /// "education-registry") — the level a passed case earns is this field's
+  /// value, not something computed from which methods happened to run.
+  /// Defaults exist only so this migration can add a NOT NULL column to a
+  /// table with existing rows — every real policy sets both explicitly
+  /// (see prisma/seed.ts).
+  claimType ClaimType         @default(IDENTITY)
+  level     VerificationLevel @default(SELF_ATTESTED)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -109,6 +147,7 @@ model VerificationPolicy {
 
   @@unique([tenantId, name])
   @@index([tenantId])
+  @@index([tenantId, claimType])
 }
 
 model Subject {
@@ -182,6 +221,12 @@ model VerificationCase {
   temporalWorkflowId String?
   decision           String?
   reviewerId         String?
+  /// Copied from VerificationPolicy at creation time (immutable per case,
+  /// same denormalization pattern as VerificationMethodAttempt.providerKey)
+  /// so the badges endpoint can find a Subject's strongest passed case per
+  /// ClaimType without joining to VerificationPolicy.
+  claimType ClaimType         @default(IDENTITY)
+  level     VerificationLevel @default(SELF_ATTESTED)
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
   resolvedAt         DateTime?
@@ -194,6 +239,8 @@ model VerificationCase {
 
   @@index([tenantId])
   @@index([tenantId, status])
+  /// Badge lookup: the strongest APPROVED case per (subject, claimType).
+  @@index([tenantId, subjectId, claimType, status, level])
 }
 
 /// A subject-facing credential for one VerificationCase — what the hosted

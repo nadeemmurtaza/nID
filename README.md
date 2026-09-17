@@ -14,17 +14,28 @@ internal Newax tool. See `docs/HOUSE-RULES.md` for engineering conventions and
   `AuditLogEntry`), plus a hand-written Postgres Row-Level Security migration that
   scopes every tenant-owned table to the session's `app.tenant_id`.
 - `packages/verification-providers` — the `VerificationMethodProvider` interface
-  (mirrors the `PaymentProvider` pattern in Newax's `erp-1`) and three real
-  implementations: `otp_sms`, `document_ocr`, `liveness`.
+  (mirrors the `PaymentProvider` pattern in Newax's `erp-1`), `OtpSmsProvider`
+  and `LivenessProvider`, `ImageClaimProvider` (one class, instantiated per
+  document-backed `ClaimType`: `document_ocr`, `dob_document`,
+  `education_document`, `employment_document`), and `RegistryCheckProvider`
+  (`education_registry`, `employment_registry` — resolves synchronously, no
+  subject upload involved).
 - `packages/storage` — a `StorageDriver` interface (mirrors erp-1's own) with one
   real implementation, local disk, for document/selfie upload bytes — see
   `docs/PHASES.md`'s KYC section for why apps/api and apps/workflows both need to
   point at the same directory.
+- **Verification badges** — `ClaimType` (`IDENTITY`, `DATE_OF_BIRTH`,
+  `EDUCATION`, `EMPLOYMENT`) and `VerificationLevel` (`SELF_ATTESTED`,
+  `DOCUMENT_VERIFIED`, `REGISTRY_VERIFIED`) on `VerificationPolicy`/`VerificationCase`
+  — a Subject earns one badge per `ClaimType`, computed on read
+  (`GET /v1/subjects/:id/badges`) as the strongest passed case, not stored
+  or synced separately. See `docs/PHASES.md`'s badges section.
 - `apps/api` — NestJS control-plane: tenant/subject/verification-case REST endpoints
-  (API-key auth, including multipart document/selfie upload routes), a public
-  `sessions` module (token-auth, for `apps/verify-ui`, same routes), and
-  a Prisma service that sets the RLS session variable per request so tenant
-  isolation is enforced by the database, not just application code.
+  (API-key auth, including multipart document/selfie/claim-document upload
+  routes and the badges endpoint), a public `sessions` module (token-auth, for
+  `apps/verify-ui`, same routes), and a Prisma service that sets the RLS
+  session variable per request so tenant isolation is enforced by the
+  database, not just application code.
 - `apps/workflows` — a Temporal worker with one workflow (`verificationWorkflow`)
   that loops over a policy's methods in order, dispatching each through whichever
   provider it names — a single-method `["otp_sms"]` policy is this same
@@ -36,7 +47,9 @@ internal Newax tool. See `docs/HOUSE-RULES.md` for engineering conventions and
   see below.
 - `apps/dashboard` — the tenant staff dashboard (Next.js): sign in with the tenant
   API key (pasted once, kept in `localStorage` — Phase 0 has no separate staff-login
-  system), browse verification cases, view a case's attempts.
+  system), browse verification cases, view a case's attempts and its subject's
+  verification badges (one slot per `ClaimType`, "Not verified" where there's
+  no passed case yet).
 - **"Login with nID"** — nID as an identity provider other apps embed a button
   for, the way Google/Facebook/oneID.uz work. `Account`/`AccountSession`
   (`packages/db/prisma/schema.prisma`) are a portable identity a person creates
@@ -233,6 +246,33 @@ summarized:
    `verification-method.activity.spec.ts`'s multi-method test, which calls
    the same activities in the same order `verificationWorkflow` does and
    asserts the case is still `IN_REVIEW` partway through.
+
+## Phase 1 acceptance criteria (verification badges)
+
+See `docs/PHASES.md`'s "Verification badges" section for the full
+architecture and what was verified live — summarized:
+
+1. A Subject's badge for a given `ClaimType` is the strongest `APPROVED`
+   case for it, not the most recent — a later, weaker re-check never
+   regresses an already-earned stronger badge. **Verified live**: a subject
+   with both an `APPROVED` `education-document` (`DOCUMENT_VERIFIED`) case
+   and an `APPROVED` `education-registry` (`REGISTRY_VERIFIED`) case shows
+   `REGISTRY_VERIFIED`.
+2. A `ClaimType` with no passed case shows no badge — never fabricated.
+   `DATE_OF_BIRTH` is the one exception: a `Subject.dateOfBirth` on file with
+   no verifying case shows `SELF_ATTESTED`, and a *rejected* case for it
+   doesn't suppress that fallback. **Verified live** against a subject with
+   an unresolved `employment-document` case (no badge) and a rejected
+   `dob-document` case (still shows `SELF_ATTESTED`, not nothing).
+3. `education_registry`/`employment_registry` resolve without any subject
+   upload — `apps/verify-ui` shows a waiting view with no file input for
+   them. **Verified live** in real headless Chromium.
+4. `dob_document`/`education_document`/`employment_document` share one
+   generic upload route (`.../claims/:method/submit`) instead of three more
+   dedicated ones, and that route rejects a non-claim-document method.
+   **Verified live** via curl: a real `employment_document` upload
+   persisted byte-for-byte, and a `liveness` submission through the same
+   route was rejected with 400.
 
 ## Repo layout
 

@@ -19,4 +19,9 @@ export class SubjectsController {
   getById(@CurrentTenant() tenant: AuthenticatedTenant, @Param('id') id: string) {
     return this.subjects.getById(tenant.tenantId, tenant.apiKeyId, id);
   }
+
+  @Get(':id/badges')
+  getBadges(@CurrentTenant() tenant: AuthenticatedTenant, @Param('id') id: string) {
+    return this.subjects.getBadges(tenant.tenantId, tenant.apiKeyId, id);
+  }
 }

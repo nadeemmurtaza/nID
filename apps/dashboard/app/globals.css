@@ -8,6 +8,7 @@
   --danger: #c4392b;
   --success: #1a8a5f;
   --warn: #b3801a;
+  --info: #6a4fc4;
   --card-bg: #f8f9fb;
   --row-hover: #f0f2f6;
 }
@@ -22,6 +23,7 @@
     --danger: #ff7a68;
     --success: #4fd39a;
     --warn: #e2b04a;
+    --info: #a690ff;
     --card-bg: #16181d;
     --row-hover: #1c1f26;
   }
@@ -208,6 +210,51 @@ tbody tr:hover {
 .badge.EXPIRED {
   background: color-mix(in srgb, var(--danger) 18%, transparent);
   color: var(--danger);
+}
+
+.badge.NEEDS_REVIEW {
+  background: color-mix(in srgb, var(--info) 18%, transparent);
+  color: var(--info);
+}
+
+/* Badge strength, not case status — used on the per-ClaimType badges panel. */
+.badge.SELF_ATTESTED {
+  background: color-mix(in srgb, var(--muted) 20%, transparent);
+  color: var(--muted);
+}
+.badge.DOCUMENT_VERIFIED {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+.badge.REGISTRY_VERIFIED {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+  color: var(--success);
+}
+
+.badges-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 24px;
+}
+
+.claim-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.claim-badge .claim-name {
+  font-weight: 600;
+}
+
+.claim-badge.unverified {
+  color: var(--muted);
+  border-style: dashed;
 }
 
 .back-link {

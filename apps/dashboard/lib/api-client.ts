@@ -67,11 +67,15 @@ export interface Subject {
   phone: string | null;
 }
 
-export type CaseStatus = 'PENDING' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
+export type CaseStatus = 'PENDING' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'NEEDS_REVIEW';
+export type ClaimType = 'IDENTITY' | 'DATE_OF_BIRTH' | 'EDUCATION' | 'EMPLOYMENT';
+export type VerificationLevel = 'SELF_ATTESTED' | 'DOCUMENT_VERIFIED' | 'REGISTRY_VERIFIED';
 
 export interface VerificationCaseListItem {
   id: string;
   status: CaseStatus;
+  claimType: ClaimType;
+  level: VerificationLevel;
   createdAt: string;
   resolvedAt: string | null;
   subject: Subject;
@@ -91,4 +95,17 @@ export interface VerificationCaseDetail extends VerificationCaseListItem {
   temporalWorkflowId: string | null;
   decision: string | null;
   attempts: VerificationMethodAttempt[];
+}
+
+/** One entry per ClaimType a Subject has ever passed a case for — see apps/api's badges endpoint. */
+export interface SubjectBadge {
+  claimType: ClaimType;
+  level: VerificationLevel;
+  verifiedAt: string | null;
+  caseId: string | null;
+}
+
+export interface SubjectBadges {
+  subjectId: string;
+  badges: SubjectBadge[];
 }

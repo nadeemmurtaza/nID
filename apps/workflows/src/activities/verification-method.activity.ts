@@ -28,6 +28,8 @@ const registry = buildVerificationProviderRegistry({
   otpSmsDevMode: process.env['OTP_SMS_DEV_MODE'] === 'true',
   documentOcrDevMode: process.env['DOCUMENT_OCR_DEV_MODE'] === 'true',
   livenessDevMode: process.env['LIVENESS_DEV_MODE'] === 'true',
+  claimDocumentDevMode: process.env['CLAIM_DOCUMENT_DEV_MODE'] === 'true',
+  registryCheckDevMode: process.env['REGISTRY_CHECK_DEV_MODE'] === 'true',
 });
 // Local-disk only today — apps/api writes an upload here, this Activity
 // reads it back, both pointed at the same LOCAL_STORAGE_DIR. See

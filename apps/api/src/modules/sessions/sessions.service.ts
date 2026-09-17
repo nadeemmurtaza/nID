@@ -11,6 +11,9 @@ export interface UploadedMethodFile {
   filename: string;
 }
 
+/** Methods reachable through the generic .../claims/:method/submit route — see submitClaimDocument(). */
+const CLAIM_DOCUMENT_METHODS = new Set(['dob_document', 'education_document', 'employment_document']);
+
 /**
  * The subject-facing half of a verification case — resolved by
  * VerificationSession token instead of a tenant API key, exactly the way
@@ -59,6 +62,7 @@ export class SessionsService {
 
       return {
         status: kase.status,
+        claimType: kase.claimType,
         // Ordered the way the policy runs them, not DB insertion order —
         // apps/verify-ui walks this list to know which step is next.
         attempts: kase.attempts.map((a) => ({ method: a.method, status: a.status })),
@@ -77,6 +81,19 @@ export class SessionsService {
 
   async submitLiveness(token: string, file: UploadedMethodFile): Promise<{ accepted: true }> {
     return this.submitUploadedMethod(token, 'liveness', 'verification_case.submit_liveness', file);
+  }
+
+  /**
+   * dob_document / education_document / employment_document — same upload
+   * mechanism as submitDocument/submitLiveness, generalized to one route
+   * instead of three near-identical ones (docs/HOUSE-RULES.md rule 1
+   * applies to routes the same way it applies to providers).
+   */
+  async submitClaimDocument(token: string, method: string, file: UploadedMethodFile): Promise<{ accepted: true }> {
+    if (!CLAIM_DOCUMENT_METHODS.has(method)) {
+      throw new BadRequestException(`"${method}" is not a claim-document method.`);
+    }
+    return this.submitUploadedMethod(token, method, 'verification_case.submit_claim_document', file);
   }
 
   private async submitMethod(

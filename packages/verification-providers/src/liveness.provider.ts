@@ -4,7 +4,8 @@ import type {
   VerificationResult,
   PendingResult,
 } from './types';
-import { parseImageCallback, mockScoreFor, type ImageCallbackPayload } from './image-callback-payload';
+import { parseImageCallback, type ImageCallbackPayload } from './image-callback-payload';
+import { mockScoreFor } from './mock-outcome';
 
 /**
  * Confirms the subject is a live person (not a photo, video replay, or

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { apiFetch, type VerificationCaseDetail } from '../../../lib/api-client';
+import { apiFetch, type SubjectBadges, type VerificationCaseDetail } from '../../../lib/api-client';
 import { useDashboardSession } from '../../../lib/use-dashboard-session';
 import { Header } from '../../components/header';
 import { subjectName } from '../../format';
@@ -46,12 +46,21 @@ export default function CaseDetailPage() {
 function CaseDetail({ apiKey, caseId }: { apiKey: string; caseId: string }) {
   const [kase, setKase] = useState<VerificationCaseDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [badges, setBadges] = useState<SubjectBadges | null>(null);
+  const [badgesError, setBadgesError] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch<VerificationCaseDetail>(`/v1/verification-cases/${caseId}`, apiKey)
       .then(setKase)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Could not load this case.'));
   }, [apiKey, caseId]);
+
+  useEffect(() => {
+    if (!kase) return;
+    apiFetch<SubjectBadges>(`/v1/subjects/${kase.subject.id}/badges`, apiKey)
+      .then(setBadges)
+      .catch((e: unknown) => setBadgesError(e instanceof Error ? e.message : 'Could not load badges.'));
+  }, [apiKey, kase]);
 
   return (
     <>
@@ -65,7 +74,17 @@ function CaseDetail({ apiKey, caseId }: { apiKey: string; caseId: string }) {
       {kase && (
         <>
           <h1>{subjectName(kase.subject)}</h1>
+
+          <h2>Badges</h2>
+          {badgesError && <p className="error-text">{badgesError}</p>}
+          {!badgesError && !badges && <p className="lead">Loading badges…</p>}
+          {badges && <BadgesPanel badges={badges.badges} />}
+
           <dl className="detail-grid">
+            <dt>This case verifies</dt>
+            <dd>
+              {kase.claimType} <span className={`badge ${kase.level}`}>{kase.level}</span>
+            </dd>
             <dt>Status</dt>
             <dd>
               <span className={`badge ${kase.status}`}>{kase.status}</span>
@@ -116,5 +135,47 @@ function CaseDetail({ apiKey, caseId }: { apiKey: string; caseId: string }) {
         </>
       )}
     </>
+  );
+}
+
+const ALL_CLAIM_TYPES: SubjectBadges['badges'][number]['claimType'][] = [
+  'IDENTITY',
+  'DATE_OF_BIRTH',
+  'EDUCATION',
+  'EMPLOYMENT',
+];
+
+const CLAIM_TYPE_LABEL: Record<SubjectBadges['badges'][number]['claimType'], string> = {
+  IDENTITY: 'Identity',
+  DATE_OF_BIRTH: 'Date of birth',
+  EDUCATION: 'Education',
+  EMPLOYMENT: 'Employment',
+};
+
+/**
+ * One slot per ClaimType, always in the same order, so a subject's badge
+ * wall reads the same across cases — a claim with no passed case yet shows
+ * "Not verified" rather than disappearing, so it's clear it was checked for
+ * and not just absent from this particular case's policy.
+ */
+function BadgesPanel({ badges }: { badges: SubjectBadges['badges'] }) {
+  const byType = new Map(badges.map((b) => [b.claimType, b]));
+
+  return (
+    <div className="badges-panel">
+      {ALL_CLAIM_TYPES.map((claimType) => {
+        const badge = byType.get(claimType);
+        return (
+          <div key={claimType} className={`claim-badge${badge ? '' : ' unverified'}`}>
+            <span className="claim-name">{CLAIM_TYPE_LABEL[claimType]}</span>
+            {badge ? (
+              <span className={`badge ${badge.level}`}>{badge.level}</span>
+            ) : (
+              <span>Not verified</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
