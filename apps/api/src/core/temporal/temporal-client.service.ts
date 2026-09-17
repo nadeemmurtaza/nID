@@ -1,11 +1,11 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Connection, WorkflowClient } from '@temporalio/client';
 import {
-  OTP_VERIFICATION_WORKFLOW_TYPE,
-  submitOtpCodeSignal,
-  otpStatusQuery,
-  type OtpVerificationWorkflowInput,
-  type OtpVerificationOutcome,
+  VERIFICATION_WORKFLOW_TYPE,
+  submitMethodPayloadSignal,
+  verificationStatusQuery,
+  type VerificationWorkflowInput,
+  type VerificationOutcome,
 } from '@nid/workflow-contracts';
 
 /**
@@ -31,23 +31,24 @@ export class TemporalClientService implements OnModuleDestroy {
     });
   }
 
-  async startOtpVerification(workflowId: string, input: OtpVerificationWorkflowInput): Promise<void> {
+  async startVerification(workflowId: string, input: VerificationWorkflowInput): Promise<void> {
     const client = await this.getClient();
-    await client.start(OTP_VERIFICATION_WORKFLOW_TYPE, {
+    await client.start(VERIFICATION_WORKFLOW_TYPE, {
       workflowId,
       taskQueue: process.env['TEMPORAL_TASK_QUEUE'] ?? 'nid-verification',
       args: [input],
     });
   }
 
-  async submitOtpCode(workflowId: string, code: string): Promise<void> {
+  /** Forwards whatever the subject just submitted for the method the workflow is currently waiting on. */
+  async submitMethodPayload(workflowId: string, method: string, payload: Record<string, unknown>): Promise<void> {
     const client = await this.getClient();
-    await client.getHandle(workflowId).signal(submitOtpCodeSignal, code);
+    await client.getHandle(workflowId).signal(submitMethodPayloadSignal, { method, payload });
   }
 
-  async getOtpStatus(workflowId: string): Promise<OtpVerificationOutcome> {
+  async getVerificationStatus(workflowId: string): Promise<VerificationOutcome> {
     const client = await this.getClient();
-    return client.getHandle(workflowId).query(otpStatusQuery);
+    return client.getHandle(workflowId).query(verificationStatusQuery);
   }
 
   async onModuleDestroy(): Promise<void> {

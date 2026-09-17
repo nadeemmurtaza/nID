@@ -13,6 +13,7 @@
   "dependencies": {
     "@nid/db": "workspace:*",
     "@nid/shared-types": "workspace:*",
+    "@nid/storage": "workspace:*",
     "@nid/verification-providers": "workspace:*",
     "@nid/workflow-contracts": "workspace:*",
     "@temporalio/activity": "^1.11.0",

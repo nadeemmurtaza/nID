@@ -9,3 +9,6 @@ coverage/
 apps/api/generated/
 packages/db/generated/
 .DS_Store
+
+# Local-disk StorageDriver's uploads (@nid/storage) — document/selfie bytes, dev-only.
+storage-data/

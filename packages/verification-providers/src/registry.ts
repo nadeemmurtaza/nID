@@ -1,5 +1,7 @@
 import type { VerificationMethodProvider } from './types';
 import { OtpSmsProvider } from './otp-sms.provider';
+import { DocumentOcrProvider } from './document-ocr.provider';
+import { LivenessProvider } from './liveness.provider';
 
 /**
  * Every provider that exists in this codebase, regardless of whether a given
@@ -7,14 +9,20 @@ import { OtpSmsProvider } from './otp-sms.provider';
  * and one new file — never an `if (method === '...')` elsewhere
  * (docs/HOUSE-RULES.md rule 1).
  */
-function allProviders(devMode: boolean): VerificationMethodProvider[] {
-  return [new OtpSmsProvider(devMode)];
+function allProviders(options: VerificationProviderRegistryOptions): VerificationMethodProvider[] {
+  return [
+    new OtpSmsProvider(options.otpSmsDevMode),
+    new DocumentOcrProvider(options.documentOcrDevMode),
+    new LivenessProvider(options.livenessDevMode),
+  ];
 }
 
 export interface VerificationProviderRegistryOptions {
   /** Comma-separated allowlist, e.g. process.env.VERIFICATION_METHODS. */
   allowlist: string;
   otpSmsDevMode: boolean;
+  documentOcrDevMode: boolean;
+  livenessDevMode: boolean;
 }
 
 /**
@@ -33,7 +41,7 @@ export function buildVerificationProviderRegistry(
   );
 
   const registry = new Map<string, VerificationMethodProvider>();
-  for (const provider of allProviders(options.otpSmsDevMode)) {
+  for (const provider of allProviders(options)) {
     if (enabledKeys.has(provider.key)) {
       registry.set(provider.key, provider);
     }

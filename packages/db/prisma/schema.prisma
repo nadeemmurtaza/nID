@@ -28,6 +28,12 @@ enum CaseStatus {
   APPROVED
   REJECTED
   EXPIRED
+  /// A method attempt (document_ocr or liveness — otp_sms never returns
+  /// this) came back ambiguous rather than a clean pass/fail. No
+  /// case-review queue exists yet to act on this (docs/PHASES.md Phase 1) —
+  /// the case simply stops here instead of being silently forced into
+  /// APPROVED or REJECTED.
+  NEEDS_REVIEW
 }
 
 enum AttemptStatus {

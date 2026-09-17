@@ -1,11 +1,11 @@
-import { IsString } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 /**
- * Phase 0 only has one provider (otp_sms), so this DTO is shaped around it
- * directly rather than a generic `input: Record<string, unknown>` bag.
- * Phase 1 (document_ocr, liveness) is what forces this to generalize —
- * don't build that generalization ahead of the second method, per the
- * house style against premature abstraction.
+ * `phone` is the only method-specific input a policy can need at creation
+ * time — otp_sms sends to it immediately; document_ocr and liveness have
+ * nothing to send yet, the subject's next step is an upload, handled later
+ * by the document/liveness submit endpoints. Required only when the named
+ * policy's methods include otp_sms — see VerificationCasesService.create().
  */
 export class CreateVerificationCaseDto {
   @IsString()
@@ -14,6 +14,7 @@ export class CreateVerificationCaseDto {
   @IsString()
   policyName!: string;
 
+  @IsOptional()
   @IsString()
-  phone!: string;
+  phone?: string;
 }

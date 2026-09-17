@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from './core/db/prisma.module';
 import { AuditModule } from './core/audit/audit.module';
 import { TemporalClientModule } from './core/temporal/temporal-client.module';
+import { StorageModule } from './core/storage/storage.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { SubjectsModule } from './modules/subjects/subjects.module';
 import { VerificationCasesModule } from './modules/verification-cases/verification-cases.module';
@@ -14,6 +15,7 @@ import { OAuthModule } from './modules/oauth/oauth.module';
     PrismaModule,
     AuditModule,
     TemporalClientModule,
+    StorageModule,
     TenantsModule,
     SubjectsModule,
     VerificationCasesModule,

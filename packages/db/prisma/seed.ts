@@ -45,6 +45,20 @@ async function main(): Promise<void> {
         },
       });
 
+      // Phase 1: a real multi-method policy — otp_sms confirms the phone,
+      // then document_ocr + liveness do the actual identity check. Order
+      // matters: verification.workflow.ts runs methods.methods in array
+      // order and stops at the first FAILED/NEEDS_REVIEW.
+      await prisma.verificationPolicy.upsert({
+        where: { tenantId_name: { tenantId: tenant.id, name: 'kyc' } },
+        update: {},
+        create: {
+          tenantId: tenant.id,
+          name: 'kyc',
+          methods: ['otp_sms', 'document_ocr', 'liveness'],
+        },
+      });
+
       // A demo relying-party client, for exercising "Login with nID"
       // (apps/login-ui) without a real RP app — its callback is just
       // something a curl/test script can read the code back from.

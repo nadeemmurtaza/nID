@@ -14,18 +14,26 @@ internal Newax tool. See `docs/HOUSE-RULES.md` for engineering conventions and
   `AuditLogEntry`), plus a hand-written Postgres Row-Level Security migration that
   scopes every tenant-owned table to the session's `app.tenant_id`.
 - `packages/verification-providers` — the `VerificationMethodProvider` interface
-  (mirrors the `PaymentProvider` pattern in Newax's `erp-1`) and one real
-  implementation: `otp_sms`.
+  (mirrors the `PaymentProvider` pattern in Newax's `erp-1`) and three real
+  implementations: `otp_sms`, `document_ocr`, `liveness`.
+- `packages/storage` — a `StorageDriver` interface (mirrors erp-1's own) with one
+  real implementation, local disk, for document/selfie upload bytes — see
+  `docs/PHASES.md`'s KYC section for why apps/api and apps/workflows both need to
+  point at the same directory.
 - `apps/api` — NestJS control-plane: tenant/subject/verification-case REST endpoints
-  (API-key auth), a public `sessions` module (token-auth, for `apps/verify-ui`), and
+  (API-key auth, including multipart document/selfie upload routes), a public
+  `sessions` module (token-auth, for `apps/verify-ui`, same routes), and
   a Prisma service that sets the RLS session variable per request so tenant
   isolation is enforced by the database, not just application code.
-- `apps/workflows` — a Temporal worker with one workflow (`otpVerificationWorkflow`)
-  that runs the `otp_sms` activity. Later phases add more methods to the same
-  workflow via policy composition, not more workflows.
+- `apps/workflows` — a Temporal worker with one workflow (`verificationWorkflow`)
+  that loops over a policy's methods in order, dispatching each through whichever
+  provider it names — a single-method `["otp_sms"]` policy is this same
+  workflow's one-iteration case, not a separate implementation.
 - `apps/verify-ui` — the hosted, subject-facing verification flow (Next.js, no
-  login): enter the OTP code, see the result. Authenticates with a
-  `VerificationSession` token, never the tenant's API key — see below.
+  login): walks a multi-step policy (enter an OTP code, upload a document,
+  upload a selfie — whichever the policy names, in order) and shows the result.
+  Authenticates with a `VerificationSession` token, never the tenant's API key —
+  see below.
 - `apps/dashboard` — the tenant staff dashboard (Next.js): sign in with the tenant
   API key (pasted once, kept in `localStorage` — Phase 0 has no separate staff-login
   system), browse verification cases, view a case's attempts.
@@ -149,6 +157,15 @@ pnpm --filter @nid/login-ui dev    # in a fifth terminal: "Login with nID" at :3
 > tab — fixed by having only the *originating* tab (marked via a
 > `sessionStorage` flag `/authorize` sets before handing off) ever claim.
 > See the README section above on why that split exists.
+>
+> **The KYC path (document_ocr + liveness + multi-method policies) is
+> verified live the same way** — see `docs/PHASES.md`'s KYC section for the
+> full account: the generalized activities against real Postgres and a real
+> `@nid/storage` round trip, `apps/api`'s upload endpoints via curl with
+> byte-for-byte file verification on disk, and `apps/verify-ui`'s full
+> 3-step flow (including one genuine browser file upload) in real headless
+> Chromium. Also not verified: the Temporal orchestration layer, for the
+> same reason as everything else in this note.
 
 ## Phase 0 acceptance criteria
 
@@ -162,19 +179,20 @@ pnpm --filter @nid/login-ui dev    # in a fifth terminal: "Login with nID" at :3
    a Jest suite and via real HTTP requests against a running `apps/api`.
 3. **End-to-end OTP case, through a real Temporal server**: `POST
    /v1/verification-cases` with `{ subjectId, policyName: "standard", phone }`
-   starts the `otpVerificationWorkflow` (`policyName` must reference a
-   `VerificationPolicy` whose `methods` is exactly `["otp_sms"]` — Phase 0 has
-   only the one provider), the dev-mode `otp_sms` provider logs the code
-   instead of sending a real SMS, `POST .../otp/submit` with the correct code
-   resolves the case to `PASSED` via `verifyOtpActivity`, and the tenant's
-   webhook receiver gets an HMAC-signed callback verified with a constant-time
-   comparison. **Not verified against an actual Temporal server** (see note
-   above) — but every activity this workflow calls is proven directly by
-   `apps/workflows/test/otp-sms.activity.spec.ts` (`RUN_DB_TESTS=true`),
-   including the signed webhook delivery to a real HTTP receiver.
+   starts `verificationWorkflow` (`policyName` must reference a
+   `VerificationPolicy` whose `methods` includes `otp_sms`), the dev-mode
+   `otp_sms` provider logs the code instead of sending a real SMS, `POST
+   .../otp/submit` with the correct code resolves the case to `PASSED`, and
+   the tenant's webhook receiver gets an HMAC-signed callback verified with a
+   constant-time comparison. **Not verified against an actual Temporal
+   server** (see note above) — but every activity this workflow calls is
+   proven directly by
+   `apps/workflows/test/verification-method.activity.spec.ts`
+   (`RUN_DB_TESTS=true`), including the signed webhook delivery to a real
+   HTTP receiver.
 4. An `AuditLogEntry` row exists for the Subject-data read in step 3, not just the
-   write. **Verified** — `otp-sms.activity.spec.ts` asserts the `SYSTEM`-actor
-   audit row `resolveCase()` writes.
+   write. **Verified** — `verification-method.activity.spec.ts` asserts the
+   `SYSTEM`-actor audit row `resolveCaseActivity()` writes.
 5. **"Login with nID"**: an RP's `/authorize?client_id&redirect_uri&state` link
    creates a `PENDING` `OAuthLoginRequest`; signing in with phone + OTP (same
    device or, via the QR code of the identical URL, a different one) resolves
@@ -184,6 +202,37 @@ pnpm --filter @nid/login-ui dev    # in a fifth terminal: "Login with nID" at :3
    `{ id, phone, email, phoneVerifiedAt }`. A wrong `redirect_uri`, wrong OTP,
    double claim, replayed code, or wrong client secret are all rejected.
    **Verified live** — see the note above.
+
+## Phase 1 acceptance criteria (KYC)
+
+See `docs/PHASES.md`'s "KYC: document_ocr, liveness, and multi-method
+policies" section for the full architecture and what was verified live —
+summarized:
+
+1. A tenant creates a case against a multi-method policy (`pnpm db:seed`
+   seeds `"kyc"`: `["otp_sms", "document_ocr", "liveness"]`) and gets back
+   one `VerificationMethodAttempt` per method, in policy order.
+   **Verified live** via curl against a running `apps/api` and real
+   Postgres.
+2. The subject completes each method in order — OTP code, then a document
+   upload, then a selfie upload — through `apps/verify-ui`, which shows the
+   right step and advances automatically as each resolves. **Verified
+   live** in real headless Chromium (Playwright), including one genuine
+   browser file upload through `<input type="file">`.
+3. An upload is real, working storage: the file lands on disk at
+   `LOCAL_STORAGE_DIR`, byte-for-byte identical to what was sent, with a
+   `DocumentAsset` row pointing at it — never the raw bytes anywhere in
+   Postgres or Temporal. **Verified live**.
+4. A method that returns `NEEDS_REVIEW` (document_ocr/liveness's dev-mode
+   provider supports a `mockOutcome` override for exactly this) stops the
+   case there rather than silently passing or failing it.
+   **Verified** via `verification-method.activity.spec.ts` and
+   `apps/verify-ui`'s terminal view.
+5. A multi-method case is not resolved (`APPROVED`/webhook fired) until
+   every method has run. **Verified** via
+   `verification-method.activity.spec.ts`'s multi-method test, which calls
+   the same activities in the same order `verificationWorkflow` does and
+   asserts the case is still `IN_REVIEW` partway through.
 
 ## Repo layout
 
@@ -198,6 +247,7 @@ nID/
   packages/
     db/             Prisma schema, RLS migrations, seed script
     verification-providers/   one file per VerificationMethodProvider
+    storage/        StorageDriver interface + local-disk implementation
     shared-types/
     workflow-contracts/       signal/query/workflow-type names shared by api <-> workflows
   docs/

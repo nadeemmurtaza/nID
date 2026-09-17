@@ -1,10 +1,17 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { ApiKeyGuard } from '../../core/auth/api-key.guard';
 import { CurrentTenant } from '../../core/auth/current-tenant.decorator';
 import type { AuthenticatedTenant } from '../../core/auth/types';
 import { CreateVerificationCaseDto } from './dto/create-verification-case.dto';
 import { SubmitOtpDto } from './dto/submit-otp.dto';
 import { VerificationCasesService } from './verification-cases.service';
+
+const uploadInterceptor = FileInterceptor('file', {
+  storage: memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 @UseGuards(ApiKeyGuard)
 @Controller('v1/verification-cases')
@@ -33,5 +40,39 @@ export class VerificationCasesController {
     @Body() dto: SubmitOtpDto,
   ) {
     return this.cases.submitOtpCode(tenant.tenantId, tenant.apiKeyId, id, dto.code);
+  }
+
+  @Post(':id/document/submit')
+  @UseInterceptors(uploadInterceptor)
+  submitDocument(
+    @CurrentTenant() tenant: AuthenticatedTenant,
+    @Param('id') id: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded — expected multipart field "file".');
+    }
+    return this.cases.submitDocument(tenant.tenantId, tenant.apiKeyId, id, {
+      buffer: file.buffer,
+      contentType: file.mimetype,
+      filename: file.originalname,
+    });
+  }
+
+  @Post(':id/liveness/submit')
+  @UseInterceptors(uploadInterceptor)
+  submitLiveness(
+    @CurrentTenant() tenant: AuthenticatedTenant,
+    @Param('id') id: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded — expected multipart field "file".');
+    }
+    return this.cases.submitLiveness(tenant.tenantId, tenant.apiKeyId, id, {
+      buffer: file.buffer,
+      contentType: file.mimetype,
+      filename: file.originalname,
+    });
   }
 }

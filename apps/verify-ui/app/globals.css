@@ -150,3 +150,23 @@ button:disabled {
   line-height: 1;
   margin-bottom: 12px;
 }
+
+.step {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0 0 10px;
+}
+
+input[type='file'] {
+  width: 100%;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  background: var(--bg);
+  margin-bottom: 12px;
+}
