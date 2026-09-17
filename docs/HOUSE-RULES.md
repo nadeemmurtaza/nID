@@ -29,14 +29,20 @@ policy in the same migration that creates it — not a follow-up.
 
 This only holds if `apps/api` connects as the `nid_app` role
 (`APP_DATABASE_URL`), not the migration/seed role (`DATABASE_URL`, the
-Postgres superuser, which bypasses RLS unconditionally). Two tables have a
+Postgres superuser, which bypasses RLS unconditionally). Four tables have a
 deliberate, documented exception — open `SELECT` for bootstrap, scoped
 writes — because each has to be resolved by an unscoped lookup before
-`app.tenant_id` can be set: `TenantApiKey` (an API-key auth check) and
+`app.tenant_id` can be set: `TenantApiKey` (an API-key auth check),
 `VerificationSession` (a subject-facing session token, for `apps/verify-ui`
-— see `packages/db/prisma/migrations/001_verification_sessions`). Adding a
-third table that needs this same bootstrap shape should reuse the pattern,
-not invent a new one — see either migration file for why it's safe.
+— see `packages/db/prisma/migrations/001_verification_sessions`), and
+`OAuthClient`/`OAuthLoginRequest` (resolving a "Login with nID" attempt by
+its public `clientId` or `pollTokenHash`, for `apps/login-ui` — see
+`.../migrations/20260917195555_accounts_and_oauth`). `Account`,
+`AccountOtpCode`, and `AccountSession` are a different case again — no
+tenantId at all, so no tenant RLS policy applies to them, full stop; see
+`schema.prisma`'s comment on that section. Adding another table that needs
+the bootstrap shape should reuse the open-SELECT pattern, not invent a new
+one — see any of the migration files above for why it's safe.
 
 ## 3. Every read of Subject PII is audited, not just every write
 

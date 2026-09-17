@@ -6,6 +6,8 @@ import { TenantsModule } from './modules/tenants/tenants.module';
 import { SubjectsModule } from './modules/subjects/subjects.module';
 import { VerificationCasesModule } from './modules/verification-cases/verification-cases.module';
 import { SessionsModule } from './modules/sessions/sessions.module';
+import { AccountsModule } from './modules/accounts/accounts.module';
+import { OAuthModule } from './modules/oauth/oauth.module';
 
 @Module({
   imports: [
@@ -16,6 +18,8 @@ import { SessionsModule } from './modules/sessions/sessions.module';
     SubjectsModule,
     VerificationCasesModule,
     SessionsModule,
+    AccountsModule,
+    OAuthModule,
   ],
 })
 export class AppModule {}

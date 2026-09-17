@@ -61,12 +61,13 @@ model Tenant {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  apiKeys    TenantApiKey[]
-  policies   VerificationPolicy[]
-  subjects   Subject[]
-  cases      VerificationCase[]
-  sessions   VerificationSession[]
-  auditLogs  AuditLogEntry[]
+  apiKeys      TenantApiKey[]
+  policies     VerificationPolicy[]
+  subjects     Subject[]
+  cases        VerificationCase[]
+  sessions     VerificationSession[]
+  auditLogs    AuditLogEntry[]
+  oauthClients OAuthClient[]
 }
 
 model TenantApiKey {
@@ -266,4 +267,110 @@ model AuditLogEntry {
 
   @@index([tenantId])
   @@index([tenantId, subjectId])
+}
+
+// ── Accounts & "Login with nID" ─────────────────────────────────────────
+//
+// A different trust domain from everything above: Subject/VerificationCase
+// exist because a TENANT is verifying someone for that tenant's own
+// purposes. Account is nID's own namespace — a portable identity a person
+// creates once (phone + OTP, passwordless) and reuses to sign into any
+// relying-party app via "Login with nID", the same way a Google account
+// isn't owned by any one app that accepts it.
+//
+// Account/AccountOtpCode/AccountSession carry no tenantId and get no RLS
+// tenant policy — the multi-tenant isolation this migration builds doesn't
+// apply to them, the same way it doesn't apply to Tenant's own self-only
+// policy. Access control is the API layer requiring a valid OTP or session
+// token, not a Postgres policy keyed on a tenant nothing here belongs to.
+
+model Account {
+  id              String    @id @default(cuid())
+  phone           String    @unique
+  email           String?   @unique
+  phoneVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  sessions      AccountSession[]
+  loginRequests OAuthLoginRequest[]
+}
+
+/// One OTP challenge for signing up or logging into an Account. Verifying
+/// the first OTP ever sent to a phone number creates the Account —
+/// "sign up" and "log in" are the same operation, not two flows.
+model AccountOtpCode {
+  id         String    @id @default(cuid())
+  phone      String
+  codeHash   String
+  consumedAt DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+
+  @@index([phone])
+}
+
+model AccountSession {
+  id        String   @id @default(cuid())
+  accountId String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+}
+
+/// A relying-party app registered to accept "Login with nID" — tenant-owned
+/// (the same Tenant that verifies identities via the API can let its own
+/// users log in with nID), analogous to TenantApiKey but for this flow
+/// instead of the verification API. clientSecretHash is presented only by
+/// the RP's own backend at POST /v1/oauth/token, never by a browser.
+model OAuthClient {
+  id               String   @id @default(cuid())
+  tenantId         String
+  name             String
+  clientId         String   @unique
+  clientSecretHash String
+  redirectUris     String[]
+  createdAt        DateTime @default(now())
+
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  loginRequests OAuthLoginRequest[]
+
+  @@index([tenantId])
+}
+
+enum LoginRequestStatus {
+  PENDING
+  APPROVED
+  EXPIRED
+}
+
+/// One "Login with nID" attempt. apps/login-ui delivers the SAME approval
+/// link two ways — a clickable URL for a same-device login, a QR code of
+/// that same URL for a cross-device one — so this table doesn't model "url"
+/// vs "qr" as different flows, only PENDING -> APPROVED -> code consumed.
+model OAuthLoginRequest {
+  id             String             @id @default(cuid())
+  tenantId       String
+  clientId       String
+  redirectUri    String
+  state          String?
+  status         LoginRequestStatus @default(PENDING)
+  accountId      String?
+  /// What the URL/QR encode and what GET .../:pollToken polls with.
+  pollTokenHash  String             @unique
+  /// One-time code minted on approval; POST /v1/oauth/token consumes it.
+  codeHash       String?            @unique
+  codeConsumedAt DateTime?
+  createdAt      DateTime           @default(now())
+  expiresAt      DateTime
+
+  client  OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  account Account?    @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([clientId])
 }

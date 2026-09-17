@@ -29,7 +29,40 @@ internal Newax tool. See `docs/HOUSE-RULES.md` for engineering conventions and
 - `apps/dashboard` — the tenant staff dashboard (Next.js): sign in with the tenant
   API key (pasted once, kept in `localStorage` — Phase 0 has no separate staff-login
   system), browse verification cases, view a case's attempts.
+- **"Login with nID"** — nID as an identity provider other apps embed a button
+  for, the way Google/Facebook/oneID.uz work. `Account`/`AccountSession`
+  (`packages/db/prisma/schema.prisma`) are a portable identity a person creates
+  once, passwordless (phone + OTP — "sign up" and "log in" are the same
+  operation), and reuses across any relying-party app, distinct from `Subject`
+  (owned by one tenant for that tenant's own KYC). `OAuthClient` is a
+  tenant-owned RP registration; `OAuthLoginRequest` is one sign-in attempt. A
+  simplified redirect-code flow, not full OAuth2/OIDC — see
+  `apps/api/src/modules/oauth/oauth.service.ts`'s header comment for exactly
+  what's deliberately not built (PKCE, signed JWT ID tokens, a discovery
+  document) and why that's enough for a Phase-0-scale integration.
+- `apps/login-ui` — the page an RP's "Continue with nID" button sends a browser
+  to. One approval link, delivered two ways: a same-device phone+OTP form, or a
+  QR code of that *same* URL for a cross-device scan — see below for why that's
+  one flow, not two.
 - Root `eslint.config.mjs`, wired into every package's `pnpm lint`.
+
+### "URL or QR code, both" is one link, not two flows
+
+`apps/login-ui`'s `/authorize/[pollToken]` page is reachable two ways — a
+same-device redirect, or a QR code encoding that exact URL for a phone to
+scan — and neither is special-cased in the backend. What *is* special-cased:
+**which tab is allowed to redirect back to the RP.** `OAuthService.approve()`
+(called by whichever device just authenticated) never mints the exchange
+code; `OAuthService.claim()` (called by whichever tab has been polling since
+the link was first opened) does. In the same-device case those are the same
+tab. In the cross-device case they're not — the phone that scans the QR and
+approves must **not** also claim, or it would grab the code the desktop tab
+(the one actually driving the RP's browser session) needs. `apps/login-ui`
+tells the two apart with a `sessionStorage` flag set only by the tab that
+*originated* the request (`/authorize` before it hands off to
+`/authorize/[pollToken]`) — a fresh device reached via QR never has it. This
+was a real bug caught by testing, not a hypothetical: see the Playwright note
+below.
 
 ### Why `apps/verify-ui` needed a new backend concept
 
@@ -60,6 +93,7 @@ pnpm --filter @nid/api dev
 pnpm --filter @nid/workflows dev   # in a second terminal: starts the Temporal worker
 pnpm --filter @nid/verify-ui dev   # in a third terminal: hosted flow at :3100
 pnpm --filter @nid/dashboard dev   # in a fourth terminal: staff dashboard at :3200
+pnpm --filter @nid/login-ui dev    # in a fifth terminal: "Login with nID" at :3300
 ```
 
 > **What's actually been run, and where it was verified.** The sandbox this
@@ -94,6 +128,27 @@ pnpm --filter @nid/dashboard dev   # in a fourth terminal: staff dashboard at :3
 > bad API key with a clear error, accept the real one, list cases with correct
 > status badges, open a case's detail and attempts table, and reload the page to
 > confirm the `localStorage` session survives a refresh.
+>
+> **"Login with nID" is verified live end to end, including the cross-device
+> QR path** — not just rendered, the whole thing: a curl-driven pass through
+> every `apps/api/src/modules/oauth` endpoint (bad `redirect_uri` rejected,
+> wrong OTP code rejected, double-claim rejected, code replay rejected, wrong
+> client secret rejected, a correct run producing real identity claims), then
+> two full Playwright passes against a real `apps/login-ui` and a throwaway
+> local HTTP server standing in for an RP's callback. The same-device pass
+> fills the phone+OTP form and follows the redirect back to the RP with
+> `code`/`state` intact. The cross-device pass is the real test: two
+> *separate, non-cookie-sharing* Playwright browser contexts — one opens the
+> RP link and gets the QR ("desktop"), the other decodes the actual QR image
+> (via `jsqr`) and opens that URL fresh ("phone"), logs in there, and
+> approves. The desktop context, which never touched the phone's login at
+> all, detects the approval through its own polling and redirects itself to
+> the RP with a valid code. This pass is what caught a real bug before it
+> shipped: the first version let *any* tab that approved also claim the
+> code, so the phone would occasionally win the race and strand the desktop
+> tab — fixed by having only the *originating* tab (marked via a
+> `sessionStorage` flag `/authorize` sets before handing off) ever claim.
+> See the README section above on why that split exists.
 
 ## Phase 0 acceptance criteria
 
@@ -120,16 +175,26 @@ pnpm --filter @nid/dashboard dev   # in a fourth terminal: staff dashboard at :3
 4. An `AuditLogEntry` row exists for the Subject-data read in step 3, not just the
    write. **Verified** — `otp-sms.activity.spec.ts` asserts the `SYSTEM`-actor
    audit row `resolveCase()` writes.
+5. **"Login with nID"**: an RP's `/authorize?client_id&redirect_uri&state` link
+   creates a `PENDING` `OAuthLoginRequest`; signing in with phone + OTP (same
+   device or, via the QR code of the identical URL, a different one) resolves
+   it to `APPROVED`; the tab that originated the request — and only that one —
+   claims a one-time code and redirects to `redirect_uri?code&state`; the RP's
+   backend exchanges it at `POST /v1/oauth/token` with its `client_secret` for
+   `{ id, phone, email, phoneVerifiedAt }`. A wrong `redirect_uri`, wrong OTP,
+   double claim, replayed code, or wrong client secret are all rejected.
+   **Verified live** — see the note above.
 
 ## Repo layout
 
 ```
 nID/
   apps/
-    api/            NestJS control-plane: tenants, subjects, cases, sessions, webhooks
+    api/            NestJS control-plane: tenants, subjects, cases, sessions, accounts, oauth, webhooks
     workflows/      Temporal worker: workflows + verification-method-provider activities
     verify-ui/      Hosted, subject-facing verification flow (Next.js, no login)
     dashboard/      Tenant staff dashboard (Next.js, API-key auth)
+    login-ui/       "Login with nID" — the page an RP's button sends a browser to
   packages/
     db/             Prisma schema, RLS migrations, seed script
     verification-providers/   one file per VerificationMethodProvider

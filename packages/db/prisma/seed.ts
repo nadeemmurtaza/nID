@@ -1,4 +1,5 @@
-import { generateApiKey } from '@nid/shared-types';
+import { randomBytes } from 'node:crypto';
+import { generateApiKey, generateSessionToken, sha256Hex } from '@nid/shared-types';
 import { createPrismaClient } from '../src/index';
 
 /**
@@ -43,6 +44,28 @@ async function main(): Promise<void> {
           methods: ['otp_sms'],
         },
       });
+
+      // A demo relying-party client, for exercising "Login with nID"
+      // (apps/login-ui) without a real RP app — its callback is just
+      // something a curl/test script can read the code back from.
+      const existingClient = await prisma.oAuthClient.findFirst({ where: { tenantId: tenant.id } });
+      if (!existingClient) {
+        const clientId = `client_test_${randomBytes(8).toString('hex')}`;
+        const secret = generateSessionToken();
+        await prisma.oAuthClient.create({
+          data: {
+            tenantId: tenant.id,
+            name: 'Demo RP',
+            clientId,
+            clientSecretHash: sha256Hex(secret.plaintext),
+            redirectUris: ['http://localhost:5000/callback'],
+          },
+        });
+        // Dev-only: the plaintext secret is never recoverable after this,
+        // and never stored — this is the one and only place it is printed.
+        // eslint-disable-next-line no-console
+        console.log(`${tenant.slug} OAuth client: ${clientId} / ${secret.plaintext}`);
+      }
     }
   }
 
