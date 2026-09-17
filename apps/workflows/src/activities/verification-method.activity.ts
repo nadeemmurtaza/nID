@@ -30,6 +30,14 @@ const registry = buildVerificationProviderRegistry({
   livenessDevMode: process.env['LIVENESS_DEV_MODE'] === 'true',
   claimDocumentDevMode: process.env['CLAIM_DOCUMENT_DEV_MODE'] === 'true',
   registryCheckDevMode: process.env['REGISTRY_CHECK_DEV_MODE'] === 'true',
+  educationRegistryConfig: {
+    apiUrl: process.env['EDUCATION_REGISTRY_API_URL'],
+    apiKey: process.env['EDUCATION_REGISTRY_API_KEY'],
+  },
+  employmentRegistryConfig: {
+    apiUrl: process.env['EMPLOYMENT_REGISTRY_API_URL'],
+    apiKey: process.env['EMPLOYMENT_REGISTRY_API_KEY'],
+  },
 });
 // Local-disk only today — apps/api writes an upload here, this Activity
 // reads it back, both pointed at the same LOCAL_STORAGE_DIR. See

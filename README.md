@@ -20,6 +20,13 @@ internal Newax tool. See `docs/HOUSE-RULES.md` for engineering conventions and
   `education_document`, `employment_document`), and `RegistryCheckProvider`
   (`education_registry`, `employment_registry` — resolves synchronously, no
   subject upload involved).
+- `packages/ocr-engine` — real, self-hosted document OCR (Tesseract via
+  `tesseract.js`) plus ICAO 9303 MRZ checksum validation for passports/IDs.
+  No vendor API key, no per-call cost. `ImageClaimProvider`'s production
+  path calls this instead of throwing "no vendor wired up" — see
+  `docs/PHASES.md`'s OCR section for what's genuinely solved (reading a
+  document) versus what still isn't (fraud/tamper ML detection, a real
+  multi-year vendor-shaped investment).
 - `packages/storage` — a `StorageDriver` interface (mirrors erp-1's own) with one
   real implementation, local disk, for document/selfie upload bytes — see
   `docs/PHASES.md`'s KYC section for why apps/api and apps/workflows both need to
@@ -287,6 +294,7 @@ nID/
   packages/
     db/             Prisma schema, RLS migrations, seed script
     verification-providers/   one file per VerificationMethodProvider
+    ocr-engine/     Real Tesseract OCR + ICAO 9303 MRZ checksum validation
     storage/        StorageDriver interface + local-disk implementation
     shared-types/
     workflow-contracts/       signal/query/workflow-type names shared by api <-> workflows

@@ -1,6 +1,16 @@
 import { ImageClaimProvider } from './image-claim.provider';
 import type { VerificationContext } from './types';
 
+// Mocked here so this stays a fast, isolated unit test of the devMode
+// wiring — evaluateDocument's real behavior (Tesseract OCR + MRZ checksum
+// validation) is proven for real against the published ICAO 9303 worked
+// example in @nid/ocr-engine's own tests, and against a real generated
+// image in the live validation pass (see docs/PHASES.md).
+jest.mock('@nid/ocr-engine', () => ({
+  evaluateDocument: jest.fn(),
+}));
+const { evaluateDocument } = jest.requireMock('@nid/ocr-engine') as { evaluateDocument: jest.Mock };
+
 describe('ImageClaimProvider', () => {
   const context: VerificationContext = {
     caseId: 'case_1',
@@ -66,10 +76,34 @@ describe('ImageClaimProvider', () => {
     expect(result.raw).toMatchObject({ reason: 'unsupported_content_type' });
   });
 
-  it('handleCallback throws in production mode, where no real vendor is wired up yet', async () => {
+  it('handleCallback in production mode runs the real OCR pipeline and passes its result through', async () => {
+    evaluateDocument.mockResolvedValueOnce({
+      status: 'PASSED',
+      raw: { engine: 'tesseract+mrz', mrz: { documentNumber: 'L898902C3' } },
+    });
+
     const provider = new ImageClaimProvider('education_document', 'Education document', false);
-    await expect(
-      provider.handleCallback({ imageBytes: Buffer.from('bytes'), contentType: 'image/jpeg' }),
-    ).rejects.toThrow(/education_document: no production document-verification vendor/);
+    const imageBytes = Buffer.from('real image bytes would go here');
+    const result = await provider.handleCallback({ imageBytes, contentType: 'image/jpeg' });
+
+    expect(evaluateDocument).toHaveBeenCalledWith(imageBytes);
+    expect(result.status).toBe('PASSED');
+    expect(result.verified).toBe(true);
+    expect(result.raw).toMatchObject({ engine: 'tesseract+mrz' });
+  });
+
+  it('propagates a NEEDS_REVIEW result from the real pipeline unchanged', async () => {
+    evaluateDocument.mockResolvedValueOnce({
+      status: 'NEEDS_REVIEW',
+      raw: { engine: 'tesseract', reason: 'no_mrz_manual_review_required' },
+    });
+
+    const provider = new ImageClaimProvider('employment_document', 'Employment document', false);
+    const result = await provider.handleCallback({
+      imageBytes: Buffer.from('bytes'),
+      contentType: 'image/jpeg',
+    });
+
+    expect(result.status).toBe('NEEDS_REVIEW');
   });
 });

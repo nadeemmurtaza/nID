@@ -35,8 +35,98 @@ describe('RegistryCheckProvider', () => {
     expect(provider.label).toBe('Employment registry check');
   });
 
-  it('throws in production mode, where no real registry vendor is wired up for either ClaimType yet', async () => {
+  it('throws in production mode when no apiUrl/apiKey is configured for this method', async () => {
     const provider = new RegistryCheckProvider('education_registry', 'Education registry check', false);
-    await expect(provider.start(context)).rejects.toThrow(/education_registry: no production registry vendor/);
+    await expect(provider.start(context)).rejects.toThrow(/education_registry: no registry API configured/);
+  });
+
+  describe('production mode with a configured registry API', () => {
+    const originalFetch = global.fetch;
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('POSTs the generic contract and passes through a PASSED result', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ status: 'PASSED', score: 0.9, raw: { institution: 'Test University' } }),
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const provider = new RegistryCheckProvider('education_registry', 'Education registry check', false, {
+        apiUrl: 'https://registry.example.test/checks',
+        apiKey: 'test-key',
+      });
+      const result = await provider.start(context);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://registry.example.test/checks',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ authorization: 'Bearer test-key' }),
+        }),
+      );
+      const sentBody = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      expect(sentBody).toMatchObject({ method: 'education_registry', referenceId: 'STU-12345' });
+
+      expect('pending' in result).toBe(false);
+      if ('pending' in result) return;
+      expect(result.status).toBe('PASSED');
+      expect(result.verified).toBe(true);
+      expect(result.raw).toMatchObject({ source: 'registry_api', institution: 'Test University' });
+    });
+
+    it('is unverified, not a genuine FAILED, when the registry is unreachable', async () => {
+      global.fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED')) as unknown as typeof fetch;
+
+      const provider = new RegistryCheckProvider('employment_registry', 'Employment registry check', false, {
+        apiUrl: 'https://registry.example.test/checks',
+        apiKey: 'test-key',
+      });
+      const result = await provider.start(context);
+
+      expect('pending' in result).toBe(false);
+      if ('pending' in result) return;
+      expect(result.status).toBe('FAILED');
+      expect(result.verified).toBe(false);
+      expect(result.raw).toMatchObject({ reason: 'registry_unreachable' });
+    });
+
+    it('rejects a malformed registry response rather than trusting it', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ unexpected: 'shape' }),
+      }) as unknown as typeof fetch;
+
+      const provider = new RegistryCheckProvider('education_registry', 'Education registry check', false, {
+        apiUrl: 'https://registry.example.test/checks',
+        apiKey: 'test-key',
+      });
+      const result = await provider.start(context);
+
+      expect('pending' in result).toBe(false);
+      if ('pending' in result) return;
+      expect(result.status).toBe('FAILED');
+      expect(result.verified).toBe(false);
+      expect(result.raw).toMatchObject({ reason: 'malformed_registry_response' });
+    });
+
+    it('fails closed on a missing referenceId instead of calling the registry at all', async () => {
+      const fetchMock = jest.fn();
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const provider = new RegistryCheckProvider('education_registry', 'Education registry check', false, {
+        apiUrl: 'https://registry.example.test/checks',
+        apiKey: 'test-key',
+      });
+      const result = await provider.start({ ...context, input: {} });
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect('pending' in result).toBe(false);
+      if ('pending' in result) return;
+      expect(result.status).toBe('FAILED');
+      expect(result.verified).toBe(false);
+      expect(result.raw).toMatchObject({ reason: 'missing_reference_id' });
+    });
   });
 });

@@ -2,7 +2,7 @@ import type { VerificationMethodProvider } from './types';
 import { OtpSmsProvider } from './otp-sms.provider';
 import { ImageClaimProvider } from './image-claim.provider';
 import { LivenessProvider } from './liveness.provider';
-import { RegistryCheckProvider } from './registry-check.provider';
+import { RegistryCheckProvider, type RegistryCheckConfig } from './registry-check.provider';
 
 /**
  * Every provider that exists in this codebase, regardless of whether a given
@@ -19,8 +19,18 @@ function allProviders(options: VerificationProviderRegistryOptions): Verificatio
     new ImageClaimProvider('dob_document', 'Date of birth document', options.claimDocumentDevMode),
     new ImageClaimProvider('education_document', 'Education document', options.claimDocumentDevMode),
     new ImageClaimProvider('employment_document', 'Employment document', options.claimDocumentDevMode),
-    new RegistryCheckProvider('education_registry', 'Education registry check', options.registryCheckDevMode),
-    new RegistryCheckProvider('employment_registry', 'Employment registry check', options.registryCheckDevMode),
+    new RegistryCheckProvider(
+      'education_registry',
+      'Education registry check',
+      options.registryCheckDevMode,
+      options.educationRegistryConfig,
+    ),
+    new RegistryCheckProvider(
+      'employment_registry',
+      'Employment registry check',
+      options.registryCheckDevMode,
+      options.employmentRegistryConfig,
+    ),
   ];
 }
 
@@ -34,6 +44,10 @@ export interface VerificationProviderRegistryOptions {
   claimDocumentDevMode: boolean;
   /** Shared by education_registry / employment_registry — same mechanism, one toggle. */
   registryCheckDevMode: boolean;
+  /** EDUCATION_REGISTRY_API_URL / EDUCATION_REGISTRY_API_KEY — ignored while registryCheckDevMode is true. */
+  educationRegistryConfig?: RegistryCheckConfig;
+  /** EMPLOYMENT_REGISTRY_API_URL / EMPLOYMENT_REGISTRY_API_KEY — ignored while registryCheckDevMode is true. */
+  employmentRegistryConfig?: RegistryCheckConfig;
 }
 
 /**

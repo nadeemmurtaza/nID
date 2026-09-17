@@ -1,5 +1,14 @@
 import type { VerificationMethodProvider, VerificationContext, VerificationResult, PendingResult } from './types';
-import { isValidMockOutcome, mockScoreFor } from './mock-outcome';
+import { isValidMockOutcome, mockScoreFor, type MockOutcome } from './mock-outcome';
+
+export interface RegistryCheckConfig {
+  /** e.g. EDUCATION_REGISTRY_API_URL / EMPLOYMENT_REGISTRY_API_URL. */
+  apiUrl?: string;
+  /** e.g. EDUCATION_REGISTRY_API_KEY / EMPLOYMENT_REGISTRY_API_KEY. */
+  apiKey?: string;
+}
+
+const VALID_STATUSES: ReadonlySet<string> = new Set<MockOutcome>(['PASSED', 'FAILED', 'NEEDS_REVIEW']);
 
 /**
  * Confirms a claim against an authoritative third-party source — a
@@ -11,35 +20,111 @@ import { isValidMockOutcome, mockScoreFor } from './mock-outcome';
  * than waiting on a subject upload; handleCallback is never used, exactly
  * like otp_sms's synchronous missing-phone failure path.
  *
- * In production this should call a real registry/employer API (National
- * Student Clearinghouse-class for education, Truework-class for
- * employment — docs/PHASES.md's "buy, don't build" decision, which for
- * these two ClaimTypes hasn't happened at all yet: no real vendor exists
- * behind either key today, unlike document_ocr which at least has a vendor
- * category picked out). `devMode` (the only mode implemented here) returns
- * a mocked result instead.
+ * Neither National Student Clearinghouse nor Truework/The Work Number
+ * offer self-serve signup — both require an actual institutional or
+ * business agreement, which no amount of code produces. What IS real here:
+ * a generic HTTP client against a contract this codebase defines itself —
+ *
+ *   POST {apiUrl}
+ *   Authorization: Bearer {apiKey}
+ *   { "method": "education_registry" | "employment_registry",
+ *     "referenceId": string, "subjectId": string, "tenantId": string }
+ *   -> { "status": "PASSED" | "FAILED" | "NEEDS_REVIEW", "score"?: number, "raw"?: object }
+ *
+ * — so the moment a real agreement exists with any vendor, either point
+ * apiUrl straight at it if it already speaks this shape, or put a thin
+ * translating adapter in front of it. No code here needs to change either
+ * way; only the env vars do.
  */
 export class RegistryCheckProvider implements VerificationMethodProvider {
   constructor(
     readonly key: string,
     readonly label: string,
     private readonly devMode: boolean,
+    private readonly config: RegistryCheckConfig = {},
   ) {}
 
   async start(context: VerificationContext): Promise<VerificationResult | PendingResult> {
-    if (!this.devMode) {
+    if (this.devMode) {
+      const rawMockOutcome = context.input['mockOutcome'];
+      const status = isValidMockOutcome(rawMockOutcome) ? rawMockOutcome : 'PASSED';
+      return {
+        status,
+        score: mockScoreFor(status),
+        raw: { mode: 'dev_mock', referenceId: context.input['referenceId'] ?? null },
+        verified: true,
+      };
+    }
+
+    return this.callRegistry(context);
+  }
+
+  private async callRegistry(context: VerificationContext): Promise<VerificationResult> {
+    if (!this.config.apiUrl || !this.config.apiKey) {
       throw new Error(
-        `${this.key}: no production registry vendor wired up yet. Enable this provider's dev-mode env var for local/dev use, or implement start() against a real registry/employer API before deploying.`,
+        `${this.key}: no registry API configured. Set the matching *_REGISTRY_API_URL and *_REGISTRY_API_KEY ` +
+          `env vars for whichever vendor/aggregator you've actually contracted with, or enable this provider's ` +
+          `dev-mode env var for local/dev use.`,
       );
     }
 
-    const rawMockOutcome = context.input['mockOutcome'];
-    const status = isValidMockOutcome(rawMockOutcome) ? rawMockOutcome : 'PASSED';
-    return {
-      status,
-      score: mockScoreFor(status),
-      raw: { mode: 'dev_mock', referenceId: context.input['referenceId'] ?? null },
-      verified: true,
-    };
+    const referenceId = context.input['referenceId'];
+    if (typeof referenceId !== 'string' || referenceId.length === 0) {
+      return { status: 'FAILED', raw: { reason: 'missing_reference_id' }, verified: false };
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(this.config.apiUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${this.config.apiKey}` },
+        body: JSON.stringify({
+          method: this.key,
+          referenceId,
+          subjectId: context.subjectId,
+          tenantId: context.tenantId,
+        }),
+      });
+    } catch (err) {
+      // Unreachable/network failure is not proof the claim is false —
+      // unverified, not a genuine FAILED, same distinction otp_sms draws
+      // for a malformed callback.
+      return {
+        status: 'FAILED',
+        raw: { reason: 'registry_unreachable', message: err instanceof Error ? err.message : String(err) },
+        verified: false,
+      };
+    }
+
+    if (!response.ok) {
+      return { status: 'FAILED', raw: { reason: 'registry_error_response', httpStatus: response.status }, verified: false };
+    }
+
+    const body: unknown = await response.json().catch(() => null);
+    const parsed = parseRegistryResponse(body);
+    if (!parsed) {
+      return { status: 'FAILED', raw: { reason: 'malformed_registry_response' }, verified: false };
+    }
+
+    return { status: parsed.status, score: parsed.score, raw: { source: 'registry_api', ...parsed.raw }, verified: true };
   }
+}
+
+interface ParsedRegistryResponse {
+  status: 'PASSED' | 'FAILED' | 'NEEDS_REVIEW';
+  score?: number;
+  raw: Record<string, unknown>;
+}
+
+function parseRegistryResponse(body: unknown): ParsedRegistryResponse | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const status = (body as Record<string, unknown>)['status'];
+  if (typeof status !== 'string' || !VALID_STATUSES.has(status)) return null;
+  const score = (body as Record<string, unknown>)['score'];
+  const raw = (body as Record<string, unknown>)['raw'];
+  return {
+    status: status as ParsedRegistryResponse['status'],
+    score: typeof score === 'number' ? score : undefined,
+    raw: typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {},
+  };
 }
