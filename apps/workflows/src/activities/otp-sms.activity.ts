@@ -169,7 +169,6 @@ async function deliverWebhook(url: string, secret: string, payload: Record<strin
     // Webhook delivery failing must not fail the activity that already
     // committed the case's terminal state — Phase 1 adds a retry/outbox for
     // this; Phase 0 logs and moves on.
-    // eslint-disable-next-line no-console
     console.error(`Failed to deliver webhook to ${url}`, err);
   }
 }

@@ -29,6 +29,7 @@ async function main(): Promise<void> {
       });
       // Dev-only: the plaintext key is never recoverable after this, and
       // never stored — this is the one and only place it is printed.
+      // eslint-disable-next-line no-console
       console.log(`${tenant.slug} API key: ${key.plaintext}`);
     }
 

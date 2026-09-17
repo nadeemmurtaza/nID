@@ -64,7 +64,22 @@ a cron job scans.
   decision is computed server-side from the provider's raw response.
 - `.env*` is gitignored; only `.env.example` (placeholder values) is committed.
 
-## 7. Definition of done
+## 7. apps/api runs through tsc/ts-node, never esbuild
+
+NestJS's DI resolves constructor parameter types from
+`emitDecoratorMetadata`-generated `design:paramtypes` — TypeScript compiler
+output that esbuild-based tools (`tsx`, esbuild-register, SWC without its
+Nest-specific plugin) do not emit correctly. The failure mode is silent: no
+type error, no throw — every `@Injectable()` gets `undefined` for its
+constructor params and crashes the first time a route touches one, e.g.
+`Cannot read properties of undefined (reading 'unscoped')` in a guard. This
+is why `apps/api`'s `dev` script is `ts-node-dev`, not `tsx watch`, unlike
+`apps/workflows` (no NestJS DI, no decorators — `tsx` is fine there). If
+`apps/api` ever moves off `ts-node-dev`, verify against a real request with
+an authenticated route, not just `tsc --noEmit` — the type-checker sees
+nothing wrong here, which is exactly what makes this bug easy to reintroduce.
+
+## 8. Definition of done
 
 ```bash
 pnpm typecheck

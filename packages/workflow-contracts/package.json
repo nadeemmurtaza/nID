@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "echo \"no tests in @nid/workflow-contracts yet\" && exit 0",
-    "lint": "echo \"no lint config in @nid/workflow-contracts yet\" && exit 0"
+    "lint": "eslint src --max-warnings=0"
   },
   "dependencies": {
     "@temporalio/workflow": "^1.11.0"

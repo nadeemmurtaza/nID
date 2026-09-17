@@ -12,7 +12,7 @@
     "migrate": "prisma migrate deploy",
     "seed": "tsx prisma/seed.ts",
     "test": "echo \"no tests in @nid/db yet\" && exit 0",
-    "lint": "echo \"no lint config in @nid/db yet\" && exit 0"
+    "lint": "eslint src prisma/seed.ts --max-warnings=0"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0"

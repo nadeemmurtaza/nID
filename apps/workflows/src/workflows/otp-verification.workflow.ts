@@ -39,7 +39,6 @@ export async function otpVerificationWorkflow(input: OtpVerificationWorkflowInpu
     tenantId: input.tenantId,
     subjectId: input.subjectId,
     codeHash,
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     submittedCode: submittedCode!,
   });
 
