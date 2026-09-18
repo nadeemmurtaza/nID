@@ -76,6 +76,27 @@ describe('RegistryCheckProvider', () => {
       expect(result.raw).toMatchObject({ source: 'registry_api', institution: 'Test University' });
     });
 
+    it('business_registry: a company registration number resolves like any other referenceId-only registry check', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ status: 'PASSED', raw: { source: 'registry_api', registeredName: 'Acme Manufacturing Ltd' } }),
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const provider = new RegistryCheckProvider('business_registry', 'Business registry check', false, {
+        apiUrl: 'https://registry.example.test/checks',
+        apiKey: 'test-key',
+      });
+      const result = await provider.start({ ...context, input: { referenceId: 'REG-998877' } });
+
+      const sentBody = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      expect(sentBody).toMatchObject({ method: 'business_registry', referenceId: 'REG-998877' });
+      expect('pending' in result).toBe(false);
+      if ('pending' in result) return;
+      expect(result.status).toBe('PASSED');
+      expect(result.raw).toMatchObject({ registeredName: 'Acme Manufacturing Ltd' });
+    });
+
     it('is unverified, not a genuine FAILED, when the registry is unreachable', async () => {
       global.fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED')) as unknown as typeof fetch;
 

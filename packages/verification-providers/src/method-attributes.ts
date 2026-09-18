@@ -22,7 +22,12 @@ import type { AttributeType, VerificationLevel } from '@nid/db';
  * `education_registry`/`employment_registry`/`ecp_voter_registration`
  * each prove something entirely outside this enum's domain (an EDUCATION/
  * EMPLOYMENT claim, or a voter-registration status that never actually
- * resolves to PASSED in the first place).
+ * resolves to PASSED in the first place); `business_registry`/
+ * `business_registration_document` likewise prove an Organization's own
+ * KYB IDENTITY claim (see organizations.service.ts's `isVerified`
+ * derivation), not a fact about any one AttributeType — every value this
+ * enum declares assumes a PERSON Subject (see method-subject-types.ts for
+ * which Subject.type each method applies to).
  *
  * `estamp_registry`/`address_gps_match`/`address_utility_bill`/
  * `address_postal_otp` were all declared here before their providers

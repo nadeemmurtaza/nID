@@ -10,6 +10,7 @@ export * from './self-reported-check.provider';
 export * from './agent-attested-check.provider';
 export * from './organization-membership.provider';
 export * from './method-attributes';
+export * from './method-subject-types';
 export * from './method-timeouts';
 export * from './geo-distance';
 export * from './address-gps-match.provider';

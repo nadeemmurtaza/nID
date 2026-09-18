@@ -219,6 +219,36 @@ async function main(): Promise<void> {
         },
       });
 
+      // KYB: verifying the Organization itself, not a person's membership
+      // in one (org-membership, above, is the consumer side of this — it
+      // requires an already-APPROVED IDENTITY case on the Organization's
+      // own Subject, which only these two policies can ever produce for
+      // real). Both are ORGANIZATION-only — see method-subject-types.ts —
+      // so VerificationCasesService.create() rejects either one run
+      // against a PERSON Subject.
+      await prisma.verificationPolicy.upsert({
+        where: { tenantId_name: { tenantId: tenant.id, name: 'org-kyb-document' } },
+        update: { claimType: 'IDENTITY', level: 'DOCUMENT_VERIFIED' },
+        create: {
+          tenantId: tenant.id,
+          name: 'org-kyb-document',
+          methods: ['business_registration_document'],
+          claimType: 'IDENTITY',
+          level: 'DOCUMENT_VERIFIED',
+        },
+      });
+      await prisma.verificationPolicy.upsert({
+        where: { tenantId_name: { tenantId: tenant.id, name: 'org-kyb-registry' } },
+        update: { claimType: 'IDENTITY', level: 'REGISTRY_VERIFIED' },
+        create: {
+          tenantId: tenant.id,
+          name: 'org-kyb-registry',
+          methods: ['business_registry'],
+          claimType: 'IDENTITY',
+          level: 'REGISTRY_VERIFIED',
+        },
+      });
+
       // Badges: one policy per (ClaimType, VerificationLevel) a tenant
       // wants to offer. DATE_OF_BIRTH has no registry-level policy — there's
       // no universal birth registry to check against; that's genuinely

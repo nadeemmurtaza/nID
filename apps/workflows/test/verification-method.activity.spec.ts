@@ -46,7 +46,7 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
   const uploadStorage = new LocalStorageDriver(localStorageDir);
   const testTenantIds: string[] = [];
 
-  async function makeCase(tenantSlug: string, methods: string[]) {
+  async function makeCase(tenantSlug: string, methods: string[], subjectType: 'PERSON' | 'ORGANIZATION' = 'PERSON') {
     const tenant = await migratorPrisma.tenant.upsert({
       where: { slug: tenantSlug },
       update: { webhookUrl, webhookSecretPlaintext: WEBHOOK_SECRET },
@@ -59,7 +59,10 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
       create: { tenantId: tenant.id, name: policyName, methods },
     });
     const subject = await migratorPrisma.subject.create({
-      data: { tenantId: tenant.id, type: 'PERSON', phone: '+15551234567' },
+      data:
+        subjectType === 'ORGANIZATION'
+          ? { tenantId: tenant.id, type: 'ORGANIZATION', givenName: 'Acme Manufacturing Ltd' }
+          : { tenantId: tenant.id, type: 'PERSON', phone: '+15551234567' },
     });
     const kase = await migratorPrisma.verificationCase.create({
       data: { tenantId: tenant.id, subjectId: subject.id, policyId: policy.id, status: 'PENDING' },
@@ -290,6 +293,94 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
     expect(completed.raw).toMatchObject({ mode: 'dev_mock' });
 
     await resolveCaseActivity({ tenantId, caseId, subjectId, caseStatus: 'APPROVED', decision: 'PASSED', raw: {} });
+    const kase = await migratorPrisma.verificationCase.findUniqueOrThrow({ where: { id: caseId } });
+    expect(kase.status).toBe('APPROVED');
+  });
+
+  it('business_registration_document: KYB document upload for an ORGANIZATION Subject, same mechanism as document_ocr', async () => {
+    const { tenantId, subjectId, caseId } = await makeCase(
+      'activity-test-org-kyb-doc',
+      ['business_registration_document'],
+      'ORGANIZATION',
+    );
+
+    const started = await startMethodActivity({
+      caseId,
+      tenantId,
+      subjectId,
+      method: 'business_registration_document',
+      input: {},
+    });
+    expect(started.pending).toBe(true);
+
+    const attempt = await migratorPrisma.verificationMethodAttempt.findFirstOrThrow({
+      where: { caseId, method: 'business_registration_document' },
+    });
+    const stored = await uploadStorage.put({
+      namespace: tenantId,
+      groupId: attempt.id,
+      filename: 'certificate-of-incorporation.jpg',
+      contentType: 'image/jpeg',
+      body: Buffer.from('fake certificate bytes'),
+    });
+
+    const completed = await completeMethodActivity({
+      caseId,
+      tenantId,
+      subjectId,
+      method: 'business_registration_document',
+      resultMeta: {},
+      payload: { storageKey: stored.key, contentType: 'image/jpeg' },
+    });
+    expect(completed.status).toBe('PASSED');
+
+    await resolveCaseActivity({
+      tenantId,
+      caseId,
+      subjectId,
+      caseStatus: 'APPROVED',
+      decision: 'PASSED',
+      raw: {},
+    });
+
+    // The exact derivation organizations.service.ts's getById() runs to
+    // compute isVerified — proven here against a case that actually ran
+    // through the real business_registration_document method, not a
+    // manually-flipped status like the earlier org_membership validation
+    // pass used (see docs/PHASES.md's "Organization-verified membership"
+    // section — this closes that gap).
+    const kase = await migratorPrisma.verificationCase.findFirst({
+      where: { subjectId, status: 'APPROVED', claimType: 'IDENTITY' },
+      orderBy: { level: 'desc' },
+    });
+    expect(kase).not.toBeNull();
+    expect(kase?.id).toBe(caseId);
+  });
+
+  it('business_registry: a company registration number resolves synchronously for an ORGANIZATION Subject', async () => {
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-org-kyb-registry', ['business_registry'], 'ORGANIZATION');
+
+    const started = await startMethodActivity({
+      caseId,
+      tenantId,
+      subjectId,
+      method: 'business_registry',
+      input: { referenceId: 'REG-998877' },
+    });
+
+    expect(started.pending).toBe(false);
+    if (started.pending) return;
+    expect(started.status).toBe('PASSED');
+    expect(started.raw).toMatchObject({ mode: 'dev_mock', referenceId: 'REG-998877' });
+
+    await resolveCaseActivity({
+      tenantId,
+      caseId,
+      subjectId,
+      caseStatus: 'APPROVED',
+      decision: 'PASSED',
+      raw: started.raw,
+    });
     const kase = await migratorPrisma.verificationCase.findUniqueOrThrow({ where: { id: caseId } });
     expect(kase.status).toBe('APPROVED');
   });

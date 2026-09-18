@@ -7,7 +7,8 @@ import { IsOptional, IsString } from 'class-validator';
  * otp_sms sends a code to it, estamp_registry asks the registry to confirm
  * it's the one on file), `referenceId` (the student ID / employee ID /
  * bank account number-or-IBAN / CNIC education_registry, employment_registry,
- * bank_account_title, or estamp_registry looks up immediately, since those
+ * bank_account_title, estamp_registry, or business_registry (a company/business
+ * registration number) looks up immediately, since those
  * resolve synchronously with nothing for the subject to upload — see
  * RegistryCheckProvider), `accountTitle` (bank_account_title only — the
  * claimed account-holder name for the vendor to compare its own records

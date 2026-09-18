@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { generateSessionToken } from '@nid/shared-types';
-import { methodTimeout } from '@nid/verification-providers';
+import { methodTimeout, subjectTypesAllowedFor } from '@nid/verification-providers';
 import { PrismaService } from '../../core/db/prisma.service';
 import { AuditService } from '../../core/audit/audit.service';
 import { TemporalClientService } from '../../core/temporal/temporal-client.service';
@@ -16,13 +16,20 @@ export interface UploadedMethodFile {
 }
 
 /** Methods reachable through the generic .../claims/:method/submit routes — see submitClaimDocument(). */
-const CLAIM_DOCUMENT_METHODS = new Set(['dob_document', 'education_document', 'employment_document', 'address_utility_bill']);
+const CLAIM_DOCUMENT_METHODS = new Set([
+  'dob_document',
+  'education_document',
+  'employment_document',
+  'address_utility_bill',
+  'business_registration_document',
+]);
 /** Methods that resolve synchronously in RegistryCheckProvider.start() and need a `referenceId` at creation. */
 const REGISTRY_CHECK_METHODS = new Set([
   'education_registry',
   'employment_registry',
   'bank_account_title',
   'estamp_registry',
+  'business_registry',
 ]);
 /** Methods reachable through the generic .../claims/:method/report route — see submitSelfReport(). */
 const SELF_REPORT_METHODS = new Set(['ecp_voter_registration']);
@@ -62,6 +69,15 @@ export class VerificationCasesService {
       const subject = await tx.subject.findUnique({ where: { id: dto.subjectId } });
       if (!subject) {
         throw new NotFoundException('Subject not found.');
+      }
+      for (const method of policy.methods) {
+        const allowedTypes = subjectTypesAllowedFor(method);
+        if (!allowedTypes.includes(subject.type)) {
+          throw new BadRequestException(
+            `Policy "${dto.policyName}" includes "${method}", which only applies to a ` +
+              `${allowedTypes.join('/')} subject, not ${subject.type}.`,
+          );
+        }
       }
 
       const kase = await tx.verificationCase.create({

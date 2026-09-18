@@ -55,6 +55,17 @@ function allProviders(options: VerificationProviderRegistryOptions): Verificatio
     new AddressGpsMatchProvider(options.db, options.addressGpsMatchMaxDistanceMeters),
     new ImageClaimProvider('address_utility_bill', 'Utility bill', options.claimDocumentDevMode),
     new AddressPostalOtpProvider(options.db, options.addressPostalOtpDevMode, options.addressPostalOtpConfig),
+    new RegistryCheckProvider(
+      'business_registry',
+      'Business registry check',
+      options.registryCheckDevMode,
+      options.businessRegistryConfig,
+    ),
+    new ImageClaimProvider(
+      'business_registration_document',
+      'Certificate of incorporation',
+      options.claimDocumentDevMode,
+    ),
   ];
 }
 
@@ -81,6 +92,14 @@ export interface VerificationProviderRegistryOptions {
    * registryCheckDevMode is true.
    */
   estampRegistryConfig?: RegistryCheckConfig;
+  /**
+   * BUSINESS_REGISTRY_API_URL / BUSINESS_REGISTRY_API_KEY — whichever
+   * company/business registry vendor or aggregator you've contracted with
+   * for KYB (e.g. a national company-registrar API). Same generic
+   * RegistryCheckProvider contract as every other registry method here —
+   * ignored while registryCheckDevMode is true.
+   */
+  businessRegistryConfig?: RegistryCheckConfig;
   /**
    * org_membership looks up the Organization graph directly rather than
    * calling a vendor — first-party evidence, not a mock to toggle off in

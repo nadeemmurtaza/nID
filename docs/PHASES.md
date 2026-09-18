@@ -1063,7 +1063,78 @@ via JS), submitted, and landed on the real case list with the header
 correctly rendering the new logomark next to the tenant name — proving
 the redesign didn't just look right, it still authenticates for real.
 
-- **Phase 2** — sanctions/PEP screening, KYB/business-registry lookup, one
+### KYB: real verification methods for the Organization entity itself
+
+`Organization.isVerified` (`organizations.service.ts`'s `getById()`) always
+derived honestly — it looks for a real APPROVED `VerificationCase` at
+`claimType: IDENTITY` on the Organization's own Subject, the same
+mechanism any Subject's verification uses, since `Subject.type:
+ORGANIZATION` was never special-cased out of the generic pipeline. What
+never existed was a *real* way to produce that case: the org_membership/
+agent_in_person_document validation pass (see above) proved its
+inheritance logic by directly flipping a test Organization's case to
+APPROVED — an honest stand-in at the time, but never a real KYB method a
+tenant could actually call. This closes that gap.
+
+- **`business_registry`** and **`business_registration_document`** — zero
+  new provider code, both reuse existing generic mechanisms exactly the
+  way `docs/HOUSE-RULES.md` rule 1 asks: `business_registry` is a plain
+  `RegistryCheckProvider` instantiation (a company's registration number
+  looked up against whichever business-registry vendor/national registrar
+  a tenant contracts with — the exact same generic HTTP contract
+  `education_registry`/`estamp_registry`/etc. already define, just a new
+  key), and `business_registration_document` is a plain `ImageClaimProvider`
+  instantiation (OCRs a certificate of incorporation; `ImageClaimProvider`
+  already degrades non-MRZ documents to `NEEDS_REVIEW` with extracted text
+  rather than a fabricated pass, so a document with no MRZ was never a
+  special case to design around). `BUSINESS_REGISTRY_API_URL`/
+  `BUSINESS_REGISTRY_API_KEY` env vars, same shape as every other registry
+  method.
+- **`method-subject-types.ts`** (new, `@nid/verification-providers`) — the
+  real gap this pass actually found: nothing stopped a tenant from running
+  `document_ocr` (MRZ passport parsing) or `liveness` (face match) against
+  an Organization, or `business_registry` against a person, before this
+  existed. A static `Record<string, SubjectType[]>` (absent = PERSON-only,
+  the default every method carried by construction before Organization-facing
+  methods existed), enforced in `VerificationCasesService.create()` right
+  after the Subject is loaded — a `BadRequestException` naming the
+  offending method, not a silent no-op or a nonsensical PASSED. Also
+  settles two existing methods' scope explicitly: `org_membership` stays
+  PERSON-only (it verifies a person's membership, never the org itself —
+  running it against the Organization's own Subject was never meaningful),
+  and `agent_in_person_document` applies to either (a tenant agent
+  inspecting a person's ID or an org's certificate of incorporation is the
+  same mechanism).
+- Two new seeded policies, `org-kyb-document` (`DOCUMENT_VERIFIED`) and
+  `org-kyb-registry` (`REGISTRY_VERIFIED`) — mirroring the document/registry
+  pairing every other ClaimType already has.
+
+**Verified live**: full workspace `typecheck`/`lint`/`test`/`build` clean.
+`packages/verification-providers`: a new `business_registry` case in
+`registry-check.provider.spec.ts` (dev mode + a mocked prod-mode HTTP call,
+same pattern as every other registry key) and a new
+`method-subject-types.spec.ts`. `apps/workflows`: both new methods proven
+end to end against real Postgres in `verification-method.activity.spec.ts`
+— `business_registration_document` through the real upload→storage→OCR
+mock→`resolveCaseActivity` path (bypassing only the unreachable Temporal
+server, same established workaround), `business_registry` through the
+real synchronous registry-check path — both against a real
+`Subject.type: ORGANIZATION` row, the first tests in this codebase to use
+one. `apps/api`: a new `organization-verification.spec.ts` proves the
+`Subject.type` guard's rejection path (business_registry against a PERSON,
+otp_sms and org_membership against an ORGANIZATION, each via the real
+service method) and `OrganizationsService.getById()`'s derivation reading
+back a case shaped exactly like what the real activity pipeline produces.
+Then, since none of that touches Temporal, a real HTTP round trip against
+a live `apps/api` closed the loop the tests can't reach: created a real
+Organization via `POST /v1/organizations`, confirmed `isVerified: false`
+before any case exists, then confirmed both guard directions over real
+HTTP (`otp_sms` against the org's Subject, `business_registry` against a
+plain `PERSON` Subject) return `400` with the exact message the service
+throws — proving the guard isn't just unit-tested but actually wired into
+the route a tenant would really call.
+
+- **Phase 2** — sanctions/PEP screening, one
   country's national-ID registry adapter, manual-review tooling, retention/audit
   maturity.
 - **Phase 3** — self-serve tenant signup, per-method usage metering, billing
