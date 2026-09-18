@@ -17,7 +17,12 @@ export interface UploadedMethodFile {
 /** Methods reachable through the generic .../claims/:method/submit routes — see submitClaimDocument(). */
 const CLAIM_DOCUMENT_METHODS = new Set(['dob_document', 'education_document', 'employment_document', 'address_utility_bill']);
 /** Methods that resolve synchronously in RegistryCheckProvider.start() and need a `referenceId` at creation. */
-const REGISTRY_CHECK_METHODS = new Set(['education_registry', 'employment_registry', 'bank_account_title']);
+const REGISTRY_CHECK_METHODS = new Set([
+  'education_registry',
+  'employment_registry',
+  'bank_account_title',
+  'estamp_registry',
+]);
 /** Methods reachable through the generic .../claims/:method/report route — see submitSelfReport(). */
 const SELF_REPORT_METHODS = new Set(['ecp_voter_registration']);
 /** Methods reachable through the generic .../claims/:method/agent-attest route — see submitAgentAttestation(). */
@@ -539,9 +544,9 @@ export class VerificationCasesService {
 }
 
 /**
- * Builds VerificationWorkflowInput.methodInput — the only two methods that
- * need anything at case-creation time: otp_sms (a phone to send the code
- * to) and the two registry-check methods (a referenceId to look up, since
+ * Builds VerificationWorkflowInput.methodInput — the only methods that need
+ * anything at case-creation time: otp_sms (a phone to send the code to)
+ * and the registry-check methods (a referenceId to look up, since
  * RegistryCheckProvider resolves synchronously with nothing for the
  * subject to upload). Everything else needs no entry.
  */
@@ -555,10 +560,16 @@ function buildMethodInput(
   }
   for (const method of methods) {
     if (REGISTRY_CHECK_METHODS.has(method)) {
-      methodInput[method] =
-        method === 'bank_account_title'
-          ? { referenceId: dto.referenceId, accountTitle: dto.accountTitle }
-          : { referenceId: dto.referenceId };
+      if (method === 'bank_account_title') {
+        methodInput[method] = { referenceId: dto.referenceId, accountTitle: dto.accountTitle };
+      } else if (method === 'estamp_registry') {
+        // referenceId is the CNIC; phone is the number claimed to be
+        // linked to it — the same field otp_sms uses, just consumed
+        // differently (see CreateVerificationCaseDto's own comment).
+        methodInput[method] = { referenceId: dto.referenceId, phone: dto.phone };
+      } else {
+        methodInput[method] = { referenceId: dto.referenceId };
+      }
     }
     if (ORG_MEMBERSHIP_METHODS.has(method)) {
       methodInput[method] = { organizationId: dto.organizationId };

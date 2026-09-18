@@ -47,6 +47,10 @@ const registry = buildVerificationProviderRegistry({
     apiUrl: process.env['BANK_ACCOUNT_TITLE_API_URL'],
     apiKey: process.env['BANK_ACCOUNT_TITLE_API_KEY'],
   },
+  estampRegistryConfig: {
+    apiUrl: process.env['ESTAMP_REGISTRY_API_URL'],
+    apiKey: process.env['ESTAMP_REGISTRY_API_KEY'],
+  },
   addressGpsMatchMaxDistanceMeters: process.env['ADDRESS_GPS_MATCH_MAX_DISTANCE_METERS']
     ? Number(process.env['ADDRESS_GPS_MATCH_MAX_DISTANCE_METERS'])
     : undefined,

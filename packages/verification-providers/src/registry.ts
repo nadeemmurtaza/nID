@@ -43,6 +43,12 @@ function allProviders(options: VerificationProviderRegistryOptions): Verificatio
       options.registryCheckDevMode,
       options.bankAccountTitleConfig,
     ),
+    new RegistryCheckProvider(
+      'estamp_registry',
+      'E-stamp CNIC+phone registry check',
+      options.registryCheckDevMode,
+      options.estampRegistryConfig,
+    ),
     new SelfReportedCheckProvider('ecp_voter_registration', 'ECP voter registration self-report'),
     new AgentAttestedCheckProvider('agent_in_person_document', 'Agent in-person document inspection'),
     new OrganizationMembershipProvider(options.db),
@@ -68,6 +74,13 @@ export interface VerificationProviderRegistryOptions {
   employmentRegistryConfig?: RegistryCheckConfig;
   /** BANK_ACCOUNT_TITLE_API_URL / BANK_ACCOUNT_TITLE_API_KEY — ignored while registryCheckDevMode is true. */
   bankAccountTitleConfig?: RegistryCheckConfig;
+  /**
+   * ESTAMP_REGISTRY_API_URL / ESTAMP_REGISTRY_API_KEY — whichever
+   * provincial e-stamping authority or bank you've actually contracted
+   * with (see RegistryCheckProvider's header comment). Ignored while
+   * registryCheckDevMode is true.
+   */
+  estampRegistryConfig?: RegistryCheckConfig;
   /**
    * org_membership looks up the Organization graph directly rather than
    * calling a vendor — first-party evidence, not a mock to toggle off in

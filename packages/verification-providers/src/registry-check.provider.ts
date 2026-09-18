@@ -13,37 +13,48 @@ const VALID_STATUSES: ReadonlySet<string> = new Set<MockOutcome>(['PASSED', 'FAI
 /**
  * Confirms a claim against an authoritative third-party source — a
  * university registrar (education_registry), an employer/payroll
- * verification service (employment_registry), or a bank confirming an
+ * verification service (employment_registry), a bank confirming an
  * account's registered title matches the subject's claimed name
- * (bank_account_title). Unlike the document-upload providers
+ * (bank_account_title), or a Pakistani e-stamp registry confirming a
+ * phone number is the one on file against a claimed CNIC
+ * (estamp_registry). Unlike the document-upload providers
  * (ImageClaimProvider), everything this needs is already in the case's
  * input at creation time (whatever reference the tenant supplied — a
- * student ID, an employee ID, a bank account number/IBAN), so start()
- * resolves immediately rather than waiting on a subject upload;
+ * student ID, an employee ID, a bank account number/IBAN, a CNIC), so
+ * start() resolves immediately rather than waiting on a subject upload;
  * handleCallback is never used, exactly like otp_sms's synchronous
  * missing-phone failure path.
  *
- * Neither National Student Clearinghouse nor Truework/The Work Number
- * offer self-serve signup — both require an actual institutional or
+ * None of National Student Clearinghouse, Truework/The Work Number, or any
+ * provincial e-stamping authority (Pakistani stamp-duty collection —
+ * Punjab's runs through Bank of Punjab, Sindh and the other provinces
+ * through their own excise & taxation departments — is a devolved,
+ * per-province system, so there is no single national vendor to name)
+ * offer self-serve signup — each requires an actual institutional or
  * business agreement, which no amount of code produces (same story for any
  * real bank account-verification API). What IS real here: a generic HTTP
  * client against a contract this codebase defines itself —
  *
  *   POST {apiUrl}
  *   Authorization: Bearer {apiKey}
- *   { "method": "education_registry" | "employment_registry" | "bank_account_title",
+ *   { "method": "education_registry" | "employment_registry" | "bank_account_title" | "estamp_registry",
  *     "referenceId": string, "subjectId": string, "tenantId": string,
- *     "accountTitle"?: string }
+ *     "accountTitle"?: string, "phone"?: string }
  *   -> { "status": "PASSED" | "FAILED" | "NEEDS_REVIEW", "score"?: number, "raw"?: object }
  *
  * `accountTitle` only ever accompanies bank_account_title (the tenant's
  * claimed account-holder name for the vendor to compare its own records
- * against — education/employment registries already resolve a claimed
- * identity from `referenceId` on their own end, so it's omitted there
- * rather than sent as an always-empty field). So the moment a real
- * agreement exists with any vendor, either point apiUrl straight at it if
- * it already speaks this shape, or put a thin translating adapter in front
- * of it. No code here needs to change either way; only the env vars do.
+ * against). `phone` only ever accompanies estamp_registry (`referenceId`
+ * there is the CNIC; `phone` is the number the tenant claims is linked to
+ * it, for the vendor to confirm against its own e-stamp purchase/
+ * registration records) — education/employment registries already resolve
+ * a claimed identity from `referenceId` alone, so both fields are omitted
+ * there rather than sent as always-empty. So the moment a real agreement
+ * exists with any vendor — whichever province's e-stamping authority or
+ * bank operates it for estamp_registry — either point apiUrl straight at
+ * it if it already speaks this shape, or put a thin translating adapter in
+ * front of it. No code here needs to change either way; only the env vars
+ * do.
  */
 export class RegistryCheckProvider implements VerificationMethodProvider {
   constructor(
@@ -64,6 +75,7 @@ export class RegistryCheckProvider implements VerificationMethodProvider {
           mode: 'dev_mock',
           referenceId: context.input['referenceId'] ?? null,
           accountTitle: context.input['accountTitle'] ?? null,
+          phone: context.input['phone'] ?? null,
         },
         verified: true,
       };
@@ -89,6 +101,10 @@ export class RegistryCheckProvider implements VerificationMethodProvider {
     if (this.key === 'bank_account_title' && (typeof accountTitle !== 'string' || accountTitle.length === 0)) {
       return { status: 'FAILED', raw: { reason: 'missing_account_title' }, verified: false };
     }
+    const phone = context.input['phone'];
+    if (this.key === 'estamp_registry' && (typeof phone !== 'string' || phone.length === 0)) {
+      return { status: 'FAILED', raw: { reason: 'missing_phone' }, verified: false };
+    }
 
     let response: Response;
     try {
@@ -101,6 +117,7 @@ export class RegistryCheckProvider implements VerificationMethodProvider {
           subjectId: context.subjectId,
           tenantId: context.tenantId,
           ...(typeof accountTitle === 'string' && accountTitle.length > 0 ? { accountTitle } : {}),
+          ...(typeof phone === 'string' && phone.length > 0 ? { phone } : {}),
         }),
       });
     } catch (err) {

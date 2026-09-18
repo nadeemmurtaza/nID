@@ -856,6 +856,61 @@ passes across every touched package, including the real-Postgres
 `RUN_DB_TESTS=true` activity suite proving the new dependency loads
 correctly through the real provider registry.
 
+### KYC: e-stamp CNIC+phone registry verification (Pakistan)
+
+`estamp_registry` — the last piece of the original attribute-badges plan
+(`method-attributes.ts` had declared its `NAME`/`NATIONAL_ID_NUMBER`/
+`PHONE` mapping since that task, waiting for the provider). Zero new
+provider code: one more `RegistryCheckProvider` instance, the exact same
+mechanism `bank_account_title` already established — a self-defined HTTP
+contract (`POST {apiUrl}` with `{method, referenceId, subjectId, tenantId,
+phone?}`, `Bearer {apiKey}`, expects `{status, score?, raw?}` back), never
+a fake vendor integration.
+
+Pakistani stamp duty collection is a **devolved, per-province system** —
+Punjab's e-Stamping runs through Bank of Punjab, Sindh and the other
+provinces through their own excise & taxation departments — so there is no
+single national e-stamp API to hardcode, and (same story as
+`bank_account_title`'s NSC/Truework, or `ecp_voter_registration`'s ECP)
+none of them offer self-serve signup; a real integration needs an actual
+institutional agreement with whichever provincial authority/bank a given
+deployment operates in. What's genuinely buildable without that agreement,
+and what this ships: the real HTTP client, the real request/response
+contract, dev-mode for local testing, and a clear thrown error in
+production if unconfigured — exactly `RegistryCheckProvider`'s own
+established pattern, extended (not forked) to carry a `phone` field
+alongside `referenceId` (the CNIC), mirroring exactly how `accountTitle`
+already extends the same contract for `bank_account_title` — sent only for
+the method that needs it, validated as required only for that method
+(`missing_phone`, the same fail-closed shape as `missing_account_title`).
+The moment a real agreement exists with any provincial vendor, only
+`ESTAMP_REGISTRY_API_URL`/`ESTAMP_REGISTRY_API_KEY` need to change — no
+code does.
+
+- `apps/api`: `CreateVerificationCaseDto` needed no new field —
+  `estamp_registry` reuses the same `phone` field `otp_sms` already has
+  (the same real-world phone number, just consumed two different ways:
+  one sends a code to it, the other asks a registry to confirm it's on
+  file), and `referenceId` the same way `bank_account_title` already
+  reuses it for an account number. `buildMethodInput` grew one more
+  branch, same shape as the existing `bank_account_title` branch.
+  `estamp-registry` policy seeded (`IDENTITY` / `REGISTRY_VERIFIED`, same
+  tier as `bank-account-title`).
+
+**Verified live, no fabricated vendor response anywhere**:
+`registry-check.provider.spec.ts` grew five new cases (phone sent/omitted
+per method, fail-closed on a missing phone, symmetric to the existing
+`accountTitle` coverage) — all passing. `verification-method.activity.spec.ts`
+proves the full chain against real Postgres (`RUN_DB_TESTS=true`): a real
+CNIC+phone input resolves synchronously through the real provider
+registry to `PASSED` in dev mode, `resolveCaseActivity` writes real
+`NAME`/`NATIONAL_ID_NUMBER`/`PHONE` `VerifiedAttribute` rows, and the case
+resolves to `APPROVED` — genuine end-to-end wiring, not just the
+provider-layer unit tests. The seed script was re-run live: the
+`estamp-registry` policy row is confirmed present in real Postgres
+(`SELECT ... FROM "VerificationPolicy" WHERE name = 'estamp-registry'`).
+Full workspace `typecheck`/`lint`/`test`/`build` passes.
+
 - **Phase 2** — sanctions/PEP screening, KYB/business-registry lookup, one
   country's national-ID registry adapter, manual-review tooling, retention/audit
   maturity.

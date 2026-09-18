@@ -25,9 +25,9 @@ import type { AttributeType, VerificationLevel } from '@nid/db';
  * resolves to PASSED in the first place).
  *
  * `estamp_registry`/`address_gps_match`/`address_utility_bill`/
- * `address_postal_otp` are declared here even though their providers are
- * built later (see docs/PHASES.md) — the attribute wiring is correct the
- * moment each one lands, not bolted on after.
+ * `address_postal_otp` were all declared here before their providers
+ * landed (see docs/PHASES.md) — the attribute wiring was correct the
+ * moment each one shipped, not bolted on after.
  */
 export interface MethodAttributeMapping {
   attributes: AttributeType[];
@@ -61,8 +61,9 @@ export const METHOD_ATTRIBUTES: Record<string, MethodAttributeMapping> = {
   // Pakistani e-stamp purchase/registration requires the original CNIC and
   // only accepts a phone number already linked to that CNIC — real
   // third-party evidence tying name + national ID + phone together in one
-  // check (see task tracking this provider's own build, blocked on which
-  // province's system and whether real API access exists).
+  // check (see registry-check.provider.ts's header comment for exactly
+  // what a real vendor integration requires — a devolved, per-province
+  // system with no single national API).
   estamp_registry: { attributes: ['NAME', 'NATIONAL_ID_NUMBER', 'PHONE'], level: 'REGISTRY_VERIFIED' },
 
   // Three independent ways to prove the same ADDRESS attribute — see

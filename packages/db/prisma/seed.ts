@@ -85,6 +85,24 @@ async function main(): Promise<void> {
         },
       });
 
+      // IDENTITY's other REGISTRY_VERIFIED path: a Pakistani provincial
+      // e-stamping authority/bank confirming a claimed phone number is the
+      // one on file against a claimed CNIC (`referenceId`) — real
+      // third-party evidence, same reasoning as bank-account-title above,
+      // just tying NAME + NATIONAL_ID_NUMBER + PHONE together at once (see
+      // method-attributes.ts).
+      await prisma.verificationPolicy.upsert({
+        where: { tenantId_name: { tenantId: tenant.id, name: 'estamp-registry' } },
+        update: { claimType: 'IDENTITY', level: 'REGISTRY_VERIFIED' },
+        create: {
+          tenantId: tenant.id,
+          name: 'estamp-registry',
+          methods: ['estamp_registry'],
+          claimType: 'IDENTITY',
+          level: 'REGISTRY_VERIFIED',
+        },
+      });
+
       // A DOCUMENT_VERIFIED-level IDENTITY policy, not REGISTRY_VERIFIED:
       // this method never queries ECP itself (no institutional API exists —
       // see SelfReportedCheckProvider's header comment), it only carries a

@@ -373,12 +373,10 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
   });
 
   it('a single PASSED method that proves several attributes at once writes one VerifiedAttribute row per attribute', async () => {
-    // estamp_registry's own provider is still blocked on which province's
-    // system/API access (see task tracking it) — this test exercises
-    // resolveCaseActivity's own attribute-write logic in isolation, which
-    // doesn't care HOW an attempt reached PASSED, only that it did; the
-    // method-attributes.ts registry entry for estamp_registry is already
-    // real and already declares NAME + NATIONAL_ID_NUMBER + PHONE.
+    // Exercises resolveCaseActivity's own attribute-write logic in
+    // isolation — it doesn't care HOW an attempt reached PASSED, only that
+    // it did — independent of the real estamp_registry provider call
+    // proven end to end in the next test below.
     const { tenantId, subjectId, caseId } = await makeCase('activity-test-attribute-estamp', ['estamp_registry']);
     await migratorPrisma.verificationMethodAttempt.updateMany({
       where: { caseId, method: 'estamp_registry' },
@@ -390,6 +388,41 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
     const attributes = await migratorPrisma.verifiedAttribute.findMany({ where: { subjectId, caseId } });
     expect(attributes.map((a) => a.attribute).sort()).toEqual(['NAME', 'NATIONAL_ID_NUMBER', 'PHONE']);
     expect(attributes.every((a) => a.level === 'REGISTRY_VERIFIED' && a.method === 'estamp_registry')).toBe(true);
+  });
+
+  it('estamp_registry: resolves synchronously in dev mode with a real CNIC+phone input, same as otp_sms/bank_account_title', async () => {
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-estamp-passed', ['estamp_registry']);
+
+    const started = await startMethodActivity({
+      caseId,
+      tenantId,
+      subjectId,
+      method: 'estamp_registry',
+      input: { referenceId: '35202-1234567-8', phone: '+923001234567' },
+    });
+
+    expect(started.pending).toBe(false);
+    if (started.pending) return;
+    expect(started.status).toBe('PASSED');
+    expect(started.raw).toMatchObject({
+      mode: 'dev_mock',
+      referenceId: '35202-1234567-8',
+      phone: '+923001234567',
+    });
+
+    await resolveCaseActivity({
+      tenantId,
+      caseId,
+      subjectId,
+      caseStatus: 'APPROVED',
+      decision: 'PASSED',
+      raw: started.raw,
+    });
+    const kase = await migratorPrisma.verificationCase.findUniqueOrThrow({ where: { id: caseId } });
+    expect(kase.status).toBe('APPROVED');
+
+    const attributes = await migratorPrisma.verifiedAttribute.findMany({ where: { subjectId, caseId } });
+    expect(attributes.map((a) => a.attribute).sort()).toEqual(['NAME', 'NATIONAL_ID_NUMBER', 'PHONE']);
   });
 
   it('a method absent from method-attributes.ts (liveness) contributes no VerifiedAttribute rows even when PASSED', async () => {
