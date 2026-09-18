@@ -78,6 +78,16 @@ export function decideFromExtractedText(text: string, mrzCandidateText?: string)
           expiryDate: mrz.expiryDate,
           checksumValid: mrz.checksumValid,
           failedChecks: mrz.failedChecks,
+          // The name fields ParsedMrz already extracts — previously left
+          // out of raw entirely. Only ever surfaced when checksumValid is
+          // true (a FAILED result's name field, if it has one, is exactly
+          // as untrustworthy as everything else on a tampered-or-misread
+          // document — see this module's own header comment); callers that
+          // want a verified name must still check status themselves, this
+          // just stops silently dropping the one MRZ field a real-name
+          // system (usernames, legal-name-change detection) actually needs.
+          givenNames: mrz.checksumValid ? mrz.givenNames : undefined,
+          surname: mrz.checksumValid ? mrz.surname : undefined,
         },
       },
     };

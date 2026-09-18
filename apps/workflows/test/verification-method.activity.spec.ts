@@ -481,6 +481,99 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
     expect(attributes.every((a) => a.level === 'REGISTRY_VERIFIED' && a.method === 'estamp_registry')).toBe(true);
   });
 
+  it('a PASSED document_ocr attempt with an MRZ name writes PhoneNameEvidence and updates Subject.givenName/familyName', async () => {
+    // Same isolation-testing approach as the attribute test above —
+    // resolveCaseActivity's own name-capture logic doesn't care HOW the
+    // attempt reached PASSED with that raw shape, only that it did. The
+    // real Tesseract+MRZ pipeline producing this exact raw.mrz shape is
+    // proven separately in @nid/ocr-engine's own evaluate-document.spec.ts
+    // (against the real, published ICAO 9303 worked example this test
+    // reuses the names from) and in a live pass against a real generated
+    // image (see docs/PHASES.md).
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-name-capture', ['document_ocr']);
+    await migratorPrisma.verificationMethodAttempt.updateMany({
+      where: { caseId, method: 'document_ocr' },
+      data: {
+        status: 'PASSED',
+        completedAt: new Date(),
+        raw: { engine: 'tesseract+mrz', mrz: { givenNames: 'ANNA MARIA', surname: 'ERIKSSON', checksumValid: true } },
+      },
+    });
+
+    await resolveCaseActivity({ tenantId, caseId, subjectId, caseStatus: 'APPROVED', decision: 'PASSED', raw: {} });
+
+    const evidence = await migratorPrisma.phoneNameEvidence.findMany({ where: { subjectId, caseId } });
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toMatchObject({ givenName: 'ANNA MARIA', familyName: 'ERIKSSON' });
+
+    const subject = await migratorPrisma.subject.findUniqueOrThrow({ where: { id: subjectId } });
+    expect(subject.givenName).toBe('ANNA MARIA');
+    expect(subject.familyName).toBe('ERIKSSON');
+  });
+
+  it('never writes PhoneNameEvidence for a document_ocr PASSED attempt with no MRZ name (a NEEDS_REVIEW-then-manually-approved case, or a non-MRZ document)', async () => {
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-name-no-mrz', ['document_ocr']);
+    await migratorPrisma.verificationMethodAttempt.updateMany({
+      where: { caseId, method: 'document_ocr' },
+      data: {
+        status: 'PASSED',
+        completedAt: new Date(),
+        raw: { engine: 'tesseract', reason: 'no_mrz_manual_review_required' },
+      },
+    });
+
+    await resolveCaseActivity({ tenantId, caseId, subjectId, caseStatus: 'APPROVED', decision: 'PASSED', raw: {} });
+
+    const evidence = await migratorPrisma.phoneNameEvidence.findMany({ where: { subjectId, caseId } });
+    expect(evidence).toHaveLength(0);
+  });
+
+  it('a second, later PASSED document_ocr case with a DIFFERENT MRZ name appends a new PhoneNameEvidence row — the real-name-change signal', async () => {
+    const { tenantId, subjectId, caseId: firstCaseId } = await makeCase('activity-test-name-change', ['document_ocr']);
+    await migratorPrisma.verificationMethodAttempt.updateMany({
+      where: { caseId: firstCaseId, method: 'document_ocr' },
+      data: { status: 'PASSED', completedAt: new Date(), raw: { mrz: { givenNames: 'ANNA MARIA', surname: 'ERIKSSON' } } },
+    });
+    await resolveCaseActivity({ tenantId, caseId: firstCaseId, subjectId, caseStatus: 'APPROVED', decision: 'PASSED', raw: {} });
+
+    const policy = await migratorPrisma.verificationPolicy.findFirstOrThrow({
+      where: { tenantId, name: 'test-document_ocr' },
+    });
+    const secondCase = await migratorPrisma.verificationCase.create({
+      data: { tenantId, subjectId, policyId: policy.id, status: 'PENDING' },
+    });
+    await migratorPrisma.verificationMethodAttempt.create({
+      data: {
+        tenantId,
+        caseId: secondCase.id,
+        method: 'document_ocr',
+        providerKey: 'document_ocr',
+        status: 'PASSED',
+        completedAt: new Date(),
+        raw: { mrz: { givenNames: 'ANNA', surname: 'SVENSSON' } },
+      },
+    });
+    await resolveCaseActivity({
+      tenantId,
+      caseId: secondCase.id,
+      subjectId,
+      caseStatus: 'APPROVED',
+      decision: 'PASSED',
+      raw: {},
+    });
+
+    const history = await migratorPrisma.phoneNameEvidence.findMany({
+      where: { subjectId },
+      orderBy: { verifiedAt: 'asc' },
+    });
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({ givenName: 'ANNA MARIA', familyName: 'ERIKSSON' });
+    expect(history[1]).toMatchObject({ givenName: 'ANNA', familyName: 'SVENSSON' });
+
+    const subject = await migratorPrisma.subject.findUniqueOrThrow({ where: { id: subjectId } });
+    expect(subject.familyName).toBe('SVENSSON');
+  });
+
   it('estamp_registry: resolves synchronously in dev mode with a real CNIC+phone input, same as otp_sms/bank_account_title', async () => {
     const { tenantId, subjectId, caseId } = await makeCase('activity-test-estamp-passed', ['estamp_registry']);
 

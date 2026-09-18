@@ -26,6 +26,13 @@ describe('decideFromExtractedText', () => {
     });
   });
 
+  it('PASSED: surfaces the MRZ-encoded name — the one field a checksum-valid document previously dropped', () => {
+    const result = decideFromExtractedText(VALID_MRZ_TEXT);
+    expect(result.raw).toMatchObject({
+      mrz: expect.objectContaining({ surname: 'ERIKSSON', givenNames: 'ANNA MARIA' }),
+    });
+  });
+
   it('FAILED: a checksum-invalid MRZ is tampered-or-misread, never silently passed', () => {
     const result = decideFromExtractedText(TAMPERED_MRZ_TEXT);
     expect(result.status).toBe('FAILED');
@@ -33,6 +40,13 @@ describe('decideFromExtractedText', () => {
       engine: 'tesseract+mrz',
       mrz: expect.objectContaining({ checksumValid: false }),
     });
+  });
+
+  it('FAILED: never surfaces a name from a checksum-invalid MRZ — untrustworthy along with everything else on it', () => {
+    const result = decideFromExtractedText(TAMPERED_MRZ_TEXT);
+    const mrz = result.raw['mrz'] as Record<string, unknown>;
+    expect(mrz['givenNames']).toBeUndefined();
+    expect(mrz['surname']).toBeUndefined();
   });
 
   it('NEEDS_REVIEW: readable text with no MRZ has no checksum to validate against', () => {

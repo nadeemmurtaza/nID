@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import type { OrganizationMembership } from '@nid/db';
+import type { Organization, OrganizationMembership } from '@nid/db';
 import type { TenantScopedClient } from '../../core/db/prisma.service';
 import { PrismaService } from '../../core/db/prisma.service';
 import { AuditService } from '../../core/audit/audit.service';
@@ -82,6 +82,28 @@ export class OrganizationsService {
         throw new NotFoundException('Organization not found.');
       }
       return this.findVerificationStatus(tx, organization.subjectId);
+    });
+  }
+
+  /**
+   * The Organization row itself, but only once it's real-KYB-verified —
+   * ProfilesService.createForOrganization() needs the actual row (for
+   * legalName, the one name this Organization's own KYB vouches for — see
+   * its own comment), not just a boolean, and must never let an
+   * unverified Organization's profile-creation attempt get far enough to
+   * read legalName in the first place.
+   */
+  async getVerified(tenantId: string, organizationId: string): Promise<Organization> {
+    return this.prisma.forTenant(tenantId, async (tx) => {
+      const organization = await tx.organization.findUnique({ where: { id: organizationId } });
+      if (!organization) {
+        throw new NotFoundException('Organization not found.');
+      }
+      const verification = await this.findVerificationStatus(tx, organization.subjectId);
+      if (!verification.isVerified) {
+        throw new BadRequestException('This organization must be verified before it can create a brand profile.');
+      }
+      return organization;
     });
   }
 

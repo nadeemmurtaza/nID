@@ -1237,6 +1237,85 @@ proving isolation and the non-admin/unverified rejections end to end.
 This same live pass is what caught the `Subject.accountId` uniqueness
 bug before it ever reached a test file.
 
+### Verified real names and the username system: "one username, forever, and it has to be you"
+
+Two gaps first: nowhere in the schema was a verified name ever stored as a
+*value* — `PhoneBadgeEvidence` proves an IDENTITY check happened at some
+`VerificationLevel`, never what name it found. And
+`VerificationMethodAttempt.raw` was computed by every provider's
+`evaluateDocument()`/`VerificationResult` and then thrown away —
+`resolveCaseActivity` only ever forwarded it transiently into a
+FAILED/NEEDS_REVIEW webhook payload, never persisted it, and an APPROVED
+case got `raw: {}`. `packages/ocr-engine`'s MRZ parser (`mrz.ts`) already
+extracted `givenNames`/`surname` from a checksum-valid TD3 zone; it just
+never reached `evaluate-document.ts`'s output. Both fixed together, because
+the username system needs a real value to derive a slug from, not just a
+pass/fail flag:
+
+- **`evaluateDocument()`** now surfaces `raw.mrz.givenNames`/`surname` for a
+  checksum-valid MRZ (`undefined` on a failed/tampered checksum — never
+  surface a name the check itself couldn't trust). Proven against the real
+  ICAO Doc 9303 worked example, not a synthetic stand-in, and separately
+  against a real Playwright-rendered passport image run through real
+  Tesseract OCR end to end (a genuine HTML-injection bug in that rendering —
+  unescaped `<` MRZ filler chars parsed as tags by `page.setContent()` —
+  surfaced and fixed along the way).
+- **`VerificationMethodAttempt.raw Json?`** — the provider result is now
+  persisted on every attempt, not just forwarded on the unhappy paths.
+- **`PhoneNameEvidence`** (new, alongside `PhoneBadgeEvidence` in the same
+  cross-tenant trust domain — phone-keyed, no `Subject` PII, readable via
+  `PrismaService.unscoped`): `resolveCaseActivity` writes one row per PASSED
+  `document_ocr` attempt that yielded an MRZ name, and updates
+  `Subject.givenName`/`familyName` to match. A second, later case with a
+  *different* MRZ name appends a new row rather than overwriting — that
+  append becomes the signal task #75's govt-rename unlock will read.
+
+On top of that evidence, `apps/api/src/modules/profiles`:
+
+- **`slugifyRealName`/`slugMatchesRealName`** (`profiles/username.ts`) —
+  NFKD-normalize and hyphenate a real name into a slug, then accept either
+  an exact match or a hyphen-qualified extension of it (`anna-maria-eriksson`
+  or `anna-maria-eriksson-nyc`) — never an arbitrary string, "will for sure
+  contain the realname in priority" enforced structurally, not by convention.
+- **Verified-account gate**: `ProfilesService.requireVerifiedRealName()`
+  requires *both* an IDENTITY-claimType badge (`CrossTenantBadgesService`)
+  *and* a real `PhoneNameEvidence` row — an account verified some other way
+  that never actually confirmed a name (e.g. registry-only) is correctly
+  still rejected. `create()`/`update()` apply this to personal profiles;
+  `createForOrganization()`/`updateForOrganization()` apply the equivalent
+  rule to brand profiles, deriving the slug from `Organization.legalName`
+  instead (via the new `OrganizationsService.getVerified()`, throwing if the
+  org isn't verified) — reusing the same `slugifyRealName` helpers rather
+  than building a parallel "verified org name" capture path, since legalName
+  is the one name the org's own KYB (already required to create a brand
+  profile at all) practically vouches for.
+- **One username per person/org, forever**: `create()`/`createForOrganization()`
+  reject a second profile for an owner that already has one
+  (`ConflictException`) — there is no route to a second slug, only to
+  changing the first.
+- **`Profile.usernameSetAt`**: stamped on every slug creation/change, live
+  timestamp rather than a stored lock-boolean — matches this codebase's
+  existing "derive live, don't cache" standard (`Organization.isVerified`).
+  Task #75 will compute the 7-day reconsideration window and permanent lock
+  from this field rather than adding a second source of truth.
+
+**Verified live**: full workspace `typecheck`/`lint`/`test`/`build` clean.
+New coverage: `packages/ocr-engine`'s MRZ-name-surfacing tests (pass and
+tamper-suppressed), `apps/workflows`'s `PhoneNameEvidence`-write tests
+(written, not written, appended on a real name change),
+`apps/api/src/modules/profiles/username.spec.ts`, and a new live-Postgres
+`apps/api/test/profiles.service.spec.ts` covering both gates end to end:
+no-badge rejected, badge-without-name-evidence rejected, unrelated slug
+rejected, exact-name and hyphen-suffixed slugs accepted, a second profile
+for the same owner rejected, a slug-only update re-validated while a
+non-slug update isn't, and the organization equivalents (unrelated slug
+rejected, legalName-derived slug accepted). Two pre-existing tests in
+`organization-employee-invites.spec.ts` used arbitrary timestamp-suffixed
+slugs that this new rule correctly now rejects — expected breakage from a
+real rule that didn't exist when those tests were written, fixed by
+deriving those slugs from the orgs' own `legalName` instead of loosening
+the rule.
+
 - **Phase 2** — sanctions/PEP screening, one
   country's national-ID registry adapter, manual-review tooling, retention/audit
   maturity.

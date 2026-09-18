@@ -231,7 +231,12 @@ async function persistAttemptResult(
   await withTenantContext(prisma, tenantId, async (tx) => {
     await tx.verificationMethodAttempt.updateMany({
       where: { caseId, method },
-      data: { status: result.status, score: result.score ?? null, completedAt: new Date() },
+      data: {
+        status: result.status,
+        score: result.score ?? null,
+        raw: result.raw as Prisma.InputJsonValue,
+        completedAt: new Date(),
+      },
     });
   });
 }
@@ -291,6 +296,44 @@ export async function resolveCaseActivity(input: ResolveCaseActivityInput): Prom
             verifiedAt: resolvedAt,
           },
         });
+
+        // The real verified name VALUE (PhoneNameEvidence — see its own
+        // schema comment for why this is new), sourced only from
+        // document_ocr, the one method that reads a government-issued ID's
+        // checksum-valid MRZ — never dob_document/education_document/
+        // employment_document, which reuse the same ImageClaimProvider
+        // mechanism for documents that aren't a government identity
+        // credential. evaluate-document.ts only ever puts a name in raw.mrz
+        // when checksumValid is true, so no extra check is needed here
+        // beyond "the attempt itself PASSED".
+        const docOcrAttempt = await tx.verificationMethodAttempt.findFirst({
+          where: { caseId: input.caseId, method: 'document_ocr', status: 'PASSED' },
+        });
+        const mrz = (docOcrAttempt?.raw as { mrz?: { givenNames?: string; surname?: string } } | null)?.mrz;
+        if (mrz?.givenNames && mrz.surname) {
+          await tx.phoneNameEvidence.create({
+            data: {
+              phone: subject.phone,
+              tenantId: input.tenantId,
+              subjectId: input.subjectId,
+              caseId: kase.id,
+              givenName: mrz.givenNames,
+              familyName: mrz.surname,
+              verifiedAt: resolvedAt,
+            },
+          });
+          // The Subject record should reflect the strongest evidence
+          // available — the same "always update to the most current real
+          // fact" reasoning AccountsService.verifyOtp()'s own upsert
+          // already applies to phoneVerifiedAt. This is also what makes a
+          // genuine legal-name-change detectable later (see
+          // PhoneNameEvidence's own comment): comparing this write against
+          // what the previous PhoneNameEvidence row said.
+          await tx.subject.update({
+            where: { id: input.subjectId },
+            data: { givenName: mrz.givenNames, familyName: mrz.surname },
+          });
+        }
       }
     }
 

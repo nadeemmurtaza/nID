@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@nid/db';
 import type { Account, Organization, Profile } from '@nid/db';
 import { PrismaService } from '../../core/db/prisma.service';
@@ -7,6 +7,7 @@ import { OrganizationsService } from '../organizations/organizations.service';
 import type { Badge } from '../badges/badge-ranking';
 import type { CreateProfileDto } from './dto/create-profile.dto';
 import type { UpdateProfileDto } from './dto/update-profile.dto';
+import { slugifyRealName, slugMatchesRealName } from './username';
 
 /**
  * The fields a slug's public GET is allowed to reveal unconditionally —
@@ -58,21 +59,65 @@ export class ProfilesService {
     private readonly organizations: OrganizationsService,
   ) {}
 
-  /** Profile is 1:1 with Account (schema.prisma's comment on it) — no RLS, so `unscoped` is correct. */
-  async create(accountId: string, dto: CreateProfileDto): Promise<Profile> {
+  /**
+   * "Username will be available for verified account only" + "will for
+   * sure contain the realname in priority" — both gated here, before a
+   * slug is ever reserved. Profile is 1:1 with Account (schema.prisma's
+   * comment on it) — no RLS, so `unscoped` is correct.
+   */
+  async create(account: Account, dto: CreateProfileDto): Promise<Profile> {
     assertNotReservedSlug(dto.slug);
-    const existing = await this.prisma.unscoped.profile.findUnique({ where: { accountId } });
+    const realNameSlug = await this.requireVerifiedRealName(account.phone);
+    if (!slugMatchesRealName(dto.slug, realNameSlug)) {
+      throw new BadRequestException(
+        `Username must be based on your verified name ("${realNameSlug}", or "${realNameSlug}-..." for a qualifier).`,
+      );
+    }
+
+    const existing = await this.prisma.unscoped.profile.findUnique({ where: { accountId: account.id } });
     if (existing) {
       throw new ConflictException('This account already has a profile.');
     }
 
     try {
       return await this.prisma.unscoped.profile.create({
-        data: { accountId, slug: dto.slug, displayName: dto.displayName, ...toOptionalProfileFields(dto) },
+        data: {
+          accountId: account.id,
+          slug: dto.slug,
+          displayName: dto.displayName,
+          usernameSetAt: new Date(),
+          ...toOptionalProfileFields(dto),
+        },
       });
     } catch (err) {
       throw translateUniqueViolation(err);
     }
+  }
+
+  /**
+   * Real cross-tenant identity verification, required before a username
+   * can exist at all — an IDENTITY badge alone isn't enough on its own
+   * (org_membership-style inheritance, or a REGISTRY_VERIFIED check with
+   * no document, could produce one without ever recording a name), so
+   * this also requires the actual PhoneNameEvidence row a real
+   * document_ocr pass writes (see resolveCaseActivity's own comment).
+   * Returns the slugified name a chosen username must be built from.
+   */
+  private async requireVerifiedRealName(phone: string): Promise<string> {
+    const badges = await this.crossTenantBadges.getBadgesForPhone(phone);
+    if (!badges.some((badge) => badge.claimType === 'IDENTITY')) {
+      throw new ForbiddenException('Verify your identity before choosing a username.');
+    }
+    const name = await this.prisma.unscoped.phoneNameEvidence.findFirst({
+      where: { phone },
+      orderBy: { verifiedAt: 'desc' },
+    });
+    if (!name) {
+      throw new ForbiddenException(
+        'A verified government ID with your name on it is required before choosing a username.',
+      );
+    }
+    return slugifyRealName(`${name.givenName} ${name.familyName}`);
   }
 
   async getMine(accountId: string): Promise<Profile> {
@@ -83,19 +128,31 @@ export class ProfilesService {
     return profile;
   }
 
-  async update(accountId: string, dto: UpdateProfileDto): Promise<Profile> {
-    if (dto.slug !== undefined) {
-      assertNotReservedSlug(dto.slug);
-    }
-    const profile = await this.prisma.unscoped.profile.findUnique({ where: { accountId } });
+  async update(account: Account, dto: UpdateProfileDto): Promise<Profile> {
+    const profile = await this.prisma.unscoped.profile.findUnique({ where: { accountId: account.id } });
     if (!profile) {
       throw new NotFoundException('No profile exists for this account yet.');
     }
 
+    if (dto.slug !== undefined && dto.slug !== profile.slug) {
+      assertNotReservedSlug(dto.slug);
+      const realNameSlug = await this.requireVerifiedRealName(account.phone);
+      if (!slugMatchesRealName(dto.slug, realNameSlug)) {
+        throw new BadRequestException(
+          `Username must be based on your verified name ("${realNameSlug}", or "${realNameSlug}-..." for a qualifier).`,
+        );
+      }
+    }
+
     try {
       return await this.prisma.unscoped.profile.update({
-        where: { accountId },
-        data: { slug: dto.slug, displayName: dto.displayName, ...toOptionalProfileFields(dto) },
+        where: { accountId: account.id },
+        data: {
+          slug: dto.slug,
+          displayName: dto.displayName,
+          usernameSetAt: dto.slug !== undefined && dto.slug !== profile.slug ? new Date() : undefined,
+          ...toOptionalProfileFields(dto),
+        },
       });
     } catch (err) {
       throw translateUniqueViolation(err);
@@ -117,9 +174,17 @@ export class ProfilesService {
   async createForOrganization(accountId: string, organizationId: string, dto: CreateProfileDto): Promise<Profile> {
     assertNotReservedSlug(dto.slug);
     const membership = await this.organizations.requireActiveAdmin(organizationId, accountId);
-    const verification = await this.organizations.getVerificationStatus(membership.tenantId, organizationId);
-    if (!verification.isVerified) {
-      throw new BadRequestException('This organization must be verified before it can create a brand profile.');
+    const organization = await this.organizations.getVerified(membership.tenantId, organizationId);
+
+    // Same "must derive from the real, verified name" rule as a personal
+    // username — legalName here, not a self-chosen displayName, since
+    // that's the one name this Organization's own KYB actually vouches
+    // for (see OrganizationsService.getVerified()'s own comment).
+    const realNameSlug = slugifyRealName(organization.legalName);
+    if (!slugMatchesRealName(dto.slug, realNameSlug)) {
+      throw new BadRequestException(
+        `Username must be based on the organization's verified legal name ("${realNameSlug}", or "${realNameSlug}-..." for a qualifier).`,
+      );
     }
 
     const existing = await this.prisma.unscoped.profile.findUnique({ where: { organizationId } });
@@ -129,7 +194,13 @@ export class ProfilesService {
 
     try {
       return await this.prisma.unscoped.profile.create({
-        data: { organizationId, slug: dto.slug, displayName: dto.displayName, ...toOptionalProfileFields(dto) },
+        data: {
+          organizationId,
+          slug: dto.slug,
+          displayName: dto.displayName,
+          usernameSetAt: new Date(),
+          ...toOptionalProfileFields(dto),
+        },
       });
     } catch (err) {
       throw translateUniqueViolation(err);
@@ -147,19 +218,32 @@ export class ProfilesService {
   }
 
   async updateForOrganization(accountId: string, organizationId: string, dto: UpdateProfileDto): Promise<Profile> {
-    if (dto.slug !== undefined) {
-      assertNotReservedSlug(dto.slug);
-    }
-    await this.organizations.requireActiveAdmin(organizationId, accountId);
+    const membership = await this.organizations.requireActiveAdmin(organizationId, accountId);
     const profile = await this.prisma.unscoped.profile.findUnique({ where: { organizationId } });
     if (!profile) {
       throw new NotFoundException('No profile exists for this organization yet.');
     }
 
+    if (dto.slug !== undefined && dto.slug !== profile.slug) {
+      assertNotReservedSlug(dto.slug);
+      const organization = await this.organizations.getVerified(membership.tenantId, organizationId);
+      const realNameSlug = slugifyRealName(organization.legalName);
+      if (!slugMatchesRealName(dto.slug, realNameSlug)) {
+        throw new BadRequestException(
+          `Username must be based on the organization's verified legal name ("${realNameSlug}", or "${realNameSlug}-..." for a qualifier).`,
+        );
+      }
+    }
+
     try {
       return await this.prisma.unscoped.profile.update({
         where: { organizationId },
-        data: { slug: dto.slug, displayName: dto.displayName, ...toOptionalProfileFields(dto) },
+        data: {
+          slug: dto.slug,
+          displayName: dto.displayName,
+          usernameSetAt: dto.slug !== undefined && dto.slug !== profile.slug ? new Date() : undefined,
+          ...toOptionalProfileFields(dto),
+        },
       });
     } catch (err) {
       throw translateUniqueViolation(err);

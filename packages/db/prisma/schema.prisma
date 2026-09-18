@@ -437,6 +437,16 @@ model VerificationMethodAttempt {
   status      AttemptStatus @default(PENDING)
   providerKey String
   resultMeta  Json?
+  /// The provider's completion result detail (VerificationResult.raw) —
+  /// OCR/MRZ fields, forensics verdicts, registry response detail, etc.
+  /// Previously computed and then discarded once a method completed
+  /// (used only transiently for a FAILED/NEEDS_REVIEW resolve call or the
+  /// outbound webhook payload, never durably stored) — persisted here so
+  /// it stays queryable after the fact, the same real-evidence-over-
+  /// recomputation standard this codebase already holds every other
+  /// evidence table to. See resolveCaseActivity's own PhoneNameEvidence
+  /// write for the first real consumer.
+  raw         Json?
   score       Float?
   startedAt   DateTime      @default(now())
   completedAt DateTime?
@@ -654,6 +664,42 @@ model PhoneBadgeEvidence {
   @@index([phone, claimType])
 }
 
+/// The real, verified name VALUE behind a phone — a genuinely different
+/// thing from both PhoneBadgeEvidence (proves a claimType/level, never the
+/// actual fact) and VerifiedAttribute (proves NAME was checked, at what
+/// level, never the string). Neither existed anywhere in this schema
+/// before this table: the username system (Profile.slug) needs to know
+/// not just "was this person's identity verified" but "verified as
+/// *what name*", and detecting a genuine legal name change (the only way
+/// a locked username can ever be changed — see Profile's own comment)
+/// needs to compare successive verified values over time.
+///
+/// Append-only, one row per PASSED document_ocr case whose MRZ had a
+/// checksum-valid name (see evaluate-document.ts) — never dob_document/
+/// education_document/employment_document, which use the same
+/// ImageClaimProvider mechanism but aren't a government-issued identity
+/// document. Written by resolveCaseActivity (apps/workflows), same
+/// trigger point and same no-RLS cross-tenant trust domain as
+/// PhoneBadgeEvidence above — a phone, not a tenantId-scoped Subject, is
+/// the join key a person's own Account needs to read this by, across
+/// every tenant that's ever run a real document check against them.
+/// Reading "the current verified name" means the most recent row by
+/// verifiedAt; reading "did the name just change" means comparing the two
+/// most recent rows.
+model PhoneNameEvidence {
+  id         String   @id @default(cuid())
+  phone      String
+  tenantId   String
+  subjectId  String
+  caseId     String
+  givenName  String
+  familyName String
+  verifiedAt DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([phone, verifiedAt])
+}
+
 // ---------------------------------------------------------------------------
 // Public profiles — a person or business's public-facing page. One per
 // Account, not per Subject: a Subject is owned by one tenant for that
@@ -739,6 +785,14 @@ model Profile {
   showHours    Boolean @default(true)
 
   isPublished Boolean  @default(false)
+  /// When the CURRENT slug was set — reconsideration/lock math (see
+  /// ProfilesService's own comments) is computed live from this, never a
+  /// separately stored "isLocked" flag: freely changeable within 7 days
+  /// of this timestamp, permanently locked after, except when a genuine
+  /// legal name change (a new PhoneNameEvidence row differing from the
+  /// one the current slug was built from) unlocks exactly one more
+  /// change — which itself resets this to the new change's time.
+  usernameSetAt DateTime @default(now())
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

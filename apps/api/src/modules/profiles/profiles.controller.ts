@@ -13,7 +13,7 @@ export class ProfilesController {
   @UseGuards(AccountSessionGuard)
   @Post()
   create(@CurrentAccount() account: Account, @Body() dto: CreateProfileDto) {
-    return this.profiles.create(account.id, dto);
+    return this.profiles.create(account, dto);
   }
 
   @UseGuards(AccountSessionGuard)
@@ -25,7 +25,7 @@ export class ProfilesController {
   @UseGuards(AccountSessionGuard)
   @Patch('me')
   update(@CurrentAccount() account: Account, @Body() dto: UpdateProfileDto) {
-    return this.profiles.update(account.id, dto);
+    return this.profiles.update(account, dto);
   }
 
   /** Unauthenticated — apps/profile-ui's public /[slug] page. Must stay declared after 'me' above. */

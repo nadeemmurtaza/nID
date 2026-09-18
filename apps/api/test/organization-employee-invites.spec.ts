@@ -310,7 +310,7 @@ describeIfDb('organization employee invites + brand profiles (live Postgres, no 
       const admin = await organizations.invite(tenantId, apiKeyId, org.id, { phone: uniquePhone('profileadmin'), isAdmin: true });
       await organizations.respondToInvite(admin.accountId!, admin.id, 'ACCEPTED');
 
-      const slug = `verified-brand-${Date.now()}`;
+      const slug = 'fully-verified-brand-org';
       const created = await profiles.createForOrganization(admin.accountId!, org.id, {
         slug,
         displayName: 'Fully Verified Brand Org',
@@ -336,7 +336,7 @@ describeIfDb('organization employee invites + brand profiles (live Postgres, no 
       await verifyOrg(tenantId, org.subjectId, policy.id);
       const admin = await organizations.invite(tenantId, apiKeyId, org.id, { phone: uniquePhone('updateadmin'), isAdmin: true });
       await organizations.respondToInvite(admin.accountId!, admin.id, 'ACCEPTED');
-      const slug = `update-gate-${Date.now()}`;
+      const slug = 'update-gate-org';
       await profiles.createForOrganization(admin.accountId!, org.id, { slug, displayName: 'Update Gate Org' });
 
       const stranger = await migratorPrisma.account.create({ data: { phone: uniquePhone('updatestranger') } });
