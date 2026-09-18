@@ -150,6 +150,32 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
     expect(attempt.completedAt).not.toBeNull();
   });
 
+  it('a PASSED otp_sms attempt writes a real PHONE/SELF_ATTESTED VerifiedAttribute row, independent of the claimType badge', async () => {
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-attribute-phone', ['otp_sms']);
+    await startMethodActivity({ caseId, tenantId, subjectId, method: 'otp_sms', input: { phone: '+15551234567' } });
+
+    const knownCode = '999888';
+    const knownHash = sha256Hex(knownCode);
+    await migratorPrisma.verificationMethodAttempt.updateMany({
+      where: { caseId, method: 'otp_sms' },
+      data: { resultMeta: { codeHash: knownHash } },
+    });
+    await completeMethodActivity({
+      caseId,
+      tenantId,
+      subjectId,
+      method: 'otp_sms',
+      resultMeta: { codeHash: knownHash },
+      payload: { submittedCode: knownCode },
+    });
+    await resolveCaseActivity({ tenantId, caseId, subjectId, caseStatus: 'APPROVED', decision: 'PASSED', raw: {} });
+
+    const attribute = await migratorPrisma.verifiedAttribute.findFirstOrThrow({ where: { subjectId, attribute: 'PHONE' } });
+    expect(attribute.level).toBe('SELF_ATTESTED');
+    expect(attribute.method).toBe('otp_sms');
+    expect(attribute.caseId).toBe(caseId);
+  });
+
   it('otp_sms: a wrong code resolves the case to REJECTED and delivers a validly signed webhook', async () => {
     const { tenantId, subjectId, caseId } = await makeCase('activity-test-otp-rejected', ['otp_sms']);
     const started = await startMethodActivity({
@@ -346,6 +372,39 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
     expect(kase.status).toBe('NEEDS_REVIEW');
   });
 
+  it('a single PASSED method that proves several attributes at once writes one VerifiedAttribute row per attribute', async () => {
+    // estamp_registry's own provider is still blocked on which province's
+    // system/API access (see task tracking it) — this test exercises
+    // resolveCaseActivity's own attribute-write logic in isolation, which
+    // doesn't care HOW an attempt reached PASSED, only that it did; the
+    // method-attributes.ts registry entry for estamp_registry is already
+    // real and already declares NAME + NATIONAL_ID_NUMBER + PHONE.
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-attribute-estamp', ['estamp_registry']);
+    await migratorPrisma.verificationMethodAttempt.updateMany({
+      where: { caseId, method: 'estamp_registry' },
+      data: { status: 'PASSED', completedAt: new Date() },
+    });
+
+    await resolveCaseActivity({ tenantId, caseId, subjectId, caseStatus: 'APPROVED', decision: 'PASSED', raw: {} });
+
+    const attributes = await migratorPrisma.verifiedAttribute.findMany({ where: { subjectId, caseId } });
+    expect(attributes.map((a) => a.attribute).sort()).toEqual(['NAME', 'NATIONAL_ID_NUMBER', 'PHONE']);
+    expect(attributes.every((a) => a.level === 'REGISTRY_VERIFIED' && a.method === 'estamp_registry')).toBe(true);
+  });
+
+  it('a method absent from method-attributes.ts (liveness) contributes no VerifiedAttribute rows even when PASSED', async () => {
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-attribute-liveness-none', ['liveness']);
+    await migratorPrisma.verificationMethodAttempt.updateMany({
+      where: { caseId, method: 'liveness' },
+      data: { status: 'PASSED', completedAt: new Date() },
+    });
+
+    await resolveCaseActivity({ tenantId, caseId, subjectId, caseStatus: 'APPROVED', decision: 'PASSED', raw: {} });
+
+    const attributes = await migratorPrisma.verifiedAttribute.findMany({ where: { subjectId, caseId } });
+    expect(attributes).toHaveLength(0);
+  });
+
   it('org_membership: a confirmed member of a verified organization inherits PASSED synchronously — no upload, no signal', async () => {
     const { tenantId, subjectId, caseId } = await makeCase('activity-test-org-membership', ['org_membership']);
 
@@ -437,6 +496,116 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
     await resolveCaseActivity({ tenantId, caseId, subjectId, caseStatus: 'APPROVED', decision: 'APPROVED', raw: completed.raw });
     const kase = await migratorPrisma.verificationCase.findUniqueOrThrow({ where: { id: caseId } });
     expect(kase.status).toBe('APPROVED');
+  });
+
+  it('address_gps_match: a real close-by reported location resolves PASSED and writes a real ADDRESS/DOCUMENT_VERIFIED attribute row', async () => {
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-address-gps', ['address_gps_match']);
+    await migratorPrisma.subject.update({
+      where: { id: subjectId },
+      data: { latitude: 24.8607, longitude: 67.0011 },
+    });
+
+    const started = await startMethodActivity({
+      caseId,
+      tenantId,
+      subjectId,
+      method: 'address_gps_match',
+      input: {},
+    });
+    expect(started.pending).toBe(true);
+    if (!started.pending) return;
+
+    const completed = await completeMethodActivity({
+      caseId,
+      tenantId,
+      subjectId,
+      method: 'address_gps_match',
+      resultMeta: started.resultMeta,
+      // A real device-reported location a few meters from the claimed address.
+      payload: { latitude: 24.8608, longitude: 67.0012 },
+    });
+    expect(completed.status).toBe('PASSED');
+
+    await resolveCaseActivity({ tenantId, caseId, subjectId, caseStatus: 'APPROVED', decision: 'PASSED', raw: {} });
+
+    const attribute = await migratorPrisma.verifiedAttribute.findFirstOrThrow({
+      where: { subjectId, attribute: 'ADDRESS' },
+    });
+    expect(attribute.level).toBe('DOCUMENT_VERIFIED');
+    expect(attribute.method).toBe('address_gps_match');
+  });
+
+  it('address_gps_match: a real far-away reported location resolves NEEDS_REVIEW, not FAILED', async () => {
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-address-gps-far', ['address_gps_match']);
+    await migratorPrisma.subject.update({
+      where: { id: subjectId },
+      data: { latitude: 24.8607, longitude: 67.0011 }, // Karachi
+    });
+
+    const started = await startMethodActivity({ caseId, tenantId, subjectId, method: 'address_gps_match', input: {} });
+    expect(started.pending).toBe(true);
+    if (!started.pending) return;
+
+    const completed = await completeMethodActivity({
+      caseId,
+      tenantId,
+      subjectId,
+      method: 'address_gps_match',
+      resultMeta: started.resultMeta,
+      payload: { latitude: 31.5204, longitude: 74.3587 }, // Lahore — genuinely a different city
+    });
+    expect(completed.status).toBe('NEEDS_REVIEW');
+
+    await resolveCaseActivity({
+      tenantId,
+      caseId,
+      subjectId,
+      caseStatus: 'NEEDS_REVIEW',
+      decision: 'NEEDS_REVIEW',
+      raw: completed.raw,
+    });
+
+    // A NEEDS_REVIEW method attempt never PASSED, so no attribute evidence — no false badge.
+    const attributes = await migratorPrisma.verifiedAttribute.findMany({ where: { subjectId, attribute: 'ADDRESS' } });
+    expect(attributes).toHaveLength(0);
+  });
+
+  it('address_postal_otp: dev mode generates a real hashed code, and the correct code resolves PASSED with a real ADDRESS/REGISTRY_VERIFIED attribute row', async () => {
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-address-postal', ['address_postal_otp']);
+    await migratorPrisma.subject.update({
+      where: { id: subjectId },
+      data: { addressLine1: '789 Elm St', city: 'Islamabad', countryCode: 'PK' },
+    });
+
+    const started = await startMethodActivity({ caseId, tenantId, subjectId, method: 'address_postal_otp', input: {} });
+    expect(started.pending).toBe(true);
+    if (!started.pending) return;
+    expect(typeof started.resultMeta['codeHash']).toBe('string');
+
+    const knownCode = '135790';
+    const knownHash = sha256Hex(knownCode);
+    await migratorPrisma.verificationMethodAttempt.updateMany({
+      where: { caseId, method: 'address_postal_otp' },
+      data: { resultMeta: { codeHash: knownHash } },
+    });
+
+    const completed = await completeMethodActivity({
+      caseId,
+      tenantId,
+      subjectId,
+      method: 'address_postal_otp',
+      resultMeta: { codeHash: knownHash },
+      payload: { submittedCode: knownCode },
+    });
+    expect(completed.status).toBe('PASSED');
+
+    await resolveCaseActivity({ tenantId, caseId, subjectId, caseStatus: 'APPROVED', decision: 'PASSED', raw: {} });
+
+    const attribute = await migratorPrisma.verifiedAttribute.findFirstOrThrow({
+      where: { subjectId, attribute: 'ADDRESS' },
+    });
+    expect(attribute.level).toBe('REGISTRY_VERIFIED');
+    expect(attribute.method).toBe('address_postal_otp');
   });
 
   it('multi-method policy: the case is not resolved until every method has run, in order', async () => {

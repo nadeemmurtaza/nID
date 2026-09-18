@@ -138,6 +138,51 @@ async function main(): Promise<void> {
         },
       });
 
+      // The three address-verification methods — each earns the real
+      // ADDRESS attribute badge (VerifiedAttribute, via method-attributes.ts)
+      // independent of whichever ClaimType/level this policy itself
+      // declares (that coarse pair predates attribute-level badges and has
+      // no ADDRESS value of its own — IDENTITY is the closest real-world
+      // fit, the same category proof-of-address documents fall under in
+      // standard KYC).
+      await prisma.verificationPolicy.upsert({
+        where: { tenantId_name: { tenantId: tenant.id, name: 'address-gps-match' } },
+        update: { claimType: 'IDENTITY', level: 'DOCUMENT_VERIFIED' },
+        create: {
+          tenantId: tenant.id,
+          name: 'address-gps-match',
+          methods: ['address_gps_match'],
+          claimType: 'IDENTITY',
+          level: 'DOCUMENT_VERIFIED',
+        },
+      });
+      await prisma.verificationPolicy.upsert({
+        where: { tenantId_name: { tenantId: tenant.id, name: 'address-utility-bill' } },
+        update: { claimType: 'IDENTITY', level: 'DOCUMENT_VERIFIED' },
+        create: {
+          tenantId: tenant.id,
+          name: 'address-utility-bill',
+          methods: ['address_utility_bill'],
+          claimType: 'IDENTITY',
+          level: 'DOCUMENT_VERIFIED',
+        },
+      });
+      // The strongest of the three — physical mail delivery to the claimed
+      // address is a real third-party (the postal system) attesting it's
+      // real and reachable, same reasoning method-attributes.ts gives it
+      // REGISTRY_VERIFIED at the attribute level too.
+      await prisma.verificationPolicy.upsert({
+        where: { tenantId_name: { tenantId: tenant.id, name: 'address-postal-otp' } },
+        update: { claimType: 'IDENTITY', level: 'REGISTRY_VERIFIED' },
+        create: {
+          tenantId: tenant.id,
+          name: 'address-postal-otp',
+          methods: ['address_postal_otp'],
+          claimType: 'IDENTITY',
+          level: 'REGISTRY_VERIFIED',
+        },
+      });
+
       // Badges: one policy per (ClaimType, VerificationLevel) a tenant
       // wants to offer. DATE_OF_BIRTH has no registry-level policy — there's
       // no universal birth registry to check against; that's genuinely

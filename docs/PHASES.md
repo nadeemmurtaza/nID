@@ -640,6 +640,141 @@ own suite established) and the same `node --experimental-vm-modules` Jest
 invocation `packages/ocr-engine` already needed for jimp's ESM-only
 `file-type` dependency.
 
+### Attribute-level badges: one tiny badge per real-world fact, not per case
+
+A genuinely finer axis than ClaimType/VerificationLevel's own case-level
+badge: a Subject's individual real-world facts (NAME, NATIONAL_ID_NUMBER,
+PHONE, EMAIL, DATE_OF_BIRTH, ADDRESS) can each be independently verified,
+by whichever method actually proved them — the point being that ONE method
+can prove SEVERAL at once (a Pakistani e-stamp check confirms NAME +
+NATIONAL_ID_NUMBER + PHONE together, since e-stamp purchase requires the
+original CNIC and only accepts a phone number already linked to it) while
+another proves exactly one (`otp_sms` proves nothing but PHONE control).
+Both axes coexist deliberately — the coarse claimType/level badge answers
+"is this Subject's IDENTITY verified, and how strongly," the new one
+answers "which specific facts about them do we have real evidence for."
+
+- **Schema.** New `AttributeType` enum and an append-only
+  `VerifiedAttribute` table (`tenantId, subjectId, attribute, level,
+  method, caseId, verifiedAt`) — the exact same append-only +
+  rank-strongest-first pattern `PhoneBadgeEvidence` already established,
+  just scoped per (subject, attribute) and RLS'd like every other
+  tenant-owned table (VerifiedAttribute lives in VerificationCase's trust
+  domain, unlike PhoneBadgeEvidence's cross-tenant one). `Subject` gained
+  real address fields (addressLine1/addressLine2/city/region/countryCode/
+  latitude/longitude) it never had before — Profile has its own for the
+  public-facing side, but Subject (the KYC-side record) had nothing until
+  now. `AttributeType.CNIC` was renamed to `NATIONAL_ID_NUMBER` before
+  anything depended on it — generic across countries, matching
+  `Subject.nationalIdNumber`'s own already-generic column name rather than
+  hardcoding one country's term into a multi-country enum.
+- **`method-attributes.ts`** (new, `packages/verification-providers`): the
+  static, predefined "this method, once PASSED, proves exactly these
+  facts, at this strength" map the whole feature is built on — e.g.
+  `otp_sms → {PHONE, SELF_ATTESTED}` (possession, not identity — matches
+  `VerificationLevel.SELF_ATTESTED`'s own pre-existing doc comment, which
+  already named otp_sms as its example), `estamp_registry → {NAME,
+  NATIONAL_ID_NUMBER, PHONE, REGISTRY_VERIFIED}` (declared now even though
+  that provider itself is still blocked on which province's e-stamp system
+  and whether real API access exists — the wiring is correct the moment it
+  lands). A method absent from the map (liveness, org_membership, every
+  EDUCATION/EMPLOYMENT method) proves none of these attributes — a real,
+  deliberate fact about those methods, not an oversight.
+- **Wiring.** `apps/workflows`' `resolveCaseActivity` now also writes one
+  `VerifiedAttribute` row per attribute for every PASSED method attempt in
+  a case — independent of the case's own overall resolution (REJECTED/
+  EXPIRED/APPROVED): a method that genuinely passed proved something real
+  even if a different, unrelated method later failed in the same
+  multi-method case. `apps/api` gained `GET /v1/subjects/:id/attribute-badges`
+  (`SubjectsService.getAttributeBadges`, reusing a new sibling ranking
+  function `pickStrongestPerAttribute` — kept as its own small function
+  rather than generalized with the existing claimType one, since the two
+  are structurally identical but genuinely different domain concepts, and
+  forcing a shared generic would've cost more clarity than the ~15 lines
+  it would have saved).
+
+### Address verification: three real methods for one real attribute
+
+Exactly the three methods described when this was scoped: GPS/current-
+location match, a utility bill upload, and postal mail carrying a one-time
+code — each independently earning the same ADDRESS attribute badge at a
+different strength.
+
+- **`address_gps_match`** (new provider) — compares a subject's
+  device-reported current location against their claimed address's
+  coordinates (`Subject.latitude/longitude`) via a real haversine
+  great-circle distance calculation (`geo-distance.ts`, validated against
+  the real, well-known London–Paris distance and a real 1°-latitude
+  distance, not just self-consistency). Within ~500m (configurable) →
+  PASSED; farther → NEEDS_REVIEW, not FAILED — being away from a claimed
+  address right now is a real signal, not proof the claim is false (the
+  subject might just not be home, or the address on file might be stale),
+  the same honesty standard every other ambiguous outcome in this codebase
+  follows. The second provider in this package (after
+  OrganizationMembershipProvider) to query nID's own data rather than a
+  vendor or an upload.
+- **`address_utility_bill`** — zero new provider code: one more
+  `ImageClaimProvider` instance, reusing the exact same document-upload
+  mechanism `education_document`/`employment_document` already use.
+- **`address_postal_otp`** (new provider) — the strongest of the three: a
+  real physical letter carrying a one-time code, mailed to the claimed
+  address (`Subject.addressLine1/city/region/countryCode`), entered back
+  once received. Same code-hash-and-compare mechanism as `otp_sms`
+  (generate, hash, deliver, constant-time compare on submission) but
+  deliberately not a shared base class with it — the delivery channel, its
+  real vendor contract, and critically the wait duration are all genuinely
+  different. Dev mode logs the code instead of mailing it; production mode
+  makes a real, configurable HTTP call to a real postal/mail-delivery
+  vendor (Lob, PostGrid, a national postal service API, ...) and throws a
+  clear error if none is configured, the same buy-vendor pattern
+  `RegistryCheckProvider` already established.
+- **Per-method Temporal timeouts** (new: `method-timeouts.ts`,
+  `VerificationWorkflowInput.methodTimeouts`). Physical mail takes DAYS,
+  not the ~10 minutes every other method in this codebase completes
+  within — leaving the same global default would have made
+  `address_postal_otp` a method that could structurally never succeed (the
+  case would always expire before a letter could possibly arrive). Now a
+  static, predefined per-method override (`address_postal_otp: '7 days'`,
+  everything else keeps the shared default), computed by `apps/api` at
+  case-creation time and threaded through the workflow input — the
+  workflow itself never branches on method name, it just reads whatever
+  duration it was handed. Surfaced two new generic, shape-based submission
+  routes reusable by any future method needing them:
+  `.../claims/:method/code` (otp_sms keeps its own established
+  `/otp/submit` route) and `.../claims/:method/location`, on both the
+  tenant-API-key and subject-session controllers.
+- Generalized `resolveProviderPayload`'s inline-value passthrough from a
+  hardcoded `otp_sms`-only `expectedCodeHash` rename into a genuine
+  `{...payload, ...resultMeta}` spread, so `address_gps_match`'s expected
+  coordinates and any future inline-value method's own state reach
+  `handleCallback` the same way `otp_sms`'s `codeHash` now does (renamed
+  to match, rather than translated in between for no real reason).
+
+**Verified live, real evidence at every layer**: `geo-distance.spec.ts`
+against the real London–Paris distance; `address-gps-match.provider.spec.ts`
+and `address-postal-otp.provider.spec.ts` against real Postgres
+(`RUN_DB_TESTS=true`) — a subject with claimed coordinates/address versus
+one without, dev-mode code generation, production mode's real "no vendor
+configured" error; the full activity-layer pipeline proven end to end in
+`verification-method.activity.spec.ts` — a real close-by location
+resolves PASSED with a real ADDRESS/DOCUMENT_VERIFIED row, a real
+genuinely-different-city location resolves NEEDS_REVIEW with **no**
+attribute row written (no false badge from an unproven attempt), and a
+real postal code round-trip resolves PASSED with a real ADDRESS/
+REGISTRY_VERIFIED row. The full HTTP layer proven live against a running
+`apps/api` + real Postgres: `POST /v1/subjects` with real address/
+coordinate fields round-trips correctly, `GET /v1/subjects/:id/attribute-badges`
+returns the real seeded evidence for both a single-attribute case
+(`otp_sms` → one PHONE/SELF_ATTESTED badge, coexisting correctly with the
+same subject's coarse IDENTITY/SELF_ATTESTED claimType badge) and the
+multi-attribute case the whole feature was built around (`estamp_registry`
+→ three real REGISTRY_VERIFIED badges — NAME, NATIONAL_ID_NUMBER, PHONE —
+from one case, traceable to the same method and case id), plus negative
+paths (400 on an out-of-range latitude on both subject creation and
+location submission, 400 on submitting a code/location to a method that
+isn't a code/location method). Full workspace `typecheck`/`lint`/`test`/
+`build` pass across every touched package.
+
 - **Phase 2** — sanctions/PEP screening, KYB/business-registry lookup, one
   country's national-ID registry adapter, manual-review tooling, retention/audit
   maturity.

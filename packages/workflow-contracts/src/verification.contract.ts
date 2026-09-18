@@ -27,6 +27,19 @@ export interface VerificationWorkflowInput {
    * not receiving anything) simply have no entry.
    */
   methodInput: Record<string, Record<string, unknown>>;
+  /**
+   * How long to wait for each pending method's callback, keyed by method
+   * key, as a Temporal `condition()` duration string (e.g. "10 minutes",
+   * "7 days") — computed by apps/api from
+   * @nid/verification-providers' method-timeouts.ts at case-creation time
+   * (the workflow itself never imports that package; workflows run in a
+   * deterministic sandbox and must only see plain data). A method with no
+   * entry here falls back to the workflow's own default — see
+   * verification.workflow.ts's METHOD_TIMEOUT. Most methods complete in
+   * minutes; address_postal_otp is the one exception that genuinely needs
+   * days, since it waits on physical mail delivery.
+   */
+  methodTimeouts?: Record<string, string>;
 }
 
 export type VerificationOutcome = 'PENDING' | 'PASSED' | 'FAILED' | 'NEEDS_REVIEW' | 'EXPIRED';

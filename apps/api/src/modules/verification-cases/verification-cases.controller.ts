@@ -20,6 +20,8 @@ import { SubmitOtpDto } from './dto/submit-otp.dto';
 import { ResolveCaseDto } from './dto/resolve-case.dto';
 import { SubmitSelfReportDto } from './dto/submit-self-report.dto';
 import { SubmitAgentAttestationDto } from './dto/submit-agent-attestation.dto';
+import { SubmitCodeDto } from './dto/submit-code.dto';
+import { SubmitLocationDto } from './dto/submit-location.dto';
 import { VerificationCasesService } from './verification-cases.service';
 
 const uploadInterceptor = FileInterceptor('file', {
@@ -138,5 +140,25 @@ export class VerificationCasesController {
     @Body() dto: SubmitAgentAttestationDto,
   ) {
     return this.cases.submitAgentAttestation(tenant.tenantId, tenant.apiKeyId, id, method, dto.decision, dto.notes);
+  }
+
+  @Post(':id/claims/:method/code')
+  submitCode(
+    @CurrentTenant() tenant: AuthenticatedTenant,
+    @Param('id') id: string,
+    @Param('method') method: string,
+    @Body() dto: SubmitCodeDto,
+  ) {
+    return this.cases.submitCode(tenant.tenantId, tenant.apiKeyId, id, method, dto.code);
+  }
+
+  @Post(':id/claims/:method/location')
+  submitLocation(
+    @CurrentTenant() tenant: AuthenticatedTenant,
+    @Param('id') id: string,
+    @Param('method') method: string,
+    @Body() dto: SubmitLocationDto,
+  ) {
+    return this.cases.submitLocation(tenant.tenantId, tenant.apiKeyId, id, method, dto.latitude, dto.longitude);
   }
 }

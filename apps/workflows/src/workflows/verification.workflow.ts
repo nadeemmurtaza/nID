@@ -1,4 +1,5 @@
 import { proxyActivities, setHandler, condition } from '@temporalio/workflow';
+import type { Duration } from '@temporalio/common';
 import {
   submitMethodPayloadSignal,
   verificationStatusQuery,
@@ -17,7 +18,8 @@ const { startMethodActivity, completeMethodActivity, expireMethodActivity, resol
   retry: { maximumAttempts: 3 },
 });
 
-const METHOD_TIMEOUT = '10 minutes';
+/** Falls back for any method input.methodTimeouts doesn't name — see VerificationWorkflowInput's own comment. */
+const DEFAULT_METHOD_TIMEOUT = '10 minutes';
 
 /**
  * Runs a VerificationCase's policy — one or more methods, in order — as a
@@ -59,7 +61,14 @@ export async function verificationWorkflow(input: VerificationWorkflowInput): Pr
       raw = startResult.raw;
     } else {
       pendingSignal = undefined;
-      const gotSignalInTime = await condition(() => pendingSignal?.method === method, METHOD_TIMEOUT);
+      // Duration's real type is a template-literal union (e.g. `${number} minutes`),
+      // narrower than the plain `string` a workflow input necessarily carries
+      // after crossing the Temporal client boundary — this cast is exactly
+      // as safe as the same pattern apps/api already follows for
+      // method-timeouts.ts's own return type, both sourced from the same
+      // validated, predefined string literals.
+      const timeout = (input.methodTimeouts?.[method] ?? DEFAULT_METHOD_TIMEOUT) as Duration;
+      const gotSignalInTime = await condition(() => pendingSignal?.method === method, timeout);
 
       if (!gotSignalInTime) {
         await expireMethodActivity({ caseId: input.caseId, tenantId: input.tenantId, method });

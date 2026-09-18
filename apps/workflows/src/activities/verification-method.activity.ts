@@ -1,5 +1,10 @@
 import { createPrismaClient, withTenantContext, Prisma } from '@nid/db';
-import { buildVerificationProviderRegistry, type VerificationResult, type PendingResult } from '@nid/verification-providers';
+import {
+  buildVerificationProviderRegistry,
+  attributesProvenBy,
+  type VerificationResult,
+  type PendingResult,
+} from '@nid/verification-providers';
 import { LocalStorageDriver } from '@nid/storage';
 import { signWebhookPayload } from '@nid/shared-types';
 
@@ -41,6 +46,14 @@ const registry = buildVerificationProviderRegistry({
   bankAccountTitleConfig: {
     apiUrl: process.env['BANK_ACCOUNT_TITLE_API_URL'],
     apiKey: process.env['BANK_ACCOUNT_TITLE_API_KEY'],
+  },
+  addressGpsMatchMaxDistanceMeters: process.env['ADDRESS_GPS_MATCH_MAX_DISTANCE_METERS']
+    ? Number(process.env['ADDRESS_GPS_MATCH_MAX_DISTANCE_METERS'])
+    : undefined,
+  addressPostalOtpDevMode: process.env['ADDRESS_POSTAL_OTP_DEV_MODE'] === 'true',
+  addressPostalOtpConfig: {
+    apiUrl: process.env['ADDRESS_POSTAL_OTP_API_URL'],
+    apiKey: process.env['ADDRESS_POSTAL_OTP_API_KEY'],
   },
   db: prisma,
 });
@@ -192,9 +205,13 @@ async function resolveProviderPayload(
     const imageBytes = await storage.get(storageKey);
     return { imageBytes, contentType: payload['contentType'], mockOutcome: payload['mockOutcome'] };
   }
-  // otp_sms-shaped: the submitted code travels in the signal directly; the
-  // hash to check it against was persisted by startMethodActivity.
-  return { ...payload, expectedCodeHash: resultMeta['codeHash'] };
+  // Inline-value-shaped (otp_sms's code, address_gps_match's reported
+  // coordinates, ...): the subject's submission travels in the signal
+  // directly, merged with whatever start() asked to persist as resultMeta
+  // for later comparison (otp_sms's codeHash, address_gps_match's expected
+  // lat/long) — the whole object, not one hardcoded key, so this stays a
+  // genuine passthrough any future inline-value method can reuse as-is.
+  return { ...payload, ...resultMeta };
 }
 
 async function persistAttemptResult(
@@ -264,6 +281,38 @@ export async function resolveCaseActivity(input: ResolveCaseActivityInput): Prom
             claimType: kase.claimType,
             level: kase.level,
             verifiedAt: resolvedAt,
+          },
+        });
+      }
+    }
+
+    // Fine-grained attribute evidence — a genuinely separate, finer axis
+    // from the claimType/level badge just above, and deliberately NOT
+    // gated on input.caseStatus === 'APPROVED': a method that actually
+    // PASSED proved something real about the subject even if a different,
+    // unrelated method in the same multi-method case later failed or the
+    // case expired. One row per (attribute, PASSED attempt) pair from the
+    // static method-attributes.ts registry; a method absent from that
+    // registry (liveness, org_membership, education/employment methods)
+    // contributes nothing here, by design. Append-only, ranked
+    // strongest-first at read time — same pattern PhoneBadgeEvidence
+    // already established just above, see VerifiedAttribute's own
+    // schema.prisma comment.
+    const passedAttempts = await tx.verificationMethodAttempt.findMany({
+      where: { caseId: input.caseId, status: 'PASSED' },
+    });
+    for (const attempt of passedAttempts) {
+      const mapping = attributesProvenBy(attempt.method);
+      if (!mapping) continue;
+      for (const attribute of mapping.attributes) {
+        await tx.verifiedAttribute.create({
+          data: {
+            tenantId: input.tenantId,
+            subjectId: input.subjectId,
+            attribute,
+            level: mapping.level,
+            method: attempt.method,
+            caseId: kase.id,
           },
         });
       }

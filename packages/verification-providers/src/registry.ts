@@ -7,6 +7,8 @@ import { RegistryCheckProvider, type RegistryCheckConfig } from './registry-chec
 import { SelfReportedCheckProvider } from './self-reported-check.provider';
 import { AgentAttestedCheckProvider } from './agent-attested-check.provider';
 import { OrganizationMembershipProvider } from './organization-membership.provider';
+import { AddressGpsMatchProvider } from './address-gps-match.provider';
+import { AddressPostalOtpProvider, type PostalOtpConfig } from './address-postal-otp.provider';
 
 /**
  * Every provider that exists in this codebase, regardless of whether a given
@@ -44,6 +46,9 @@ function allProviders(options: VerificationProviderRegistryOptions): Verificatio
     new SelfReportedCheckProvider('ecp_voter_registration', 'ECP voter registration self-report'),
     new AgentAttestedCheckProvider('agent_in_person_document', 'Agent in-person document inspection'),
     new OrganizationMembershipProvider(options.db),
+    new AddressGpsMatchProvider(options.db, options.addressGpsMatchMaxDistanceMeters),
+    new ImageClaimProvider('address_utility_bill', 'Utility bill', options.claimDocumentDevMode),
+    new AddressPostalOtpProvider(options.db, options.addressPostalOtpDevMode, options.addressPostalOtpConfig),
   ];
 }
 
@@ -70,6 +75,11 @@ export interface VerificationProviderRegistryOptions {
    * (apps/workflows) already holds at module scope.
    */
   db: PrismaClient;
+  /** Defaults to 500m (see address-gps-match.provider.ts) when omitted. */
+  addressGpsMatchMaxDistanceMeters?: number;
+  addressPostalOtpDevMode: boolean;
+  /** ADDRESS_POSTAL_OTP_API_URL / ADDRESS_POSTAL_OTP_API_KEY — ignored while addressPostalOtpDevMode is true. */
+  addressPostalOtpConfig?: PostalOtpConfig;
 }
 
 /**

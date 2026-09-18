@@ -24,4 +24,9 @@ export class SubjectsController {
   getBadges(@CurrentTenant() tenant: AuthenticatedTenant, @Param('id') id: string) {
     return this.subjects.getBadges(tenant.tenantId, tenant.apiKeyId, id);
   }
+
+  @Get(':id/attribute-badges')
+  getAttributeBadges(@CurrentTenant() tenant: AuthenticatedTenant, @Param('id') id: string) {
+    return this.subjects.getAttributeBadges(tenant.tenantId, tenant.apiKeyId, id);
+  }
 }

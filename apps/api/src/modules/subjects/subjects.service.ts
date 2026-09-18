@@ -1,7 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../core/db/prisma.service';
 import { AuditService } from '../../core/audit/audit.service';
-import { pickStrongestPerClaimType, type RankableEvidence } from '../badges/badge-ranking';
+import {
+  pickStrongestPerClaimType,
+  pickStrongestPerAttribute,
+  type RankableEvidence,
+  type RankableAttributeEvidence,
+} from '../badges/badge-ranking';
 import type { CreateSubjectDto } from './dto/create-subject.dto';
 
 @Injectable()
@@ -23,6 +28,13 @@ export class SubjectsService {
           email: dto.email,
           phone: dto.phone,
           dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+          addressLine1: dto.addressLine1,
+          addressLine2: dto.addressLine2,
+          city: dto.city,
+          region: dto.region,
+          countryCode: dto.countryCode,
+          latitude: dto.latitude,
+          longitude: dto.longitude,
         },
       });
 
@@ -123,6 +135,55 @@ export class SubjectsService {
         actorType: 'API_KEY',
         actorId: apiKeyId,
         action: 'subject.badges_read',
+        subjectId: subject.id,
+      });
+
+      return { subjectId: subject.id, badges };
+    });
+  }
+
+  /**
+   * The fine-grained counterpart to getBadges() above: a "tiny verification
+   * badge" per individual real-world fact (NAME, NATIONAL_ID_NUMBER, PHONE,
+   * EMAIL, DATE_OF_BIRTH, ADDRESS) rather than one badge per whole-case
+   * claimType. Reads apps/workflows' resolveCaseActivity's own
+   * VerifiedAttribute writes — see method-attributes.ts for exactly which
+   * method proves which attribute(s), and at what level. A Subject with no
+   * evidence for a given attribute simply has no entry for it here — never
+   * a fabricated SELF_ATTESTED fallback the way DATE_OF_BIRTH gets one in
+   * getBadges(), since a bare Subject.addressLine1/email/etc. field being
+   * set says nothing about whether it was ever checked.
+   */
+  async getAttributeBadges(tenantId: string, apiKeyId: string, subjectId: string) {
+    return this.prisma.forTenant(tenantId, async (tx) => {
+      const subject = await tx.subject.findUnique({ where: { id: subjectId } });
+      if (!subject) {
+        throw new NotFoundException('Subject not found.');
+      }
+
+      // Same ORDER BY level DESC convention every other ranking in this
+      // codebase relies on — VerificationLevel's ascending declaration
+      // order makes DESC = strongest.
+      const evidence = await tx.verifiedAttribute.findMany({
+        where: { subjectId },
+        orderBy: [{ level: 'desc' }, { verifiedAt: 'desc' }],
+        select: { attribute: true, level: true, verifiedAt: true, caseId: true, method: true },
+      });
+
+      const rankable: RankableAttributeEvidence[] = evidence.map((row) => ({
+        attribute: row.attribute,
+        level: row.level,
+        verifiedAt: row.verifiedAt,
+        caseId: row.caseId,
+        method: row.method,
+      }));
+
+      const badges = pickStrongestPerAttribute(rankable);
+
+      await this.audit.record(tx, tenantId, {
+        actorType: 'API_KEY',
+        actorId: apiKeyId,
+        action: 'subject.attribute_badges_read',
         subjectId: subject.id,
       });
 

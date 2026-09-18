@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { generateSessionToken } from '@nid/shared-types';
+import { methodTimeout } from '@nid/verification-providers';
 import { PrismaService } from '../../core/db/prisma.service';
 import { AuditService } from '../../core/audit/audit.service';
 import { TemporalClientService } from '../../core/temporal/temporal-client.service';
@@ -14,7 +15,7 @@ export interface UploadedMethodFile {
 }
 
 /** Methods reachable through the generic .../claims/:method/submit routes — see submitClaimDocument(). */
-const CLAIM_DOCUMENT_METHODS = new Set(['dob_document', 'education_document', 'employment_document']);
+const CLAIM_DOCUMENT_METHODS = new Set(['dob_document', 'education_document', 'employment_document', 'address_utility_bill']);
 /** Methods that resolve synchronously in RegistryCheckProvider.start() and need a `referenceId` at creation. */
 const REGISTRY_CHECK_METHODS = new Set(['education_registry', 'employment_registry', 'bank_account_title']);
 /** Methods reachable through the generic .../claims/:method/report route — see submitSelfReport(). */
@@ -23,6 +24,10 @@ const SELF_REPORT_METHODS = new Set(['ecp_voter_registration']);
 const AGENT_ATTESTED_METHODS = new Set(['agent_in_person_document']);
 /** Methods that resolve synchronously in OrganizationMembershipProvider.start() and need an `organizationId` at creation. */
 const ORG_MEMBERSHIP_METHODS = new Set(['org_membership']);
+/** Methods reachable through the generic .../claims/:method/code route — see submitCode(). otp_sms keeps its own dedicated /otp/submit route (established, still used). */
+const CODE_SUBMISSION_METHODS = new Set(['address_postal_otp']);
+/** Methods reachable through the generic .../claims/:method/location route — see submitLocation(). */
+const LOCATION_METHODS = new Set(['address_gps_match']);
 
 @Injectable()
 export class VerificationCasesService {
@@ -121,6 +126,7 @@ export class VerificationCasesService {
       subjectId: created.subjectId,
       methods: created.methods,
       methodInput: buildMethodInput(created.methods, dto),
+      methodTimeouts: Object.fromEntries(created.methods.map((method) => [method, methodTimeout(method)])),
     });
 
     return {
@@ -400,6 +406,50 @@ export class VerificationCasesService {
       decision,
       notes,
       agentId: apiKeyId,
+    });
+  }
+
+  /**
+   * address_postal_otp — the code a real physical letter carried, typed
+   * back. Same inline-value signal mechanism otp_sms already uses
+   * (submitMethod()); AddressPostalOtpProvider.handleCallback() does the
+   * actual hash comparison.
+   */
+  async submitCode(
+    tenantId: string,
+    apiKeyId: string,
+    caseId: string,
+    method: string,
+    code: string,
+  ): Promise<{ accepted: true }> {
+    if (!CODE_SUBMISSION_METHODS.has(method)) {
+      throw new BadRequestException(`"${method}" is not a code-submission method.`);
+    }
+    return this.submitMethod(tenantId, apiKeyId, caseId, method, 'verification_case.submit_code', {
+      submittedCode: code,
+    });
+  }
+
+  /**
+   * address_gps_match — the subject's device-reported current location.
+   * AddressGpsMatchProvider.handleCallback() compares it against the
+   * claimed address's coordinates it already persisted as resultMeta in
+   * start().
+   */
+  async submitLocation(
+    tenantId: string,
+    apiKeyId: string,
+    caseId: string,
+    method: string,
+    latitude: number,
+    longitude: number,
+  ): Promise<{ accepted: true }> {
+    if (!LOCATION_METHODS.has(method)) {
+      throw new BadRequestException(`"${method}" is not a location method.`);
+    }
+    return this.submitMethod(tenantId, apiKeyId, caseId, method, 'verification_case.submit_location', {
+      latitude,
+      longitude,
     });
   }
 

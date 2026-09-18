@@ -13,6 +13,8 @@ import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { SubmitOtpDto } from './dto/submit-otp.dto';
 import { SubmitSelfReportDto } from './dto/submit-self-report.dto';
+import { SubmitCodeDto } from './dto/submit-code.dto';
+import { SubmitLocationDto } from './dto/submit-location.dto';
 import { SessionsService } from './sessions.service';
 
 const uploadInterceptor = FileInterceptor('file', {
@@ -91,5 +93,15 @@ export class SessionsController {
   @Post(':token/claims/:method/report')
   submitSelfReport(@Param('token') token: string, @Param('method') method: string, @Body() dto: SubmitSelfReportDto) {
     return this.sessions.submitSelfReport(token, method, dto.reportedValue);
+  }
+
+  @Post(':token/claims/:method/code')
+  submitCode(@Param('token') token: string, @Param('method') method: string, @Body() dto: SubmitCodeDto) {
+    return this.sessions.submitCode(token, method, dto.code);
+  }
+
+  @Post(':token/claims/:method/location')
+  submitLocation(@Param('token') token: string, @Param('method') method: string, @Body() dto: SubmitLocationDto) {
+    return this.sessions.submitLocation(token, method, dto.latitude, dto.longitude);
   }
 }

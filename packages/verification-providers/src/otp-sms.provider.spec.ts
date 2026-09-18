@@ -36,9 +36,12 @@ describe('OtpSmsProvider', () => {
   it('handleCallback passes when the submitted code matches the stored hash', async () => {
     const provider = new OtpSmsProvider(true);
     const code = '123456';
-    const expectedCodeHash = sha256Hex(code);
+    const codeHash = sha256Hex(code);
 
-    const result = await provider.handleCallback({ submittedCode: code, expectedCodeHash });
+    // codeHash here is exactly what start()'s own resultMeta key is named —
+    // apps/workflows' resolveProviderPayload spreads resultMeta as-is into
+    // the callback payload, no renaming in between.
+    const result = await provider.handleCallback({ submittedCode: code, codeHash });
 
     expect(result.status).toBe('PASSED');
     expect(result.verified).toBe(true);
@@ -46,9 +49,9 @@ describe('OtpSmsProvider', () => {
 
   it('handleCallback fails when the submitted code does not match', async () => {
     const provider = new OtpSmsProvider(true);
-    const expectedCodeHash = sha256Hex('123456');
+    const codeHash = sha256Hex('123456');
 
-    const result = await provider.handleCallback({ submittedCode: '999999', expectedCodeHash });
+    const result = await provider.handleCallback({ submittedCode: '999999', codeHash });
 
     expect(result.status).toBe('FAILED');
   });

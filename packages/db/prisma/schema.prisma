@@ -166,15 +166,78 @@ model Subject {
   /// (docs/HOUSE-RULES.md / plan §Compliance) — stored as plain text only in
   /// this Phase 0 scaffold, which must not hold real PII.
   nationalIdNumber String?
+  /// The subject's claimed physical address — what address_gps_match compares
+  /// a reported current location against, and what address_utility_bill /
+  /// address_postal_otp confirm. Self-reported until one of those methods
+  /// actually verifies it (see VerifiedAttribute); distinct from Profile's own
+  /// address fields, which are a public-facing concept owned by an Account,
+  /// not a tenant's own KYC record of a Subject.
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  region       String?
+  countryCode  String?
+  latitude     Float?
+  longitude    Float?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
   tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   organization Organization?
   cases        VerificationCase[]
+  verifiedAttributes VerifiedAttribute[]
 
   @@index([tenantId])
   @@index([tenantId, externalRef])
+}
+
+/// The individual real-world facts a Subject can have proven, independent
+/// of and finer-grained than ClaimType/VerificationCase — one method can
+/// prove several at once (e-stamp proves NAME + CNIC + PHONE together; an
+/// ID scan proves NAME + CNIC + DATE_OF_BIRTH together), and a Subject can
+/// hold each at a different VerificationLevel depending on which method(s)
+/// actually ran. See packages/verification-providers/src/method-attributes.ts
+/// for the predefined, static "this method proves exactly these attributes,
+/// at this level" mapping this enum's values are drawn from.
+enum AttributeType {
+  NAME
+  /// Generic across countries — Pakistan's CNIC, Uzbekistan's PINFL, etc. all
+  /// map to this one attribute, the same way Subject.nationalIdNumber is
+  /// already one generic column rather than one per country.
+  NATIONAL_ID_NUMBER
+  PHONE
+  EMAIL
+  DATE_OF_BIRTH
+  ADDRESS
+}
+
+/// Append-only evidence that a specific real-world attribute of a Subject
+/// has been verified — same append-only + rank-strongest-first pattern
+/// already proven for PhoneBadgeEvidence, just scoped per (subject,
+/// attribute) instead of per (phone, claimType), and tenant-scoped (this
+/// table lives in the same trust domain as VerificationCase, not
+/// Account/PhoneBadgeEvidence's cross-tenant one). Written by
+/// apps/workflows' resolveCaseActivity for every PASSED method attempt in
+/// a case, one row per attribute that method's method-attributes.ts entry
+/// declares — independent of the case's own overall claimType/level badge,
+/// which is deliberately a coarser, separate concept this table does not
+/// replace.
+model VerifiedAttribute {
+  id         String            @id @default(cuid())
+  tenantId   String
+  subjectId  String
+  attribute  AttributeType
+  level      VerificationLevel
+  /// The VerificationMethodAttempt.method that produced this evidence, e.g. "otp_sms" or "estamp_registry".
+  method     String
+  caseId     String
+  verifiedAt DateTime          @default(now())
+
+  subject Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  case    VerificationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, subjectId, attribute])
 }
 
 model Organization {
@@ -267,6 +330,7 @@ model VerificationCase {
   policy   VerificationPolicy         @relation(fields: [policyId], references: [id], onDelete: Restrict)
   attempts VerificationMethodAttempt[]
   sessions VerificationSession[]
+  verifiedAttributes VerifiedAttribute[]
 
   @@index([tenantId])
   @@index([tenantId, status])

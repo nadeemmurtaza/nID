@@ -12,9 +12,13 @@ export interface UploadedMethodFile {
 }
 
 /** Methods reachable through the generic .../claims/:method/submit route — see submitClaimDocument(). */
-const CLAIM_DOCUMENT_METHODS = new Set(['dob_document', 'education_document', 'employment_document']);
+const CLAIM_DOCUMENT_METHODS = new Set(['dob_document', 'education_document', 'employment_document', 'address_utility_bill']);
 /** Methods reachable through the generic .../claims/:method/report route — see submitSelfReport(). */
 const SELF_REPORT_METHODS = new Set(['ecp_voter_registration']);
+/** Methods reachable through the generic .../claims/:method/code route — see submitCode(). otp_sms keeps its own dedicated /otp/submit route. */
+const CODE_SUBMISSION_METHODS = new Set(['address_postal_otp']);
+/** Methods reachable through the generic .../claims/:method/location route — see submitLocation(). */
+const LOCATION_METHODS = new Set(['address_gps_match']);
 
 /**
  * The subject-facing half of a verification case — resolved by
@@ -182,6 +186,22 @@ export class SessionsService {
       throw new BadRequestException(`"${method}" is not a self-report method.`);
     }
     return this.submitMethod(token, method, 'verification_case.submit_self_report', { reportedValue });
+  }
+
+  /** address_postal_otp — see VerificationCasesService.submitCode() / AddressPostalOtpProvider. */
+  async submitCode(token: string, method: string, code: string): Promise<{ accepted: true }> {
+    if (!CODE_SUBMISSION_METHODS.has(method)) {
+      throw new BadRequestException(`"${method}" is not a code-submission method.`);
+    }
+    return this.submitMethod(token, method, 'verification_case.submit_code', { submittedCode: code });
+  }
+
+  /** address_gps_match — see VerificationCasesService.submitLocation() / AddressGpsMatchProvider. */
+  async submitLocation(token: string, method: string, latitude: number, longitude: number): Promise<{ accepted: true }> {
+    if (!LOCATION_METHODS.has(method)) {
+      throw new BadRequestException(`"${method}" is not a location method.`);
+    }
+    return this.submitMethod(token, method, 'verification_case.submit_location', { latitude, longitude });
   }
 
   private async submitMethod(
