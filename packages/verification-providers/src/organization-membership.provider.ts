@@ -19,9 +19,15 @@ import type { VerificationContext, VerificationMethodProvider, VerificationResul
  *     APPROVED VerificationCase for claimType IDENTITY (real KYB, not an
  *     assumption). An org merely existing as a row is not "verified."
  *  2. The subject must be a CONFIRMED member — an OrganizationMembership row
- *     an org admin created via POST /v1/organizations/:id/members. The
- *     subject naming an organizationId in their own case input is a claim,
- *     not proof; nothing here trusts that claim on its own, same reasoning
+ *     at status ACTIVE, either created directly via
+ *     POST /v1/organizations/:id/members or accepted by the person
+ *     themselves after an invite (POST /v1/organizations/:id/invite +
+ *     .../accept — see organizations.service.ts). PENDING (invited, not
+ *     yet accepted) and DECLINED both fail this check exactly like no row
+ *     at all — an invite the person hasn't acted on is no more proof than
+ *     their own claimed organizationId is. The subject naming an
+ *     organizationId in their own case input is a claim, not proof;
+ *     nothing here trusts that claim on its own, same reasoning
  *     OrganizationBeneficialOwner already applies to KYB beneficial owners.
  *
  * Missing either one resolves to NEEDS_REVIEW, not FAILED — both are
@@ -50,7 +56,7 @@ export class OrganizationMembershipProvider implements VerificationMethodProvide
       const membership = await tx.organizationMembership.findUnique({
         where: { organizationId_personSubjectId: { organizationId, personSubjectId: context.subjectId } },
       });
-      if (!membership) {
+      if (!membership || membership.status !== 'ACTIVE') {
         return {
           status: 'NEEDS_REVIEW',
           raw: { reason: 'membership_not_confirmed', organizationId },

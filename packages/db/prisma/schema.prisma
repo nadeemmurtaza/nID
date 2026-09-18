@@ -180,16 +180,29 @@ model Subject {
   countryCode  String?
   latitude     Float?
   longitude    Float?
+  /// The real portable Account (phone + OTP) this tenant-owned KYC record
+  /// belongs to, once known — set when an OrganizationMembership invite
+  /// resolves a phone to a real Account (see organizations.service.ts's
+  /// invite()). Null for a Subject a tenant KYC'd without the person ever
+  /// having (or needing) an Account of their own — that path stays valid;
+  /// this is an additive link, never a requirement. The join key from a
+  /// tenant's own KYC record back to the cross-tenant identity that
+  /// controls it — never the reverse: nothing on Account depends on this,
+  /// since one Account can have many Subjects (one per tenant that's KYC'd
+  /// them) but a Subject belongs to at most one Account.
+  accountId String?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
   tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  account      Account?           @relation(fields: [accountId], references: [id], onDelete: SetNull)
   organization Organization?
   cases        VerificationCase[]
   verifiedAttributes VerifiedAttribute[]
 
   @@index([tenantId])
   @@index([tenantId, externalRef])
+  @@index([accountId])
 }
 
 /// The individual real-world facts a Subject can have proven, independent
@@ -255,6 +268,9 @@ model Organization {
   subject         Subject                      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   beneficialOwners OrganizationBeneficialOwner[]
   memberships      OrganizationMembership[]
+  /// The one brand Profile this Organization owns, if any — see
+  /// Profile.organizationId's own comment.
+  profile          Profile?
 
   @@index([tenantId])
 }
@@ -269,12 +285,51 @@ model Organization {
 /// somewhere (organizationId in VerificationCase input) is never enough on
 /// its own, exactly the same reasoning OrganizationBeneficialOwner already
 /// applies to KYB beneficial owners.
+/// PENDING: an org invited a phone that may not even have an Account yet
+/// (organizations.service.ts's invite()) — real evidence of nothing until
+/// the person themselves accepts. ACTIVE: the person explicitly accepted
+/// (POST /v1/accounts/me/organization-invites/:id/accept) — org_membership's
+/// provider only ever honors ACTIVE, never PENDING, the same "claimed, not
+/// proven" distinction this codebase applies everywhere else. DECLINED:
+/// explicitly refused — kept, not deleted, so an org can't just re-invite
+/// into silence. addMember()'s original direct-attestation path (an
+/// already-known Subject, immediately confirmed) still creates ACTIVE rows
+/// straight away — that flow predates invites and isn't a "did the person
+/// consent" question the same way a cold invite to an unclaimed phone is.
+enum MembershipStatus {
+  PENDING
+  ACTIVE
+  DECLINED
+}
+
 model OrganizationMembership {
   id             String   @id @default(cuid())
   tenantId       String
   organizationId String
   personSubjectId String
   role           String?
+  status         MembershipStatus @default(ACTIVE)
+  /// Authorizes acting for the Organization itself — creating/managing its
+  /// brand Profile (see profiles.service.ts's createForOrganization()) and
+  /// inviting further employees. Only ever set true by a tenant's own
+  /// invite() call (organizations.service.ts) at invite time — an org has
+  /// no self-service admin-promotion path yet, deliberately: bootstrapping
+  /// who speaks for an Organization is still the tenant's call, the same
+  /// as everything else about how an Organization enters this system.
+  isAdmin        Boolean  @default(false)
+  /// Denormalized from personSubjectId's Subject.accountId at invite time
+  /// (organizations.service.ts's invite()) — deliberately, not just a
+  /// join: this is the ONE field an account's own "my pending invites"
+  /// query (GET /v1/accounts/me/organization-invites) reads across every
+  /// tenant, and it must never need Subject readable outside its tenant's
+  /// own RLS context — Subject carries real PII (nationalIdNumber, DOB,
+  /// address) that has no bootstrap-SELECT exception and must never get
+  /// one just to serve this. OrganizationMembership itself carries no PII,
+  /// so it can safely carry the one open-SELECT exception this needs
+  /// instead (see this table's migration). Null for addMember()'s
+  /// original direct-attestation path, where the Subject may have no
+  /// Account at all.
+  accountId      String?
   /// The TenantApiKey.id that performed the attestation. Unlike
   /// VerificationCase.reviewerId (which TenantStaffMembership now also lets
   /// a real staff Account write — see its own schema comment), org
@@ -283,12 +338,15 @@ model OrganizationMembership {
   /// API-key-only rather than a speculative staff-facing field nothing uses.
   addedByApiKeyId String
   createdAt      DateTime @default(now())
+  respondedAt    DateTime?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  account      Account?     @relation(fields: [accountId], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, personSubjectId])
   @@index([tenantId])
   @@index([personSubjectId])
+  @@index([accountId])
 }
 
 /// A person (Subject, type = PERSON) who is a beneficial owner of an Organization.
@@ -452,6 +510,8 @@ model Account {
   loginRequests   OAuthLoginRequest[]
   profile         Profile?
   staffMemberships TenantStaffMembership[]
+  subjects        Subject[]
+  organizationMemberships OrganizationMembership[]
 }
 
 /// The bridge between the two trust domains this file's own header comment
@@ -620,7 +680,20 @@ enum ProfileCategory {
 
 model Profile {
   id          String          @id @default(cuid())
-  accountId   String          @unique
+  /// Exactly one of accountId/organizationId is ever set — a personal
+  /// profile an Account manages for themselves, or a brand profile an
+  /// Organization owns (managed by whichever of its admin-role
+  /// OrganizationMembership holders is currently editing it — the
+  /// authorization check, not a column here, since more than one admin
+  /// can manage the same brand profile). DB-enforced via a CHECK
+  /// constraint in this table's migration, not just app-layer discipline.
+  accountId      String?         @unique
+  /// Set only for a brand profile — the Organization it belongs to. Create
+  /// requires Organization.isVerified (real KYB, not a manual flag — see
+  /// organizations.service.ts's own derivation) and an ACTIVE + isAdmin
+  /// OrganizationMembership on the calling Account; see
+  /// createForOrganization() in profiles.service.ts.
+  organizationId String?         @unique
   /// The public URL segment — apps/profile-ui serves this at /{slug}.
   slug        String          @unique
   displayName String
@@ -669,7 +742,8 @@ model Profile {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  account           Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account           Account?           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  organization      Organization?      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   services          Service[]
   offers            Offer[]
   businessHours     BusinessHour[]
@@ -681,6 +755,7 @@ model Profile {
   contactMessages   ContactMessage[]
 
   @@index([accountId])
+  @@index([organizationId])
 }
 
 model Service {

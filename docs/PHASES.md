@@ -1134,6 +1134,109 @@ plain `PERSON` Subject) return `400` with the exact message the service
 throws — proving the guard isn't just unit-tested but actually wired into
 the route a tenant would really call.
 
+### Organization employee invites + verified brand profiles
+
+An Organization can now invite employees who don't have an nID Account
+yet, and manage its own brand Profile — the third piece requested
+alongside org KYB (above) and the design pass. Deliberately built around
+one hard rule the request was explicit about: **account control never
+moves off the person.** An Organization never gets its own login; nothing
+it does can create, verify, or take over anyone's Account. What it *can*
+do is invite a phone number, and the person decides whether that invite
+ever means anything.
+
+- **`Subject.accountId`** (new, nullable, indexed — not unique: one
+  Account can have many Subjects, one per tenant that's ever KYC'd it) —
+  the join key from a tenant's own KYC record back to the person's real
+  portable Account, once known. A real bug shipped and was caught by this
+  feature's own live-curl validation pass, not a unit test: this was
+  first declared `@unique`, which silently broke inviting the same phone
+  into a second Organization under a different tenant (`P2002` on the
+  second `Subject.update()`) — fixed before merge; see
+  `organization-employee-invites.spec.ts`'s own header comment and its
+  "same phone into a SECOND organization" test, which exists specifically
+  to keep that bug fixed.
+- **`OrganizationMembership` gains a real invite lifecycle**: `status`
+  (`PENDING` → `ACTIVE`/`DECLINED`) and `isAdmin`. `addMember()`'s
+  original direct-attestation path (an already-known Subject, immediately
+  confirmed — still used by `agent_in_person_document`-style flows) keeps
+  creating `ACTIVE` rows straight away; only the new `invite()` path ever
+  creates a `PENDING` one. `OrganizationMembershipProvider` was updated to
+  treat `PENDING`/`DECLINED` exactly like no row at all — an invite the
+  person hasn't acted on is no more proof of employment than their own
+  claimed `organizationId` is.
+- **`OrganizationsService.invite()`**: finds-or-creates a `Subject` for
+  the phone in that tenant, finds-or-creates a **shell Account**
+  (`phoneVerifiedAt` left `null`) if none exists yet, links them, and
+  creates a `PENDING` membership. Nothing here ever sets
+  `phoneVerifiedAt` — the shell claims itself for real the moment the
+  invited phone completes its own OTP through the ordinary
+  `accounts.service.ts` flow, which already upserts on phone. Zero new
+  code needed there; this is the whole point.
+- **`GET /v1/accounts/me/organization-invites`, `POST .../:id/accept`,
+  `POST .../:id/decline`** (all `AccountSessionGuard`, never a tenant API
+  key) — the person's own, explicit accept/decline. `respondToInvite()`
+  gives a mismatched account and a genuinely-missing id the *identical*
+  `NotFoundException`, so the endpoint can't be used to probe whether an
+  invite id exists. `OrganizationMembership` and `Organization` both
+  picked up an open-SELECT bootstrap RLS exception for this (same shape
+  TenantApiKey/OAuthClient/TenantStaffMembership already carry) — safe
+  for `Organization` because a legal business name/registration number is
+  inherently public-record information; deliberately **never** extended
+  to `Subject`, which holds real PII (nationalIdNumber, DOB, address) —
+  `OrganizationMembership.accountId` is denormalized at invite time
+  specifically so the invite-list query never needs to join through
+  `Subject` to get there.
+- **Cross-org privacy is structural, not a filter someone could forget**:
+  every query is scoped to `(organizationId, accountId)` or to the
+  caller's own `accountId` — nothing aggregates "every org this account
+  belongs to" from an org's own side. Tested directly: two organizations
+  under two different tenants, the same person accepted into both,
+  `GET /v1/organizations/:id/members` on either side never mentions the
+  other.
+- **Brand Profile**: `Profile.accountId` is now nullable, `organizationId`
+  (nullable, `@unique`) was added, and a migration-level `CHECK`
+  constraint (`(accountId IS NOT NULL) <> (organizationId IS NOT NULL)`)
+  makes "exactly one owner" a database guarantee, the same DB-enforced
+  standard RLS already holds this codebase to elsewhere — never just
+  application discipline. `ProfilesService.createForOrganization()` (and
+  `getForOrganization`/`updateForOrganization`) require **both** an
+  `ACTIVE` + `isAdmin` `OrganizationMembership`
+  (`OrganizationsService.requireActiveAdmin()`) **and** the Organization
+  actually being verified (`getVerificationStatus()` — the exact
+  derivation `getById()` itself uses, extracted so both call sites share
+  one query instead of two copies drifting apart). `isAdmin` can only
+  ever be set by a tenant's own `invite()` call — an Organization has no
+  self-service admin-promotion path yet, deliberately: bootstrapping who
+  speaks for an Organization is still the tenant's call. The public
+  `/[slug]` projection now branches on owner: a personal profile's badges
+  still come from `CrossTenantBadgesService` (phone-keyed); a brand
+  profile has no phone at all, so its badges come from the Organization's
+  own live KYB status instead — the same `getVerificationStatus()` call,
+  never a cached flag.
+
+**Verified live**: full workspace `typecheck`/`lint`/`test`/`build` clean.
+16 new tests in `apps/api/test/organization-employee-invites.spec.ts`
+against real Postgres — shell-account pre-provisioning, the real
+`accounts.service.ts` OTP flow claiming that exact shell, re-invite
+idempotency, the cross-tenant `Subject.accountId` bug fix (above),
+accept/decline (including the wrong-account and already-responded
+rejections), `requireActiveAdmin()`'s full branch coverage (non-member /
+PENDING / ACTIVE-non-admin / ACTIVE-admin), and
+`createForOrganization()`'s gates (unverified rejected, non-admin
+rejected, duplicate rejected, success renders the right public badge).
+Beyond the test suite: a full real-HTTP pass against a live `apps/api` —
+create a KYB-verified Organization, invite a real phone via curl, run
+that phone through the actual `POST /v1/accounts/otp/start` /
+`.../verify` endpoints (reading the dev-mode code back out of the API's
+own log output, not injected), confirm the shell Account really claimed
+itself, accept the invite, create the brand Profile as the now-ACTIVE
+admin, and load the public `/[slug]` page and see the real IDENTITY
+badge — then a second Organization under a second tenant, same phone,
+proving isolation and the non-admin/unverified rejections end to end.
+This same live pass is what caught the `Subject.accountId` uniqueness
+bug before it ever reached a test file.
+
 - **Phase 2** — sanctions/PEP screening, one
   country's national-ID registry adapter, manual-review tooling, retention/audit
   maturity.

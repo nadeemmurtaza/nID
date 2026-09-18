@@ -1,8 +1,9 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@nid/db';
-import type { Account, Profile } from '@nid/db';
+import type { Account, Organization, Profile } from '@nid/db';
 import { PrismaService } from '../../core/db/prisma.service';
 import { CrossTenantBadgesService } from '../badges/cross-tenant-badges.service';
+import { OrganizationsService } from '../organizations/organizations.service';
 import type { Badge } from '../badges/badge-ranking';
 import type { CreateProfileDto } from './dto/create-profile.dto';
 import type { UpdateProfileDto } from './dto/update-profile.dto';
@@ -54,6 +55,7 @@ export class ProfilesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly crossTenantBadges: CrossTenantBadgesService,
+    private readonly organizations: OrganizationsService,
   ) {}
 
   /** Profile is 1:1 with Account (schema.prisma's comment on it) — no RLS, so `unscoped` is correct. */
@@ -101,6 +103,70 @@ export class ProfilesService {
   }
 
   /**
+   * "Organization can manage and create only its own brand profiles with
+   * proper verification" — never the org's own credential (it has none;
+   * see Organization/OrganizationMembership's own schema comments), always
+   * a person's own Account session, authorized by an ACTIVE + isAdmin
+   * OrganizationMembership (OrganizationsService.requireActiveAdmin()) and
+   * gated on the organization actually being real-KYB-verified
+   * (getVerificationStatus() — the exact same derivation
+   * organizations.service.ts's getById() itself uses, not a separate
+   * assumption). One profile per Organization, the same 1:1 a personal
+   * profile has per Account (Profile.organizationId's own @unique).
+   */
+  async createForOrganization(accountId: string, organizationId: string, dto: CreateProfileDto): Promise<Profile> {
+    assertNotReservedSlug(dto.slug);
+    const membership = await this.organizations.requireActiveAdmin(organizationId, accountId);
+    const verification = await this.organizations.getVerificationStatus(membership.tenantId, organizationId);
+    if (!verification.isVerified) {
+      throw new BadRequestException('This organization must be verified before it can create a brand profile.');
+    }
+
+    const existing = await this.prisma.unscoped.profile.findUnique({ where: { organizationId } });
+    if (existing) {
+      throw new ConflictException('This organization already has a profile.');
+    }
+
+    try {
+      return await this.prisma.unscoped.profile.create({
+        data: { organizationId, slug: dto.slug, displayName: dto.displayName, ...toOptionalProfileFields(dto) },
+      });
+    } catch (err) {
+      throw translateUniqueViolation(err);
+    }
+  }
+
+  /** The owner-editing view — same admin-membership check as createForOrganization(), never the public projection. */
+  async getForOrganization(accountId: string, organizationId: string): Promise<Profile> {
+    await this.organizations.requireActiveAdmin(organizationId, accountId);
+    const profile = await this.prisma.unscoped.profile.findUnique({ where: { organizationId } });
+    if (!profile) {
+      throw new NotFoundException('No profile exists for this organization yet.');
+    }
+    return profile;
+  }
+
+  async updateForOrganization(accountId: string, organizationId: string, dto: UpdateProfileDto): Promise<Profile> {
+    if (dto.slug !== undefined) {
+      assertNotReservedSlug(dto.slug);
+    }
+    await this.organizations.requireActiveAdmin(organizationId, accountId);
+    const profile = await this.prisma.unscoped.profile.findUnique({ where: { organizationId } });
+    if (!profile) {
+      throw new NotFoundException('No profile exists for this organization yet.');
+    }
+
+    try {
+      return await this.prisma.unscoped.profile.update({
+        where: { organizationId },
+        data: { slug: dto.slug, displayName: dto.displayName, ...toOptionalProfileFields(dto) },
+      });
+    } catch (err) {
+      throw translateUniqueViolation(err);
+    }
+  }
+
+  /**
    * Unauthenticated — apps/profile-ui's public /[slug] route. Never reveals
    * an unpublished profile (a draft the owner hasn't chosen to make public
    * yet is not a 404 vs 200 distinction the caller should be able to probe,
@@ -109,17 +175,53 @@ export class ProfilesService {
   async getPublicBySlug(slug: string): Promise<PublicProfile> {
     const profile = await this.prisma.unscoped.profile.findUnique({
       where: { slug },
-      include: { account: true },
+      include: { account: true, organization: true },
     });
     if (!profile || !profile.isPublished) {
       throw new NotFoundException('No published profile at this URL.');
     }
 
-    return this.toPublicProjection(profile, profile.account);
+    return this.toPublicProjection(profile, profile.account, profile.organization);
   }
 
-  private async toPublicProjection(profile: Profile, account: Account): Promise<PublicProfile> {
-    const badges = profile.showBadges ? await this.crossTenantBadges.getBadgesForPhone(account.phone) : null;
+  /**
+   * A personal profile's badges are the Account's own cross-tenant
+   * evidence (CrossTenantBadgesService, keyed by phone). A brand profile
+   * has no phone at all — its one real fact is the Organization's own KYB
+   * IDENTITY case, read live through the exact same derivation getById()
+   * uses, not a separate assumption or a cached flag.
+   */
+  private async getBadges(account: Account | null, organization: Organization | null): Promise<Badge[]> {
+    if (organization) {
+      const verification = await this.organizations.getVerificationStatus(organization.tenantId, organization.id);
+      if (!verification.isVerified || !verification.verifiedLevel) {
+        return [];
+      }
+      return [
+        {
+          claimType: 'IDENTITY',
+          level: verification.verifiedLevel,
+          verifiedAt: verification.verifiedAt,
+          caseId: verification.verifiedCaseId,
+        },
+      ];
+    }
+    // Every Profile has exactly one owner (the DB CHECK constraint this
+    // table's migration adds) — organization null here means account
+    // cannot be, but TypeScript can't see that invariant across the
+    // nullable columns, so this stays an explicit assertion, not silent.
+    if (!account) {
+      throw new Error('Profile has neither an account nor an organization owner — data integrity violation.');
+    }
+    return this.crossTenantBadges.getBadgesForPhone(account.phone);
+  }
+
+  private async toPublicProjection(
+    profile: Profile,
+    account: Account | null,
+    organization: Organization | null,
+  ): Promise<PublicProfile> {
+    const badges = profile.showBadges ? await this.getBadges(account, organization) : null;
 
     return {
       id: profile.id,
