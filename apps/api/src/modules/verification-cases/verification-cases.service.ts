@@ -246,19 +246,97 @@ export class VerificationCasesService {
     );
   }
 
+  /**
+   * liveness needs a short BURST of frames, not one file — real blink
+   * detection (@nid/liveness-engine) has nothing to detect a blink from in
+   * a single photo — plus, when available, a reference photo to face-match
+   * against: the same case's document_ocr attempt's own uploaded
+   * DocumentAsset (its most recent one, if it uploaded more than once).
+   * Liveness never requires document_ocr to have run first or at all; when
+   * no reference is found, referenceStorageKey stays undefined and
+   * LivenessProvider simply skips the face-match step rather than failing
+   * — see evaluateLiveness()'s own contract.
+   */
   async submitLiveness(
     tenantId: string,
     apiKeyId: string,
     caseId: string,
-    file: UploadedMethodFile,
+    frames: UploadedMethodFile[],
   ): Promise<{ accepted: true }> {
-    return this.submitUploadedMethod(tenantId, apiKeyId, caseId, 'liveness', 'verification_case.submit_liveness', file);
+    const { kase, storageKeys, referenceStorageKey, contentType } = await this.prisma.forTenant(
+      tenantId,
+      async (tx) => {
+        const found = await tx.verificationCase.findUnique({ where: { id: caseId } });
+        if (!found || !found.temporalWorkflowId) {
+          throw new NotFoundException('Verification case not found.');
+        }
+        const attempt = await tx.verificationMethodAttempt.findFirst({ where: { caseId, method: 'liveness' } });
+        if (!attempt) {
+          throw new BadRequestException('This case\'s policy does not include "liveness".');
+        }
+
+        const storageKeys: string[] = [];
+        for (const file of frames) {
+          const stored = await this.storage.put({
+            namespace: tenantId,
+            groupId: attempt.id,
+            filename: file.filename,
+            contentType: file.contentType,
+            body: file.buffer,
+          });
+          await tx.documentAsset.create({
+            data: {
+              tenantId,
+              methodAttemptId: attempt.id,
+              storageKey: stored.key,
+              contentType: stored.contentType,
+              sizeBytes: stored.size,
+            },
+          });
+          storageKeys.push(stored.key);
+        }
+
+        const documentAttempt = await tx.verificationMethodAttempt.findFirst({
+          where: { caseId, method: 'document_ocr' },
+        });
+        const referenceAsset = documentAttempt
+          ? await tx.documentAsset.findFirst({
+              where: { methodAttemptId: documentAttempt.id },
+              orderBy: { createdAt: 'desc' },
+            })
+          : null;
+
+        await this.audit.record(tx, tenantId, {
+          actorType: 'API_KEY',
+          actorId: apiKeyId,
+          action: 'verification_case.submit_liveness',
+          subjectId: found.subjectId,
+          caseId: found.id,
+        });
+
+        return {
+          kase: found,
+          storageKeys,
+          referenceStorageKey: referenceAsset?.storageKey,
+          contentType: frames[0]!.contentType,
+        };
+      },
+    );
+
+    await this.temporal.submitMethodPayload(kase.temporalWorkflowId as string, 'liveness', {
+      storageKeys,
+      referenceStorageKey,
+      contentType,
+    });
+    return { accepted: true };
   }
 
   /**
    * dob_document / education_document / employment_document — the same
-   * upload mechanism as submitDocument/submitLiveness, generalized to one
-   * route+method instead of three near-identical ones, since these three
+   * single-file upload mechanism as submitDocument (liveness's own
+   * submitLiveness now needs a multi-frame variant of its own, above),
+   * generalized to one route+method instead of three near-identical ones,
+   * since these three
    * only differ by which claim they're proving (docs/HOUSE-RULES.md rule 1
    * applies to routes the same way it applies to providers).
    */

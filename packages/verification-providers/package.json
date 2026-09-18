@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@nid/db": "workspace:*",
+    "@nid/liveness-engine": "workspace:*",
     "@nid/ocr-engine": "workspace:*",
     "@nid/shared-types": "workspace:*"
   },

@@ -4,22 +4,26 @@ import type {
   VerificationResult,
   PendingResult,
 } from './types';
-import { parseImageCallback, type ImageCallbackPayload } from './image-callback-payload';
+import { parseLivenessCallback, type LivenessCallbackPayload } from './liveness-callback-payload';
 import { mockScoreFor } from './mock-outcome';
+import { evaluateLiveness, type LivenessEvaluation } from '@nid/liveness-engine';
 
 /**
  * Confirms the subject is a live person (not a photo, video replay, or
- * mask) from a selfie capture, typically face-matched against the document
- * from a paired document_ocr attempt. Same shape as document_ocr:
- * start() has nothing to send (the next step is a selfie upload), so it
- * returns `pending` immediately; handleCallback() does the real work,
- * driven by bytes the caller reads back from @nid/storage.
+ * mask) from a burst of selfie frames, optionally face-matched against a
+ * paired document_ocr attempt's ID photo. Same shape as document_ocr:
+ * start() has nothing to send (the next step is the frame burst upload),
+ * so it returns `pending` immediately; handleCallback() does the real work.
  *
- * In production, `evaluate` should be replaced with a real liveness/face-match
- * vendor call (docs/PHASES.md's Phase 1 "buy, don't build" decision).
- * LIVENESS_DEV_MODE=true (the only mode implemented here) returns a mocked
- * result instead — real interface, mock result, exactly like otp_sms's
- * OTP_SMS_DEV_MODE.
+ * `devMode=true` returns a fast mocked result for tests (real interface,
+ * mock result, exactly like otp_sms's OTP_SMS_DEV_MODE). `devMode=false`
+ * runs the *real*, self-hosted pipeline (`@nid/liveness-engine`:
+ * @vladmandic/face-api + tfjs-node, MIT-licensed, model weights bundled —
+ * no vendor account, no per-check cost, no external network call at
+ * runtime) — real face detection, a real Eye-Aspect-Ratio blink check
+ * across the frame burst, and, when a reference image is supplied, a real
+ * face-match distance. See mapEvaluationToResult()'s own comment for
+ * exactly what each outcome means and why.
  */
 export class LivenessProvider implements VerificationMethodProvider {
   readonly key = 'liveness';
@@ -32,30 +36,64 @@ export class LivenessProvider implements VerificationMethodProvider {
   }
 
   async handleCallback(payload: Record<string, unknown>): Promise<VerificationResult> {
-    const parsed = parseImageCallback(payload);
+    const parsed = parseLivenessCallback(payload);
     if (!parsed.ok) {
       return { status: 'FAILED', raw: { reason: parsed.reason }, verified: false };
     }
     return this.evaluate(parsed.value);
   }
 
-  private async evaluate(input: ImageCallbackPayload): Promise<VerificationResult> {
-    if (!this.devMode) {
-      throw new Error(
-        'liveness: no production liveness vendor wired up yet. Set LIVENESS_DEV_MODE=true for local/dev use, or implement evaluate() against a real vendor API before deploying.',
-      );
+  private async evaluate(input: LivenessCallbackPayload): Promise<VerificationResult> {
+    if (this.devMode) {
+      const status = input.mockOutcome ?? 'PASSED';
+      return {
+        status,
+        score: mockScoreFor(status),
+        raw: {
+          mode: 'dev_mock',
+          frameCount: input.framesBytes.length,
+          contentType: input.contentType,
+          hasReferenceImage: input.referenceImageBytes !== undefined,
+        },
+        verified: true,
+      };
     }
 
-    const status = input.mockOutcome ?? 'PASSED';
-    return {
-      status,
-      score: mockScoreFor(status),
-      raw: {
-        mode: 'dev_mock',
-        byteLength: input.imageBytes.byteLength,
-        contentType: input.contentType,
-      },
-      verified: true,
-    };
+    const evaluation = await evaluateLiveness(input.framesBytes, input.referenceImageBytes);
+    return mapEvaluationToResult(evaluation);
   }
+}
+
+/**
+ * Translates the engine's raw evaluation into a claim result, most-severe
+ * evidence first:
+ *
+ *  - a `rejectionReason` (no face in some frame, a second face, the face
+ *    changing identity mid-capture, or an undetectable reference face) is
+ *    genuine negative evidence — FAILED.
+ *  - a reference image was supplied and didn't match — also genuine
+ *    negative evidence (this selfie is not the person in the ID) — FAILED,
+ *    checked before the blink outcome since a face mismatch is the
+ *    stronger claim either way.
+ *  - no blink across the whole burst, with everything else clean, is
+ *    NOT forced to FAILED: it's just as likely a capture/timing miss (the
+ *    subject blinked outside the window, a slow camera) as it is a static-
+ *    photo spoof, and this codebase does not fabricate certainty it
+ *    doesn't have — NEEDS_REVIEW, same honesty standard as every other
+ *    ambiguous outcome in this codebase.
+ *  - everything checks out — PASSED.
+ */
+function mapEvaluationToResult(evaluation: LivenessEvaluation): VerificationResult {
+  const raw: Record<string, unknown> = { ...evaluation };
+
+  if (evaluation.rejectionReason) {
+    return { status: 'FAILED', raw, verified: true };
+  }
+  if (evaluation.matchedReference === false) {
+    return { status: 'FAILED', raw: { ...raw, reason: 'face_mismatch' }, verified: true };
+  }
+  if (!evaluation.blinkDetected) {
+    return { status: 'NEEDS_REVIEW', raw: { ...raw, reason: 'no_blink_detected' }, verified: true };
+  }
+  return { status: 'PASSED', raw, verified: true };
 }

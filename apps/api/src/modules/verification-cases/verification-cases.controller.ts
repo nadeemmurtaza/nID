@@ -1,5 +1,16 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  UploadedFile,
+  UploadedFiles,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ApiKeyGuard } from '../../core/auth/api-key.guard';
 import { CurrentTenant } from '../../core/auth/current-tenant.decorator';
@@ -12,6 +23,12 @@ import { SubmitAgentAttestationDto } from './dto/submit-agent-attestation.dto';
 import { VerificationCasesService } from './verification-cases.service';
 
 const uploadInterceptor = FileInterceptor('file', {
+  storage: memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
+
+/** Liveness needs a short burst of frames, not one file — see VerificationCasesService.submitLiveness(). */
+const framesUploadInterceptor = FilesInterceptor('frames', 12, {
   storage: memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
 });
@@ -68,20 +85,21 @@ export class VerificationCasesController {
   }
 
   @Post(':id/liveness/submit')
-  @UseInterceptors(uploadInterceptor)
+  @UseInterceptors(framesUploadInterceptor)
   submitLiveness(
     @CurrentTenant() tenant: AuthenticatedTenant,
     @Param('id') id: string,
-    @UploadedFile() file?: Express.Multer.File,
+    @UploadedFiles() files?: Express.Multer.File[],
   ) {
-    if (!file) {
-      throw new BadRequestException('No file uploaded — expected multipart field "file".');
+    if (!files || files.length === 0) {
+      throw new BadRequestException('No frames uploaded — expected multipart field "frames" (one or more files).');
     }
-    return this.cases.submitLiveness(tenant.tenantId, tenant.apiKeyId, id, {
-      buffer: file.buffer,
-      contentType: file.mimetype,
-      filename: file.originalname,
-    });
+    return this.cases.submitLiveness(
+      tenant.tenantId,
+      tenant.apiKeyId,
+      id,
+      files.map((file) => ({ buffer: file.buffer, contentType: file.mimetype, filename: file.originalname })),
+    );
   }
 
   @Post(':id/claims/:method/submit')

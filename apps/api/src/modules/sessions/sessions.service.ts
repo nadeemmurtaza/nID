@@ -81,14 +81,92 @@ export class SessionsService {
     return this.submitUploadedMethod(token, 'document_ocr', 'verification_case.submit_document', file);
   }
 
-  async submitLiveness(token: string, file: UploadedMethodFile): Promise<{ accepted: true }> {
-    return this.submitUploadedMethod(token, 'liveness', 'verification_case.submit_liveness', file);
+  /**
+   * liveness needs a short BURST of frames, not one file — real blink
+   * detection (@nid/liveness-engine) has nothing to detect a blink from in
+   * a single photo — plus, when available, a reference photo to
+   * face-match against: this same case's document_ocr attempt's own most
+   * recently uploaded DocumentAsset. document_ocr never has to run first;
+   * when none is found, referenceStorageKey stays undefined and
+   * LivenessProvider simply skips the face-match step (see
+   * evaluateLiveness()'s own contract) rather than failing.
+   */
+  async submitLiveness(token: string, frames: UploadedMethodFile[]): Promise<{ accepted: true }> {
+    const session = await this.resolve(token);
+
+    const { kase, storageKeys, referenceStorageKey, contentType } = await this.prisma.forTenant(
+      session.tenantId,
+      async (tx) => {
+        const found = await tx.verificationCase.findUniqueOrThrow({ where: { id: session.caseId } });
+        if (!found.temporalWorkflowId) {
+          throw new BadRequestException('This verification is no longer accepting submissions.');
+        }
+        const attempt = await tx.verificationMethodAttempt.findFirst({
+          where: { caseId: session.caseId, method: 'liveness' },
+        });
+        if (!attempt) {
+          throw new BadRequestException('This case\'s policy does not include "liveness".');
+        }
+
+        const storageKeys: string[] = [];
+        for (const file of frames) {
+          const stored = await this.storage.put({
+            namespace: session.tenantId,
+            groupId: attempt.id,
+            filename: file.filename,
+            contentType: file.contentType,
+            body: file.buffer,
+          });
+          await tx.documentAsset.create({
+            data: {
+              tenantId: session.tenantId,
+              methodAttemptId: attempt.id,
+              storageKey: stored.key,
+              contentType: stored.contentType,
+              sizeBytes: stored.size,
+            },
+          });
+          storageKeys.push(stored.key);
+        }
+
+        const documentAttempt = await tx.verificationMethodAttempt.findFirst({
+          where: { caseId: session.caseId, method: 'document_ocr' },
+        });
+        const referenceAsset = documentAttempt
+          ? await tx.documentAsset.findFirst({
+              where: { methodAttemptId: documentAttempt.id },
+              orderBy: { createdAt: 'desc' },
+            })
+          : null;
+
+        await this.audit.record(tx, session.tenantId, {
+          actorType: 'SUBJECT',
+          action: 'verification_case.submit_liveness',
+          subjectId: found.subjectId,
+          caseId: found.id,
+        });
+
+        return {
+          kase: found,
+          storageKeys,
+          referenceStorageKey: referenceAsset?.storageKey,
+          contentType: frames[0]!.contentType,
+        };
+      },
+    );
+
+    await this.temporal.submitMethodPayload(kase.temporalWorkflowId as string, 'liveness', {
+      storageKeys,
+      referenceStorageKey,
+      contentType,
+    });
+    return { accepted: true };
   }
 
   /**
-   * dob_document / education_document / employment_document — same upload
-   * mechanism as submitDocument/submitLiveness, generalized to one route
-   * instead of three near-identical ones (docs/HOUSE-RULES.md rule 1
+   * dob_document / education_document / employment_document — same
+   * single-file upload mechanism as submitDocument, generalized to one
+   * route instead of three near-identical ones (docs/HOUSE-RULES.md rule 1
    * applies to routes the same way it applies to providers).
    */
   async submitClaimDocument(token: string, method: string, file: UploadedMethodFile): Promise<{ accepted: true }> {

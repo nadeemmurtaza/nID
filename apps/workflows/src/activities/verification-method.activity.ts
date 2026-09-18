@@ -161,15 +161,32 @@ export async function expireMethodActivity(input: ExpireMethodActivityInput): Pr
 /**
  * Translates a generic signal payload into what a provider's handleCallback
  * expects, dispatched by the payload's own shape — a stored-document
- * reference vs. an inline value — never by branching on the method name
- * (docs/HOUSE-RULES.md rule 1). Any future method that needs an uploaded
- * file reuses the storageKey branch; any future method that submits an
- * inline value (like otp_sms's code) reuses the passthrough.
+ * reference (single or multi-frame) vs. an inline value — never by
+ * branching on the method name (docs/HOUSE-RULES.md rule 1). Any future
+ * method that needs a single uploaded file reuses the storageKey branch;
+ * any future method that needs a burst of frames (liveness today) plus an
+ * optional reference image reuses the storageKeys branch; any future
+ * method that submits an inline value (like otp_sms's code) reuses the
+ * passthrough.
  */
 async function resolveProviderPayload(
   payload: Record<string, unknown>,
   resultMeta: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+  const storageKeys = payload['storageKeys'];
+  if (Array.isArray(storageKeys)) {
+    const framesBytes = await Promise.all(storageKeys.map((key: string) => storage.get(key)));
+    const referenceStorageKey = payload['referenceStorageKey'];
+    const referenceImageBytes =
+      typeof referenceStorageKey === 'string' ? await storage.get(referenceStorageKey) : undefined;
+    return {
+      framesBytes,
+      contentType: payload['contentType'],
+      referenceImageBytes,
+      mockOutcome: payload['mockOutcome'],
+    };
+  }
+
   const storageKey = payload['storageKey'];
   if (typeof storageKey === 'string') {
     const imageBytes = await storage.get(storageKey);

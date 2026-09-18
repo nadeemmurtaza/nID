@@ -1,11 +1,27 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  UploadedFile,
+  UploadedFiles,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { SubmitOtpDto } from './dto/submit-otp.dto';
 import { SubmitSelfReportDto } from './dto/submit-self-report.dto';
 import { SessionsService } from './sessions.service';
 
 const uploadInterceptor = FileInterceptor('file', {
+  storage: memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
+
+/** Liveness needs a short burst of frames, not one file — see SessionsService.submitLiveness(). */
+const framesUploadInterceptor = FilesInterceptor('frames', 12, {
   storage: memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
 });
@@ -44,16 +60,15 @@ export class SessionsController {
   }
 
   @Post(':token/liveness/submit')
-  @UseInterceptors(uploadInterceptor)
-  submitLiveness(@Param('token') token: string, @UploadedFile() file?: Express.Multer.File) {
-    if (!file) {
-      throw new BadRequestException('No file uploaded — expected multipart field "file".');
+  @UseInterceptors(framesUploadInterceptor)
+  submitLiveness(@Param('token') token: string, @UploadedFiles() files?: Express.Multer.File[]) {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('No frames uploaded — expected multipart field "frames" (one or more files).');
     }
-    return this.sessions.submitLiveness(token, {
-      buffer: file.buffer,
-      contentType: file.mimetype,
-      filename: file.originalname,
-    });
+    return this.sessions.submitLiveness(
+      token,
+      files.map((file) => ({ buffer: file.buffer, contentType: file.mimetype, filename: file.originalname })),
+    );
   }
 
   @Post(':token/claims/:method/submit')

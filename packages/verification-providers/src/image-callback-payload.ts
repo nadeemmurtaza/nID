@@ -8,7 +8,7 @@
  */
 import { isValidMockOutcome, type MockOutcome } from './mock-outcome';
 
-const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+export const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 export interface ImageCallbackPayload {
   imageBytes: Buffer;

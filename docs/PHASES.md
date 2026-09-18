@@ -532,6 +532,114 @@ package, including the new `@nid/db` dependency `packages/verification-providers
 now has — its first, since every other provider was previously pure
 HTTP/self-contained.
 
+### Self-hosted liveness: real face detection, blink detection, and face match
+
+Replaces the "throws in production, dev-mode mock only" stub `LivenessProvider`
+shipped with — a $0, self-hosted, MIT-licensed alternative to a $250/mo
+vendor (Persona-class) plan, prompted directly by that cost. No vendor
+account, no per-check fee, no external network call at runtime.
+
+- **`packages/liveness-engine`** (new). `@vladmandic/face-api` +
+  `@tensorflow/tfjs-node` — real face detection (TinyFaceDetector), 68-point
+  landmarks, and a 128-d face-recognition descriptor, running on tfjs-node's
+  native TensorFlow backend. The model weights (~13MB) ship **inside** the
+  `@vladmandic/face-api` npm package itself, unlike the original
+  justadudewhohacks/face-api.js — confirmed during development: no download
+  step, no external fetch, genuinely self-hosted. Real, published,
+  non-ML building blocks on top of that: Eye-Aspect-Ratio (Soukupová &
+  Čech, 2016) for `computeEar()`, a real open→closed→open dip-and-recover
+  state machine (with hysteresis) for `detectBlink()` — deliberately NOT
+  "did EAR ever cross a threshold," which would wrongly count a subject who
+  simply keeps their eyes shut the whole capture as a blink — and Euclidean
+  descriptor distance (the standard 0.6 same-person cutoff) for
+  `matchFaceDescriptors()`. `evaluateLiveness(frames, referenceImageBytes?)`
+  orchestrates all of it over a short frame burst: rejects 0-face and
+  2+-face frames, rejects the face changing identity mid-capture, runs the
+  real blink check, and — when a reference image is supplied — a real
+  face-match distance.
+- **`LivenessProvider`** (`packages/verification-providers`) now runs this
+  for real in production mode (`LIVENESS_DEV_MODE=false`), mapping the
+  engine's evaluation to a claim result: any rejection reason (no face,
+  multiple faces, identity change, undetectable reference face) or a
+  reference mismatch is genuine negative evidence → `FAILED`; a clean
+  result with no blink detected is `NEEDS_REVIEW`, not `FAILED` — a capture/
+  timing miss is not proof of fraud, the same honesty standard as every
+  other ambiguous outcome in this codebase; everything checking out is
+  `PASSED`. Dev mode (`LIVENESS_DEV_MODE=true`, still the default) keeps
+  working exactly as before for fast local iteration.
+- **New payload contract.** Real blink detection needs a BURST of frames,
+  not one photo — `liveness-callback-payload.ts` (new) parses
+  `framesBytes: Buffer[]` (minimum 3) plus an optional `referenceImageBytes`,
+  a different shape from every other upload-driven provider's single-image
+  contract. `apps/workflows`' `resolveProviderPayload` gained a generic,
+  shape-based (not method-name-based) `storageKeys` array + optional
+  `referenceStorageKey` branch alongside the existing single-`storageKey`
+  one. `VerificationCasesService.submitLiveness` / `SessionsService.submitLiveness`
+  (both apps/api) now accept multiple uploaded frame files, store each as
+  its own `DocumentAsset`, and look up the SAME case's `document_ocr`
+  attempt's own uploaded `DocumentAsset` (its most recent one) to pass
+  along as the face-match reference — liveness never requires document_ocr
+  to run first; when none is found, the reference step is simply skipped.
+- **`apps/verify-ui`**'s liveness step is now a real webcam capture
+  (`LivenessStep`, new): `getUserMedia`, a live mirrored preview, a
+  "Blink now" prompt timed to the middle of a 6-frame/~1.8s burst, each
+  frame drawn to a canvas and encoded as a real JPEG blob, uploaded as a
+  multipart `frames` field — not a single-file `<input type="file">`
+  anymore. Fails with a clear, visible message (never silently) when
+  `getUserMedia` is unavailable or denied.
+
+**Verified live, several layers deep, nothing mocked at the boundary that
+matters**:
+- `packages/liveness-engine`'s own suite (25 tests) runs real model
+  inference against real photos (bundled demo assets from
+  `@vladmandic/face-api` itself) — real face detection, a real multi-face
+  group photo genuinely rejected, a real face genuinely matched against
+  itself (distance 0) and genuinely NOT matched against a different real
+  photo (distance ~0.8, safely above the 0.6 cutoff), and a real blink
+  detected end-to-end through the actual orchestrator from a landmark-level
+  synthetic closed-eye frame — the one deliberate exception, and its own
+  header comment explains why: a PIXEL-level synthetic closed eye (painting
+  the eye region black, squashing that patch of pixels) was tried first and
+  measurably failed to move this landmark model's inferred eye points at
+  all, a genuine anti-spoofing property of the real model worth recording,
+  not routing around quietly.
+- `LivenessProvider`'s own suite mocks only `evaluateLiveness` itself (the
+  same boundary `ImageClaimProvider`'s spec already draws for
+  `evaluateDocument`), proving the FAILED/NEEDS_REVIEW/PASSED mapping logic.
+- The activity layer's real, non-dev-mode pipeline is proven against real
+  Postgres in a dedicated file (`apps/workflows/test/liveness-real.activity.spec.ts`,
+  gated on `LIVENESS_DEV_MODE=false` — a separate file from the default
+  suite's dev-mode liveness test, since the provider registry is built once
+  per process from env at import time and the two modes can't coexist in
+  one run): a real faceless burst resolves FAILED, a real single-person
+  burst with no blink resolves NEEDS_REVIEW, and a real reference image of
+  the same person genuinely matches (distance 0) through the real engine.
+- The live HTTP layer was curled end to end against a running `apps/api` +
+  real Postgres + real `@nid/storage`: three real photo files uploaded as
+  a `frames` multipart field produced three `DocumentAsset` rows whose
+  stored bytes MD5-matched the original file exactly (a byte-perfect round
+  trip through multer and the storage driver), plus a correctly-located
+  `referenceStorageKey` from a seeded prior `document_ocr` upload in the
+  same case. (Case resolution itself still can't be observed over HTTP in
+  this sandbox — Temporal is unreachable here, the same pre-existing
+  limitation every other method in this codebase works around the same
+  way, via the activity-level tests above.)
+- `apps/verify-ui`'s real capture UI was driven in actual headless
+  Chromium (Playwright) with `--use-fake-device-for-media-stream`: the
+  camera preview rendered, "Start capture" ran the real burst loop, the
+  "Blink now" prompt appeared on schedule, and the browser's real canvas-
+  captured JPEG blobs were uploaded and landed as six real, distinctly-
+  sized, valid 480×480 JPEG `DocumentAsset` files on disk — proving the
+  entire `getUserMedia` → canvas → `FormData` → multer → storage pipeline
+  end to end in a real browser, not simulated.
+
+Full workspace `typecheck`/`lint`/`test`/`build` pass across every touched
+package, including two more devDependency-only uses of jimp/`@vladmandic/face-api`
+test fixtures (`apps/workflows`, mirroring the pattern `packages/liveness-engine`'s
+own suite established) and the same `node --experimental-vm-modules` Jest
+invocation `packages/ocr-engine` already needed for jimp's ESM-only
+`file-type` dependency.
+
 - **Phase 2** — sanctions/PEP screening, KYB/business-registry lookup, one
   country's national-ID registry adapter, manual-review tooling, retention/audit
   maturity.

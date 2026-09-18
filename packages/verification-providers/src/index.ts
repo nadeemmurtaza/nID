@@ -1,6 +1,7 @@
 export * from './types';
 export * from './mock-outcome';
 export * from './image-callback-payload';
+export * from './liveness-callback-payload';
 export * from './otp-sms.provider';
 export * from './image-claim.provider';
 export * from './liveness.provider';

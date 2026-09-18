@@ -275,13 +275,23 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
     const attempt = await migratorPrisma.verificationMethodAttempt.findFirstOrThrow({
       where: { caseId, method: 'liveness' },
     });
-    const stored = await uploadStorage.put({
-      namespace: tenantId,
-      groupId: attempt.id,
-      filename: 'selfie.jpg',
-      contentType: 'image/jpeg',
-      body: Buffer.from('fake selfie bytes'),
-    });
+    // liveness needs a burst of frames, not one file — real blink
+    // detection has nothing to detect a blink from in a single photo. Dev
+    // mode never actually inspects the bytes, so three uploads of the same
+    // fake frame is enough to exercise the real multi-frame storage/signal
+    // plumbing (storageKeys, not storageKey) end to end.
+    const storageKeys = await Promise.all(
+      [0, 1, 2].map(async (i) => {
+        const stored = await uploadStorage.put({
+          namespace: tenantId,
+          groupId: attempt.id,
+          filename: `frame-${i}.jpg`,
+          contentType: 'image/jpeg',
+          body: Buffer.from('fake selfie bytes'),
+        });
+        return stored.key;
+      }),
+    );
 
     const completed = await completeMethodActivity({
       caseId,
@@ -289,7 +299,7 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
       subjectId,
       method: 'liveness',
       resultMeta: {},
-      payload: { storageKey: stored.key, contentType: 'image/jpeg', mockOutcome: 'NEEDS_REVIEW' },
+      payload: { storageKeys, contentType: 'image/jpeg', mockOutcome: 'NEEDS_REVIEW' },
     });
     expect(completed.status).toBe('NEEDS_REVIEW');
 

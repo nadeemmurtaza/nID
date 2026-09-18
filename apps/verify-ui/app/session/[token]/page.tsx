@@ -26,11 +26,10 @@ type LoadState =
 
 const TERMINAL_STATUSES: CaseStatus[] = ['APPROVED', 'REJECTED', 'EXPIRED', 'NEEDS_REVIEW'];
 
-/** Route segment for each upload method's submit endpoint — document_ocr/liveness keep their
- * original dedicated routes; the per-claim document methods share one generic route. */
+/** Route segment for each single-file upload method's submit endpoint — liveness has its own
+ * multi-frame route (submitFrames below), the per-claim document methods share one generic route. */
 const UPLOAD_ROUTE_FOR_METHOD: Record<string, string> = {
   document_ocr: 'document',
-  liveness: 'liveness',
   dob_document: 'claims/dob_document',
   education_document: 'claims/education_document',
   employment_document: 'claims/employment_document',
@@ -144,6 +143,26 @@ export default function SessionPage() {
     }
   }
 
+  /** liveness only — a burst of frames, not one file. See LivenessStep and SessionsService.submitLiveness(). */
+  async function submitFrames(frames: Blob[]): Promise<void> {
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      const body = new FormData();
+      frames.forEach((frame, i) => body.append('frames', frame, `frame-${i}.jpg`));
+      const res = await fetch(`${API_URL}/v1/sessions/${token}/liveness/submit`, { method: 'POST', body });
+      if (!res.ok) {
+        setSubmitError(await errorMessageFrom(res));
+        setSubmitting(false);
+        return;
+      }
+      await fetchStatus();
+    } catch {
+      setSubmitError('Could not reach the verification service. Check your connection.');
+      setSubmitting(false);
+    }
+  }
+
   return (
     <main>
       <div className="card">
@@ -155,6 +174,7 @@ export default function SessionPage() {
             data={state.data}
             submitOtp={submitOtp}
             submitFile={submitFile}
+            submitFrames={submitFrames}
             submitReport={submitReport}
             submitting={submitting}
             submitError={submitError}
@@ -197,6 +217,7 @@ function ResultView({
   data,
   submitOtp,
   submitFile,
+  submitFrames,
   submitReport,
   submitting,
   submitError,
@@ -204,6 +225,7 @@ function ResultView({
   data: SessionStatus;
   submitOtp: (code: string) => void | Promise<void>;
   submitFile: (method: string, file: File) => void | Promise<void>;
+  submitFrames: (frames: Blob[]) => void | Promise<void>;
   submitReport: (method: string, reportedValue: string) => void | Promise<void>;
   submitting: boolean;
   submitError: string | null;
@@ -278,6 +300,15 @@ function ResultView({
     );
   }
 
+  if (current.method === 'liveness') {
+    return (
+      <>
+        {stepLabel}
+        <LivenessStep onSubmit={submitFrames} submitting={submitting} submitError={submitError} />
+      </>
+    );
+  }
+
   const uploadConfig = UPLOAD_STEP_CONFIG[current.method];
   if (uploadConfig) {
     return (
@@ -336,11 +367,6 @@ const UPLOAD_STEP_CONFIG: Record<string, { title: string; description: string; b
     title: 'Upload your ID document',
     description: "A clear photo of a government-issued ID (passport, driver's license, or national ID).",
     buttonLabel: 'Upload document',
-  },
-  liveness: {
-    title: 'Take a selfie',
-    description: 'A clear photo of your face, well-lit, looking straight at the camera.',
-    buttonLabel: 'Upload selfie',
   },
   dob_document: {
     title: 'Upload proof of date of birth',
@@ -468,6 +494,134 @@ function UploadStep({
         <div className="status-line">
           <span className="dot pending" />
           <span>Checking your upload…</span>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** How many frames a burst captures, and how far apart — real blink detection
+ * (@nid/liveness-engine) needs an open->closed->open sequence, which needs more
+ * than one snapshot; ~1.8s total gives the subject a real window to blink in. */
+const LIVENESS_FRAME_COUNT = 6;
+const LIVENESS_FRAME_INTERVAL_MS = 300;
+/** The frame index (0-based) the "Blink now" prompt appears at — roughly the middle of the burst. */
+const LIVENESS_BLINK_PROMPT_FRAME = 2;
+
+function LivenessStep({
+  onSubmit,
+  submitting,
+  submitError,
+}: {
+  onSubmit: (frames: Blob[]) => void | Promise<void>;
+  submitting: boolean;
+  submitError: string | null;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [captureIndex, setCaptureIndex] = useState(0);
+
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let cancelled = false;
+
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setCameraError('Your browser does not support camera capture. Try a different browser or device.');
+      return;
+    }
+
+    navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } } })
+      .then((s) => {
+        if (cancelled) {
+          s.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        stream = s;
+        if (videoRef.current) {
+          videoRef.current.srcObject = s;
+        }
+        setCameraReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCameraError('Camera access was denied or unavailable. Allow camera access and reload to continue.');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      stream?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  async function captureBurst(): Promise<void> {
+    const video = videoRef.current;
+    if (!video) return;
+
+    setCapturing(true);
+    const frames: Blob[] = [];
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 480;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      setCameraError('Could not capture from the camera. Try a different browser.');
+      setCapturing(false);
+      return;
+    }
+
+    for (let i = 0; i < LIVENESS_FRAME_COUNT; i++) {
+      setCaptureIndex(i);
+      if (i > 0) {
+        await new Promise((resolve) => setTimeout(resolve, LIVENESS_FRAME_INTERVAL_MS));
+      }
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+      if (blob) {
+        frames.push(blob);
+      }
+    }
+
+    setCapturing(false);
+    if (frames.length < LIVENESS_FRAME_COUNT) {
+      setCameraError('Could not capture enough frames. Try again.');
+      return;
+    }
+    await onSubmit(frames);
+  }
+
+  return (
+    <>
+      <h1>Take a quick liveness check</h1>
+      <p className="lead">Center your face in frame, then start the capture and blink when prompted.</p>
+
+      {cameraError && <p className="error-text">{cameraError}</p>}
+
+      {!cameraError && (
+        <div className="camera-preview">
+          <video ref={videoRef} autoPlay playsInline muted />
+          {capturing && captureIndex >= LIVENESS_BLINK_PROMPT_FRAME && (
+            <div className="blink-prompt">Blink now</div>
+          )}
+        </div>
+      )}
+
+      <button type="button" onClick={() => void captureBurst()} disabled={!cameraReady || capturing || submitting}>
+        {capturing
+          ? `Capturing… (${captureIndex + 1}/${LIVENESS_FRAME_COUNT})`
+          : submitting
+            ? 'Checking…'
+            : 'Start capture'}
+      </button>
+
+      {submitError && <p className="error-text">{submitError}</p>}
+      {submitting && !submitError && (
+        <div className="status-line">
+          <span className="dot pending" />
+          <span>Checking your capture…</span>
         </div>
       )}
     </>
