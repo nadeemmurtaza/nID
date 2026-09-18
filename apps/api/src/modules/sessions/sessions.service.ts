@@ -149,8 +149,8 @@ export class SessionsService {
       }
 
       const stored = await this.storage.put({
-        tenantId: session.tenantId,
-        methodAttemptId: attempt.id,
+        namespace: session.tenantId,
+        groupId: attempt.id,
         filename: file.filename,
         contentType: file.contentType,
         body: file.buffer,

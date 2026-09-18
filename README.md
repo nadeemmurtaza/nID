@@ -72,6 +72,20 @@ internal Newax tool. See `docs/HOUSE-RULES.md` for engineering conventions and
   to. One approval link, delivered two ways: a same-device phone+OTP form, or a
   QR code of that *same* URL for a cross-device scan — see below for why that's
   one flow, not two.
+- **Public profiles** — `Profile` (1:1 with `Account`, not `Subject` —
+  see `docs/PHASES.md`'s profiles section for why) plus `Service`,
+  `Offer`, `BusinessHour`, `CustomLink`, `SocialLink`, `ProfileImage`,
+  `AvailabilityRule`, `Appointment`, `ContactMessage`, and
+  `PhoneBadgeEvidence` (the no-RLS-bypass mechanism a Profile's badges are
+  computed from, across every tenant that ever KYC'd this phone). Real
+  booking with a `SERIALIZABLE`-transaction double-booking guarantee, real
+  timezone-correct availability, real `@nid/storage`-backed image uploads
+  — see `docs/PHASES.md` for the full architecture and what was verified
+  live.
+- `apps/profile-ui` — public, unauthenticated `/[slug]` pages (photo, bio,
+  verified badges, offers, hours, a real booking widget, links, a contact
+  form) plus an account-authenticated `/dashboard` for the owner to edit
+  everything, including appointments and the contact-message inbox.
 - Root `eslint.config.mjs`, wired into every package's `pnpm lint`.
 
 ### "URL or QR code, both" is one link, not two flows
@@ -122,6 +136,7 @@ pnpm --filter @nid/workflows dev   # in a second terminal: starts the Temporal w
 pnpm --filter @nid/verify-ui dev   # in a third terminal: hosted flow at :3100
 pnpm --filter @nid/dashboard dev   # in a fourth terminal: staff dashboard at :3200
 pnpm --filter @nid/login-ui dev    # in a fifth terminal: "Login with nID" at :3300
+pnpm --filter @nid/profile-ui dev  # in a sixth terminal: public profiles + owner dashboard at :3400
 ```
 
 > **What's actually been run, and where it was verified.** The sandbox this
@@ -186,6 +201,20 @@ pnpm --filter @nid/login-ui dev    # in a fifth terminal: "Login with nID" at :3
 > 3-step flow (including one genuine browser file upload) in real headless
 > Chromium. Also not verified: the Temporal orchestration layer, for the
 > same reason as everything else in this note.
+>
+> **Public profiles are verified live end to end, including under genuine
+> concurrency** — see `docs/PHASES.md`'s profiles section for the full
+> account: real cross-tenant badge aggregation, curl-driven booking
+> (creation, timezone-correct computed availability, exact-instant and
+> overlapping-interval double-booking rejection, and — the one that
+> actually matters — 5 truly simultaneous requests for the same slot
+> resolving to exactly one winner), and two full Playwright passes against
+> `apps/profile-ui`: the public page's booking widget and contact form
+> both driven through real browser interaction, and the owner dashboard
+> driven through creating a profile, editing and publishing it, managing
+> services/hours/offers/links, uploading a real image, and confirming a
+> real appointment. This pass caught a real bug (an empty optional field
+> failing `@IsEmail` validation) before it shipped — see `docs/PHASES.md`.
 
 ## Phase 0 acceptance criteria
 
@@ -281,6 +310,40 @@ architecture and what was verified live — summarized:
    persisted byte-for-byte, and a `liveness` submission through the same
    route was rejected with 400.
 
+## Phase 1 acceptance criteria (public profiles)
+
+See `docs/PHASES.md`'s "Public profiles" section for the full architecture
+and what was verified live — summarized:
+
+1. A `Profile`'s badges are computed across every tenant that ever ran
+   `APPROVED` KYC against its Account's phone, not just one tenant's view
+   — without granting the API's database role any new RLS-bypass
+   privilege. **Verified live**: seeded `PhoneBadgeEvidence` rows at
+   different `VerificationLevel`s for the same `claimType`, from
+   different fake `tenantId`s, correctly rank strongest-first on the
+   public profile response.
+2. A profile's visibility flags are enforced server-side, not just hidden
+   in a UI — an unset `showPhone` genuinely nulls `phone` in the public
+   API response. **Verified live** via curl.
+3. Double-booking is genuinely impossible under real concurrency, not
+   just rejected by a slower sequential check. **Verified live**: 5
+   simultaneous `curl` requests for the identical free slot resolve to
+   exactly one `201 Created` and four `409 Conflict`s.
+4. Availability is computed from real recurring rules, minus real existing
+   appointments, converted correctly for the profile's own IANA timezone
+   including across a DST transition — never a hardcoded or synthetic
+   slot list. **Verified live** and unit-tested
+   (`packages/shared-types/src/timezone.spec.ts`).
+5. The owner dashboard (`apps/profile-ui`'s `/dashboard`) can create a
+   profile, edit every field and visibility toggle, manage services,
+   bookable-hours, display hours, offers, and links, upload a photo and
+   gallery images, and confirm/cancel a real appointment and mark a real
+   contact message read — all through the identical phone+OTP Account
+   session `apps/login-ui` already established. **Verified live** in real
+   headless Chromium (Playwright), including a bug the pass itself caught
+   and a fix that landed before this criterion was marked done — see
+   `docs/PHASES.md`.
+
 ## Repo layout
 
 ```
@@ -291,12 +354,13 @@ nID/
     verify-ui/      Hosted, subject-facing verification flow (Next.js, no login)
     dashboard/      Tenant staff dashboard (Next.js, API-key auth)
     login-ui/       "Login with nID" — the page an RP's button sends a browser to
+    profile-ui/     Public /[slug] profile pages + account-authenticated owner dashboard
   packages/
     db/             Prisma schema, RLS migrations, seed script
     verification-providers/   one file per VerificationMethodProvider
     ocr-engine/     Real Tesseract OCR + ICAO 9303 MRZ checksum validation
     storage/        StorageDriver interface + local-disk implementation
-    shared-types/
+    shared-types/   session tokens, webhook signing, IANA timezone conversion
     workflow-contracts/       signal/query/workflow-type names shared by api <-> workflows
   docs/
     HOUSE-RULES.md

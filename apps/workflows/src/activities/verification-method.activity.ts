@@ -206,9 +206,10 @@ export interface ResolveCaseActivityInput {
  */
 export async function resolveCaseActivity(input: ResolveCaseActivityInput): Promise<void> {
   const tenant = await withTenantContext(prisma, input.tenantId, async (tx) => {
-    await tx.verificationCase.update({
+    const resolvedAt = new Date();
+    const kase = await tx.verificationCase.update({
       where: { id: input.caseId },
-      data: { status: input.caseStatus, decision: input.decision, resolvedAt: new Date() },
+      data: { status: input.caseStatus, decision: input.decision, resolvedAt },
     });
     // Written by SYSTEM (the workflow), not API_KEY — docs/HOUSE-RULES.md
     // rule 3 requires this on every Subject read, and this is a read (the
@@ -222,6 +223,30 @@ export async function resolveCaseActivity(input: ResolveCaseActivityInput): Prom
         caseId: input.caseId,
       },
     });
+
+    // PhoneBadgeEvidence carries no RLS (schema.prisma's comment on it) so
+    // it's writable through this same tenant-scoped transaction. Only an
+    // APPROVED case is real proof of a claim — REJECTED/EXPIRED/
+    // NEEDS_REVIEW cases never contribute a badge, and a Subject with no
+    // phone can't be matched to any Account later, so there's nothing to
+    // index for it.
+    if (input.caseStatus === 'APPROVED') {
+      const subject = await tx.subject.findUnique({ where: { id: input.subjectId } });
+      if (subject?.phone) {
+        await tx.phoneBadgeEvidence.create({
+          data: {
+            phone: subject.phone,
+            tenantId: input.tenantId,
+            subjectId: input.subjectId,
+            caseId: kase.id,
+            claimType: kase.claimType,
+            level: kase.level,
+            verifiedAt: resolvedAt,
+          },
+        });
+      }
+    }
+
     return tx.tenant.findUnique({ where: { id: input.tenantId } });
   });
 

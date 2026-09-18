@@ -19,8 +19,8 @@ describe('LocalStorageDriver', () => {
   it('round-trips bytes through put() and get()', async () => {
     const body = Buffer.from('fake jpeg bytes');
     const stored = await driver.put({
-      tenantId: 'tenant_1',
-      methodAttemptId: 'attempt_1',
+      namespace: 'tenant_1',
+      groupId: 'attempt_1',
       filename: 'selfie.jpg',
       contentType: 'image/jpeg',
       body,
@@ -35,15 +35,15 @@ describe('LocalStorageDriver', () => {
 
   it('scopes different attempts to different keys', async () => {
     const a = await driver.put({
-      tenantId: 'tenant_1',
-      methodAttemptId: 'attempt_1',
+      namespace: 'tenant_1',
+      groupId: 'attempt_1',
       filename: 'a.jpg',
       contentType: 'image/jpeg',
       body: Buffer.from('a'),
     });
     const b = await driver.put({
-      tenantId: 'tenant_1',
-      methodAttemptId: 'attempt_2',
+      namespace: 'tenant_1',
+      groupId: 'attempt_2',
       filename: 'b.jpg',
       contentType: 'image/jpeg',
       body: Buffer.from('b'),

@@ -245,8 +245,8 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
       where: { caseId, method: 'document_ocr' },
     });
     const stored = await uploadStorage.put({
-      tenantId,
-      methodAttemptId: attempt.id,
+      namespace: tenantId,
+      groupId: attempt.id,
       filename: 'id-card.jpg',
       contentType: 'image/jpeg',
       body: Buffer.from('fake id card bytes'),
@@ -276,8 +276,8 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
       where: { caseId, method: 'liveness' },
     });
     const stored = await uploadStorage.put({
-      tenantId,
-      methodAttemptId: attempt.id,
+      namespace: tenantId,
+      groupId: attempt.id,
       filename: 'selfie.jpg',
       contentType: 'image/jpeg',
       body: Buffer.from('fake selfie bytes'),
@@ -344,8 +344,8 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
       where: { caseId, method: 'document_ocr' },
     });
     const stored = await uploadStorage.put({
-      tenantId,
-      methodAttemptId: attempt.id,
+      namespace: tenantId,
+      groupId: attempt.id,
       filename: 'id.jpg',
       contentType: 'image/jpeg',
       body: Buffer.from('doc bytes'),

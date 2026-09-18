@@ -347,6 +347,7 @@ model Account {
 
   sessions      AccountSession[]
   loginRequests OAuthLoginRequest[]
+  profile       Profile?
 }
 
 /// One OTP challenge for signing up or logging into an Account. Verifying
@@ -426,4 +427,314 @@ model OAuthLoginRequest {
 
   @@index([tenantId])
   @@index([clientId])
+}
+
+// ---------------------------------------------------------------------------
+// Cross-tenant badge evidence. A Profile (below) is owned by an Account, not
+// any one Tenant, so computing its badges means checking every tenant's
+// approved VerificationCases for this Account's phone — something plain
+// nid_app RLS ("tenantId" = current_setting('app.tenant_id')) cannot do by
+// design, and must not be worked around by granting nid_app BYPASSRLS
+// wholesale (that would expose every tenant's full Subject PII, including
+// nationalIdNumber, not just badge-relevant fields).
+//
+// Instead, this table holds nothing a single tenant owns exclusively — only
+// the minimal fields getBadges()-style ranking needs — and carries no
+// tenantId-based RLS policy, the same trust domain as Account/AccountSession
+// above. One row is appended whenever a VerificationCase resolves to
+// APPROVED (apps/workflows' resolveCaseActivity) or a Subject is created
+// with a phone + dateOfBirth (SubjectsService.create) — see
+// apps/api/src/modules/badges/badge-ranking.ts, whose strongest-level-per-
+// claimType ranking runs unmodified against however many rows exist for a
+// phone, so an APPROVED row naturally outranks a SELF_ATTESTED one
+// regardless of write order (VerificationLevel's declared weakest-to-
+// strongest order, same as VerificationCase.level).
+model PhoneBadgeEvidence {
+  id         String            @id @default(cuid())
+  phone      String
+  tenantId   String
+  subjectId  String
+  caseId     String?
+  claimType  ClaimType
+  level      VerificationLevel
+  verifiedAt DateTime?
+  createdAt  DateTime          @default(now())
+
+  @@index([phone, claimType])
+}
+
+// ---------------------------------------------------------------------------
+// Public profiles — a person or business's public-facing page. One per
+// Account, not per Subject: a Subject is owned by one tenant for that
+// tenant's own KYC (docs/HOUSE-RULES.md), but a badge earned by passing that
+// tenant's KYC should show up on the person's own page regardless of which
+// tenant ran the check — the same cross-tenant portability principle
+// Account already embodies for "Login with nID". A Profile's badges are
+// computed the same way SubjectsService.getBadges computes a tenant's view
+// of one Subject, just fanned out across every Subject whose phone matches
+// this Account's — see profiles.service.ts's getBadges().
+//
+// No tenantId, no RLS policy — same trust domain as Account/AccountSession/
+// AccountOtpCode above: access control is the API layer (AccountSessionGuard)
+// requiring a valid Account session for anything but the public read paths,
+// not a Postgres tenant policy keyed on a tenant nothing here belongs to.
+// ---------------------------------------------------------------------------
+
+enum ProfileCategory {
+  DOCTOR
+  BUSINESS
+  PROFESSIONAL
+  OTHER
+}
+
+model Profile {
+  id          String          @id @default(cuid())
+  accountId   String          @unique
+  /// The public URL segment — apps/profile-ui serves this at /{slug}.
+  slug        String          @unique
+  displayName String
+  headline    String?
+  category    ProfileCategory @default(OTHER)
+  bio         String?
+  /// Object storage key (@nid/storage), not a URL — resolved through
+  /// apps/api the same way DocumentAsset/ProfileImage are, never a raw
+  /// public bucket URL baked into a stored value.
+  photoKey        String?
+  /// Set alongside photoKey whenever it's uploaded — needed to serve the
+  /// right Content-Type back out, the same reason ProfileImage.contentType
+  /// exists as its own column instead of being guessed from the key.
+  photoContentType String?
+
+  phone       String?
+  whatsapp    String?
+  publicEmail String?
+
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  region       String?
+  countryCode  String?
+  latitude     Float?
+  longitude    Float?
+
+  /// IANA timezone (e.g. "Asia/Karachi") — every AvailabilityRule/BusinessHour
+  /// minute-of-day value on this Profile is local to this, not UTC. Real
+  /// booking correctness depends on this being right, not assumed.
+  timezone String @default("UTC")
+
+  /// Per-section visibility — the owner's own choice of what's public, not
+  /// an all-or-nothing toggle. Contact channels default hidden until the
+  /// owner opts in; the sections a page needs to function default shown.
+  showPhone    Boolean @default(false)
+  showWhatsapp Boolean @default(false)
+  showEmail    Boolean @default(false)
+  showAddress  Boolean @default(false)
+  showBadges   Boolean @default(true)
+  showBooking  Boolean @default(true)
+  showOffers   Boolean @default(true)
+  showHours    Boolean @default(true)
+
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  account           Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  services          Service[]
+  offers            Offer[]
+  businessHours     BusinessHour[]
+  customLinks       CustomLink[]
+  socialLinks       SocialLink[]
+  images            ProfileImage[]
+  availabilityRules AvailabilityRule[]
+  appointments      Appointment[]
+  contactMessages   ContactMessage[]
+
+  @@index([accountId])
+}
+
+model Service {
+  id              String   @id @default(cuid())
+  profileId       String
+  name            String
+  description     String?
+  durationMinutes Int
+  price           Float?
+  currency        String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  profile      Profile       @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@index([profileId])
+}
+
+model Offer {
+  id          String    @id @default(cuid())
+  profileId   String
+  title       String
+  description String?
+  imageKey    String?
+  validUntil  DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+/// Fixed open/close hours shown on the page — distinct from
+/// AvailabilityRule, which drives real slot computation for booking. A
+/// profile can show "9am-5pm" without every one of those minutes being
+/// bookable (e.g. a walk-in-only business), so these are deliberately two
+/// different models, not one reused for both purposes.
+model BusinessHour {
+  id          String   @id @default(cuid())
+  profileId   String
+  day         Weekday
+  /// Minutes since midnight, local to Profile.timezone. Null when isClosed.
+  openMinute  Int?
+  closeMinute Int?
+  isClosed    Boolean  @default(false)
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, day])
+  @@index([profileId])
+}
+
+model CustomLink {
+  id        String   @id @default(cuid())
+  profileId String
+  label     String
+  url       String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+enum SocialPlatform {
+  FACEBOOK
+  INSTAGRAM
+  LINKEDIN
+  TWITTER
+  YOUTUBE
+  TIKTOK
+  OTHER
+}
+
+model SocialLink {
+  id        String         @id @default(cuid())
+  profileId String
+  platform  SocialPlatform
+  url       String
+  order     Int            @default(0)
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+enum ProfileImageKind {
+  BANNER
+  GALLERY
+}
+
+model ProfileImage {
+  id          String           @id @default(cuid())
+  profileId   String
+  kind        ProfileImageKind
+  /// Object storage key only (@nid/storage) — same convention as
+  /// DocumentAsset, content never touches this database.
+  storageKey  String
+  contentType String
+  order       Int              @default(0)
+  createdAt   DateTime         @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+/// A recurring weekly window a Service can actually be booked within — the
+/// input to real slot computation (apps/api/src/modules/profiles/booking.service.ts),
+/// not the appointments themselves.
+model AvailabilityRule {
+  id          String  @id @default(cuid())
+  profileId   String
+  day         Weekday
+  /// Minutes since midnight, local to Profile.timezone.
+  startMinute Int
+  endMinute   Int
+  isActive    Boolean @default(true)
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+model Appointment {
+  id           String            @id @default(cuid())
+  profileId    String
+  serviceId    String
+  status       AppointmentStatus @default(PENDING)
+  startsAt     DateTime
+  endsAt       DateTime
+  visitorName  String
+  visitorPhone String?
+  visitorEmail String?
+  notes        String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  /// Cheap defense-in-depth against the common case (a double click, a
+  /// retried request) — no two appointments on the same profile may share
+  /// an exact start instant. This alone cannot express "no overlap" between
+  /// appointments of different durations; the real guarantee is a
+  /// SERIALIZABLE transaction with an explicit overlap check in
+  /// booking.service.ts, which Postgres aborts on genuine concurrent
+  /// conflict rather than silently double-booking.
+  @@unique([profileId, startsAt])
+  @@index([profileId, startsAt])
+  @@index([serviceId])
+}
+
+model ContactMessage {
+  id          String    @id @default(cuid())
+  profileId   String
+  senderName  String
+  senderPhone String?
+  senderEmail String?
+  message     String
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
 }

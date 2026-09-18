@@ -15,9 +15,10 @@ Full rationale lives in the plan this scaffold was built from. Summary:
   with nID" button for, same-device URL or cross-device QR. `erp-1` also
   already integrates as nID's tenant #1 — see below.
 - **Phase 1** — **document upload + OCR and liveness, policy composition
-  beyond a single method, and per-attribute verification badges (identity,
-  date of birth, education, employment) at three levels of proof, are
-  done** — see below. Two Phase 1 items remain: wiring the dashboard's staff
+  beyond a single method, per-attribute verification badges (identity,
+  date of birth, education, employment) at three levels of proof, and
+  public profile pages with real badges, booking, and owner-managed
+  content, are done** — see below. Two Phase 1 items remain: wiring the dashboard's staff
   login onto `Account` instead of raw API-key paste (a `TenantStaffMembership`
   join table — "does this Account work for this Tenant" — is the natural next
   step now that `Account` exists, deliberately not built in Phase 0 since
@@ -271,6 +272,145 @@ key, no per-call cost, no third party ever sees the document.
   docs exist, reusing `RegistryCheckProvider`'s HTTP-client mechanism
   rather than inventing a new one, not a generic placeholder pretending to
   be it in the meantime.
+
+### Public profiles: pages, badges, booking, and owner-managed content
+
+A different kind of surface than everything above: instead of a tenant
+verifying *its own* end-users, a person who has completed KYC with *any*
+tenant gets a public page of their own — a Linktree/business-card-shaped
+profile (photo, bio, contact actions, hours, offers, links, a real booking
+widget, a contact form) that shows their verified badges regardless of
+which tenant's KYC earned them. This is the direct payoff of `Account`
+being portable: without it, "get verified once, benefit everywhere" would
+have nothing to attach to.
+
+- **`Profile` is 1:1 with `Account`, never with `Subject`.** A `Subject` is
+  owned by exactly one tenant, by design (`docs/HOUSE-RULES.md`) — a
+  Profile anchored to a Subject would only ever show that one tenant's
+  view. Anchoring it to `Account` instead is the same portability
+  `Account` already gives "Login with nID": one page, badges fanned out
+  across every tenant that ever KYC'd this phone number. No `tenantId`,
+  no RLS policy — same trust domain as `Account`/`AccountSession` above,
+  access control is `AccountSessionGuard` at the API layer.
+- **Ten new models** (`packages/db/prisma/schema.prisma`): `Profile`
+  itself (slug, display fields, per-section `show*` visibility booleans,
+  address/geo, IANA `timezone`), `Service`, `Offer`, `BusinessHour`,
+  `CustomLink`, `SocialLink`, `ProfileImage`, `AvailabilityRule`,
+  `Appointment`, `ContactMessage`.
+- **`PhoneBadgeEvidence`: the real solution to "read across every
+  tenant's data without a backdoor."** The first design considered for
+  cross-tenant badge computation was a `SECURITY DEFINER` Postgres
+  function owned by a `BYPASSRLS` role — narrower than granting `nid_app`
+  `BYPASSRLS` outright, but still a standing RLS-bypass primitive, and it
+  was correctly refused by this environment's own safety tooling as a
+  security-weakening action. The actual fix doesn't bypass RLS at all: a
+  denormalized, `PhoneBadgeEvidence` table — same no-tenantId trust
+  domain as `Account` — gets one row appended whenever a `VerificationCase`
+  resolves `APPROVED` (`resolveCaseActivity`, `apps/workflows`) or a
+  `Subject` is created with a phone + `dateOfBirth`
+  (`SubjectsService.create`). The row-writer already legitimately holds
+  the data inside its own tenant-scoped transaction — no new privilege is
+  invented, the read side just never has to cross a tenant boundary at
+  query time. `pickStrongestPerClaimType` (`badges/badge-ranking.ts`) is
+  shared, unmodified, by both `SubjectsService.getBadges` (one tenant's
+  own Subject) and `CrossTenantBadgesService.getBadgesForPhone` (a
+  Profile's fanned-out view) — one ranking function, two callers, per
+  `docs/HOUSE-RULES.md` rule 1.
+- **Booking is two separate models on purpose.** `BusinessHour` is
+  display-only ("we're open 9–5"); `AvailabilityRule` is the actual
+  bookable-slot input. Conflating them would mean either fake availability
+  (hours shown but nothing bookable) or a business unable to display hours
+  different from what it accepts bookings for (a doctor who's "in" 9–5 but
+  only booking new patients 9–12).
+- **Double-booking prevention is a real `SERIALIZABLE` transaction, not
+  just a unique constraint.** `@@unique([profileId, startsAt])` on
+  `Appointment` is cheap defense-in-depth for the identical-instant case,
+  but can't express "no overlap" between appointments of different
+  durations. The real guarantee (`appointments.service.ts`) is a Postgres
+  `SERIALIZABLE` transaction with an explicit interval-overlap check
+  (`startsAt < newEndsAt AND endsAt > newStartsAt`), retried up to 3 times
+  on Prisma's `P2034` write-conflict error. **Verified live under genuine
+  concurrency**, not just sequentially: 5 simultaneous `curl` requests for
+  the identical free slot resolved to exactly one `201` and four `409`s.
+- **Timezone-correct availability with zero new dependencies.**
+  `AvailabilityRule`/`BusinessHour` minute-of-day values are local to
+  `Profile.timezone` (an IANA name). Converting between that and UTC —
+  both directions, DST-correctly — needed real timezone-database logic;
+  rather than add a dependency, `packages/shared-types/src/timezone.ts`
+  does it with the platform's own `Intl` API: format an instant into a
+  timezone's wall-clock parts (`getLocalDateParts`), and the inverse
+  (`zonedTimeToUtc`) via iterative correction against the zone's own
+  actual UTC offset (necessary because DST means the offset itself is a
+  function of the instant, not a constant). **Verified against real DST
+  behavior**: a 9am America/New_York conversion one day before vs. one day
+  after the actual 2026 spring-forward transition produces UTC instants
+  exactly one hour apart, not by construction.
+- **`@nid/storage` generalized, not forked.** Its `PutDocumentInput` used
+  `tenantId`/`methodAttemptId` — KYC-specific names for what the driver
+  itself only ever treated as two opaque path-prefix segments. Profile
+  photos/banners/gallery images needed the identical disk-backed
+  put()/get() behavior for a completely different domain, so the fields
+  were renamed to domain-neutral `namespace`/`groupId` (every call site
+  updated, `apps/api`'s KYC uploads included) rather than either
+  duplicating `LocalStorageDriver` or repurposing tenant-shaped field
+  names to mean something else. Exactly the "no shortcuts, genuine reuse"
+  the schema comments elsewhere already hold this codebase to.
+- **`apps/profile-ui`** — a new Next.js app, two halves:
+  - **Public, unauthenticated `/[slug]`**: server-rendered — photo (or
+    initials fallback), headline, bio, real verified badges, offers,
+    display hours, address + map link, a real computed-availability
+    booking widget, custom/social links, a gallery, and a contact form —
+    every section conditionally rendered on real data (an owner who hasn't
+    added offers gets no empty "Offers" heading) and every visibility
+    flag enforced server-side by `apps/api`, not hidden-but-fetchable
+    client-side.
+  - **Account-authenticated `/dashboard`** (phone + OTP, reusing the
+    identical session pattern `apps/login-ui` already established): create
+    the profile, edit every field and visibility toggle, upload the photo
+    and banner/gallery images, manage services, bookable-hours windows,
+    display hours, offers, links, and view/act on real appointments
+    (confirm/cancel) and contact messages (mark read).
+- **A real bug this caught**: an owner saving the profile-editor form
+  with, say, no public email yet sends `publicEmail: ''` — `@IsEmail()`
+  rejects that even though the field is `@IsOptional()`, since
+  `@IsOptional()` only skips `null`/`undefined`, never `''`. Caught by a
+  live Playwright pass through the dashboard (not by typecheck or a mock),
+  fixed by converting blank optional fields to `undefined` before sending
+  — Prisma's own "field omitted" update semantics, which is exactly what a
+  cleared form field means.
+
+**Seeded**: `pnpm db:seed` now also seeds a demo profile (`/demo-clinic`,
+`packages/db/prisma/seed.ts`'s `seedDemoProfile`) — an Account, a
+published Profile with two services, three weekly availability windows,
+matching display hours, an offer, a custom + social link, and one
+`PhoneBadgeEvidence` row so the seeded page genuinely shows a verified
+badge, the same way a real cross-tenant KYC pass would produce one. Every
+step upserts or checks-then-creates by its own natural key, so re-running
+the seed is a no-op the second time.
+
+**Verified live**: every layer, against real Postgres and two real running
+Next.js/NestJS servers, not mocked. Profile CRUD, slug-conflict rejection
+(409), visibility-flag gating (an unset `showPhone` genuinely nulls
+`phone` in the public response, not just hides it in a UI), and the
+cross-tenant badge read (seeded `PhoneBadgeEvidence` rows at different
+levels for the same `claimType` correctly rank strongest-first) were
+proven via curl. The whole booking path — service creation, availability
+windows, computed free slots respecting real weekly recurrence and
+timezone conversion, a real booking, the exact-instant and overlapping-
+interval double-booking rejections, the outside-business-hours rejection,
+and the 5-way concurrent-race test above — was proven via curl and confirmed
+matching in the browser. `apps/profile-ui`'s public page and dashboard
+were both driven in real headless Chromium (Playwright): the public
+page's booking widget picks a real computed slot and books it end to end,
+its contact form delivers a real `ContactMessage`; the dashboard logs in,
+creates a profile, edits and publishes it (confirmed live on the public
+page immediately after), adds a service, a bookable-hours window, display
+hours, an offer, a link, uploads a real banner image (byte-round-tripped
+through `@nid/storage`), and confirms/cancels a real appointment and
+marks a real contact message read. Full workspace `typecheck`/`lint`/
+`test` all pass, including new `timezone.spec.ts` (DST + round-trip) and
+`badge-ranking.spec.ts` (strongest-first ranking, self-attested-fallback
+never overwriting a stronger badge).
 
 - **Phase 2** — sanctions/PEP screening, KYB/business-registry lookup, one
   country's national-ID registry adapter, manual-review tooling, retention/audit

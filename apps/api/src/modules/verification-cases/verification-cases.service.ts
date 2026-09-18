@@ -271,8 +271,8 @@ export class VerificationCasesService {
       }
 
       const stored = await this.storage.put({
-        tenantId,
-        methodAttemptId: attempt.id,
+        namespace: tenantId,
+        groupId: attempt.id,
         filename: file.filename,
         contentType: file.contentType,
         body: file.buffer,

@@ -143,7 +143,142 @@ async function main(): Promise<void> {
     }
   }
 
+  await seedDemoProfile(prisma);
+
   await prisma.$disconnect();
+}
+
+/**
+ * A demo public profile (docs/PHASES.md's profiles section) — an Account,
+ * not a Tenant, since Profile is 1:1 with Account (schema.prisma's
+ * comment). Also seeds one PhoneBadgeEvidence row so the profile shows a
+ * real verified badge, demonstrating the whole point of the feature: a
+ * person's public page benefits from KYC they completed with any tenant,
+ * not just the one that ran the check — see badge-ranking.ts and
+ * PhoneBadgeEvidence's schema comment. Safe to run more than once: every
+ * step upserts or checks-then-creates by its own natural key.
+ */
+async function seedDemoProfile(prisma: ReturnType<typeof createPrismaClient>): Promise<void> {
+  const phone = '+15550100001';
+
+  const account = await prisma.account.upsert({
+    where: { phone },
+    update: {},
+    create: { phone, phoneVerifiedAt: new Date() },
+  });
+
+  const profile = await prisma.profile.upsert({
+    where: { accountId: account.id },
+    update: {},
+    create: {
+      accountId: account.id,
+      slug: 'demo-clinic',
+      displayName: 'Dr. Amina Raza',
+      headline: 'Family Physician & Wellness Coach',
+      category: 'DOCTOR',
+      bio: 'Board-certified family physician with 12 years of experience, focused on preventive care and long-term patient relationships.',
+      phone,
+      whatsapp: phone,
+      publicEmail: 'hello@demo-clinic.example',
+      addressLine1: '221B Baker Street',
+      city: 'Springfield',
+      region: 'IL',
+      countryCode: 'US',
+      latitude: 39.78,
+      longitude: -89.65,
+      timezone: 'America/Chicago',
+      showPhone: true,
+      showWhatsapp: true,
+      showEmail: true,
+      showAddress: true,
+      showBadges: true,
+      showBooking: true,
+      showOffers: true,
+      showHours: true,
+      isPublished: true,
+    },
+  });
+
+  if (!(await prisma.service.findFirst({ where: { profileId: profile.id, name: 'General Consultation' } }))) {
+    await prisma.service.create({
+      data: { profileId: profile.id, name: 'General Consultation', durationMinutes: 30, price: 40, currency: 'USD' },
+    });
+  }
+  if (!(await prisma.service.findFirst({ where: { profileId: profile.id, name: 'Follow-up Visit' } }))) {
+    await prisma.service.create({
+      data: { profileId: profile.id, name: 'Follow-up Visit', durationMinutes: 15, price: 20, currency: 'USD' },
+    });
+  }
+
+  const availabilityWindows: Array<{ day: 'MONDAY' | 'WEDNESDAY' | 'FRIDAY'; startMinute: number; endMinute: number }> = [
+    { day: 'MONDAY', startMinute: 540, endMinute: 1020 },
+    { day: 'WEDNESDAY', startMinute: 540, endMinute: 1020 },
+    { day: 'FRIDAY', startMinute: 540, endMinute: 780 },
+  ];
+  for (const window of availabilityWindows) {
+    const existing = await prisma.availabilityRule.findFirst({ where: { profileId: profile.id, day: window.day } });
+    if (!existing) {
+      await prisma.availabilityRule.create({ data: { profileId: profile.id, ...window } });
+    }
+  }
+
+  const businessHours: Array<{ day: 'MONDAY' | 'WEDNESDAY' | 'FRIDAY' | 'SUNDAY'; openMinute?: number; closeMinute?: number; isClosed?: boolean }> = [
+    { day: 'MONDAY', openMinute: 540, closeMinute: 1020 },
+    { day: 'WEDNESDAY', openMinute: 540, closeMinute: 1020 },
+    { day: 'FRIDAY', openMinute: 540, closeMinute: 780 },
+    { day: 'SUNDAY', isClosed: true },
+  ];
+  for (const hour of businessHours) {
+    await prisma.businessHour.upsert({
+      where: { profileId_day: { profileId: profile.id, day: hour.day } },
+      update: {},
+      create: {
+        profileId: profile.id,
+        day: hour.day,
+        openMinute: hour.openMinute,
+        closeMinute: hour.closeMinute,
+        isClosed: hour.isClosed ?? false,
+      },
+    });
+  }
+
+  if (!(await prisma.offer.findFirst({ where: { profileId: profile.id, title: 'New Patient Special' } }))) {
+    await prisma.offer.create({
+      data: { profileId: profile.id, title: 'New Patient Special', description: '20% off your first visit.' },
+    });
+  }
+
+  if (!(await prisma.customLink.findFirst({ where: { profileId: profile.id, label: 'Patient Portal' } }))) {
+    await prisma.customLink.create({
+      data: { profileId: profile.id, label: 'Patient Portal', url: 'https://example.com/portal' },
+    });
+  }
+  if (!(await prisma.socialLink.findFirst({ where: { profileId: profile.id, platform: 'INSTAGRAM' } }))) {
+    await prisma.socialLink.create({
+      data: { profileId: profile.id, platform: 'INSTAGRAM', url: 'https://instagram.com/democlinic' },
+    });
+  }
+
+  // Real cross-tenant proof of the badge feature's whole point: this row
+  // was never written by this profile's own account, it's what
+  // resolveCaseActivity (apps/workflows) writes whenever ANY tenant's
+  // VerificationCase for this phone resolves APPROVED.
+  if (!(await prisma.phoneBadgeEvidence.findFirst({ where: { phone, claimType: 'IDENTITY' } }))) {
+    await prisma.phoneBadgeEvidence.create({
+      data: {
+        phone,
+        tenantId: 'tenant-a',
+        subjectId: 'seed-demo-subject',
+        caseId: 'seed-demo-case',
+        claimType: 'IDENTITY',
+        level: 'REGISTRY_VERIFIED',
+        verifiedAt: new Date(),
+      },
+    });
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(`Demo profile: /${profile.slug} (account phone ${phone}, OTP dev-mode logs the code to this console)`);
 }
 
 main().catch((err: unknown) => {

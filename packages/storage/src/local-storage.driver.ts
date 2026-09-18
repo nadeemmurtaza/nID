@@ -4,11 +4,11 @@ import { extname, join, normalize, resolve, sep } from 'node:path';
 import type { PutDocumentInput, StorageDriver, StoredDocument } from './types';
 
 /**
- * Writes uploaded document/selfie bytes to a directory on disk. Real,
- * working storage for local development and single-host deployments — not a
- * stub. Every key is scoped under the owning tenant and method attempt, both
- * of which are server-derived (never a client-supplied path), so one
- * tenant's uploads can't collide with or overwrite another's.
+ * Writes uploaded bytes to a directory on disk. Real, working storage for
+ * local development and single-host deployments — not a stub. Every key is
+ * scoped under the caller's namespace and group, both of which are
+ * server-derived (never a client-supplied path), so one caller's uploads
+ * can't collide with or overwrite another's.
  */
 export class LocalStorageDriver implements StorageDriver {
   readonly name = 'local';
@@ -16,7 +16,7 @@ export class LocalStorageDriver implements StorageDriver {
   constructor(private readonly root: string) {}
 
   async put(input: PutDocumentInput): Promise<StoredDocument> {
-    const key = buildKey(input.tenantId, input.methodAttemptId, input.filename);
+    const key = buildKey(input.namespace, input.groupId, input.filename);
     const target = this.resolveKey(key);
 
     await mkdir(join(target, '..'), { recursive: true });
@@ -44,8 +44,8 @@ export class LocalStorageDriver implements StorageDriver {
 }
 
 /** tenant_1 + attempt_1 + "selfie.jpg" -> "tenant_1/attempt_1/a1b2c3d4.jpg" */
-function buildKey(tenantId: string, methodAttemptId: string, filename: string): string {
+function buildKey(namespace: string, groupId: string, filename: string): string {
   const extension = extname(filename).toLowerCase().slice(0, 10);
   const unique = randomBytes(8).toString('hex');
-  return `${tenantId}/${methodAttemptId}/${unique}${extension}`;
+  return `${namespace}/${groupId}/${unique}${extension}`;
 }

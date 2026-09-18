@@ -9,6 +9,10 @@ import { VerificationCasesModule } from './modules/verification-cases/verificati
 import { SessionsModule } from './modules/sessions/sessions.module';
 import { AccountsModule } from './modules/accounts/accounts.module';
 import { OAuthModule } from './modules/oauth/oauth.module';
+import { BadgesModule } from './modules/badges/badges.module';
+import { ProfilesModule } from './modules/profiles/profiles.module';
+import { BookingModule } from './modules/booking/booking.module';
+import { ProfileContentModule } from './modules/profile-content/profile-content.module';
 
 @Module({
   imports: [
@@ -22,6 +26,10 @@ import { OAuthModule } from './modules/oauth/oauth.module';
     SessionsModule,
     AccountsModule,
     OAuthModule,
+    BadgesModule,
+    ProfilesModule,
+    BookingModule,
+    ProfileContentModule,
   ],
 })
 export class AppModule {}

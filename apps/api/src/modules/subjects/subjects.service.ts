@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../core/db/prisma.service';
 import { AuditService } from '../../core/audit/audit.service';
+import { pickStrongestPerClaimType, type RankableEvidence } from '../badges/badge-ranking';
 import type { CreateSubjectDto } from './dto/create-subject.dto';
 
 @Injectable()
@@ -24,6 +25,26 @@ export class SubjectsService {
           dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
         },
       });
+
+      // PhoneBadgeEvidence carries no RLS (schema.prisma's comment on it) so
+      // it's writable through this same tenant-scoped transaction — a
+      // self-attested DATE_OF_BIRTH row only, never overwritten by a
+      // stronger APPROVED one written elsewhere by resolveCaseActivity
+      // (apps/workflows), since getBadges ranks strongest-first regardless
+      // of write order.
+      if (subject.phone && subject.dateOfBirth) {
+        await tx.phoneBadgeEvidence.create({
+          data: {
+            phone: subject.phone,
+            tenantId,
+            subjectId: subject.id,
+            claimType: 'DATE_OF_BIRTH',
+            level: 'SELF_ATTESTED',
+            verifiedAt: null,
+          },
+        });
+      }
+
       await this.audit.record(tx, tenantId, {
         actorType: 'API_KEY',
         actorId: apiKeyId,
@@ -82,29 +103,21 @@ export class SubjectsService {
         select: { id: true, claimType: true, level: true, resolvedAt: true },
       });
 
-      const badges = new Map<
-        string,
-        { claimType: string; level: string; verifiedAt: Date | null; caseId: string | null }
-      >();
-      for (const kase of approvedCases) {
-        if (!badges.has(kase.claimType)) {
-          badges.set(kase.claimType, {
-            claimType: kase.claimType,
-            level: kase.level,
-            verifiedAt: kase.resolvedAt,
-            caseId: kase.id,
-          });
-        }
+      const evidence: RankableEvidence[] = approvedCases.map((kase) => ({
+        claimType: kase.claimType,
+        level: kase.level,
+        verifiedAt: kase.resolvedAt,
+        caseId: kase.id,
+      }));
+
+      // Appended last: pickStrongestPerClaimType keeps the first row it
+      // sees per claimType, so this only wins when no APPROVED
+      // DATE_OF_BIRTH case is already in `evidence` above.
+      if (subject.dateOfBirth) {
+        evidence.push({ claimType: 'DATE_OF_BIRTH', level: 'SELF_ATTESTED', verifiedAt: null, caseId: null });
       }
 
-      if (!badges.has('DATE_OF_BIRTH') && subject.dateOfBirth) {
-        badges.set('DATE_OF_BIRTH', {
-          claimType: 'DATE_OF_BIRTH',
-          level: 'SELF_ATTESTED',
-          verifiedAt: null,
-          caseId: null,
-        });
-      }
+      const badges = pickStrongestPerClaimType(evidence);
 
       await this.audit.record(tx, tenantId, {
         actorType: 'API_KEY',
@@ -113,7 +126,7 @@ export class SubjectsService {
         subjectId: subject.id,
       });
 
-      return { subjectId: subject.id, badges: Array.from(badges.values()) };
+      return { subjectId: subject.id, badges };
     });
   }
 }
