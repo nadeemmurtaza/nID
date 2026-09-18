@@ -793,6 +793,14 @@ model Profile {
   /// one the current slug was built from) unlocks exactly one more
   /// change — which itself resets this to the new change's time.
   usernameSetAt DateTime @default(now())
+  /// The slugified real name (PhoneNameEvidence givenName+familyName, or
+  /// Organization.legalName) the CURRENT slug was derived from — stored so
+  /// a later rename request can tell "the verified name changed since I
+  /// locked this slug in" apart from "the name is the same, the window
+  /// just hasn't closed yet". Comparing against a live re-derivation is
+  /// what actually detects a govt-record name change; nothing here is
+  /// trusted on its own.
+  usernameSourceName String @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

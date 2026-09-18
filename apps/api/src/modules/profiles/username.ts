@@ -30,3 +30,16 @@ export function slugMatchesRealName(slug: string, realNameSlug: string): boolean
   if (!realNameSlug) return false;
   return slug === realNameSlug || slug.startsWith(`${realNameSlug}-`);
 }
+
+/**
+ * "Once username is made, user will be given a week if he wants to
+ * reconsider, after 1 week username will become permanent forever" —
+ * computed live from Profile.usernameSetAt (see its own schema comment),
+ * never a stored boolean, matching this codebase's derive-live-don't-cache
+ * standard (Organization.isVerified).
+ */
+export const USERNAME_RECONSIDERATION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function isUsernameLocked(usernameSetAt: Date, now: Date = new Date()): boolean {
+  return now.getTime() - usernameSetAt.getTime() > USERNAME_RECONSIDERATION_WINDOW_MS;
+}

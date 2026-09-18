@@ -7,7 +7,7 @@ import { OrganizationsService } from '../organizations/organizations.service';
 import type { Badge } from '../badges/badge-ranking';
 import type { CreateProfileDto } from './dto/create-profile.dto';
 import type { UpdateProfileDto } from './dto/update-profile.dto';
-import { slugifyRealName, slugMatchesRealName } from './username';
+import { isUsernameLocked, slugifyRealName, slugMatchesRealName } from './username';
 
 /**
  * The fields a slug's public GET is allowed to reveal unconditionally —
@@ -86,6 +86,7 @@ export class ProfilesService {
           slug: dto.slug,
           displayName: dto.displayName,
           usernameSetAt: new Date(),
+          usernameSourceName: realNameSlug,
           ...toOptionalProfileFields(dto),
         },
       });
@@ -134,14 +135,12 @@ export class ProfilesService {
       throw new NotFoundException('No profile exists for this account yet.');
     }
 
-    if (dto.slug !== undefined && dto.slug !== profile.slug) {
-      assertNotReservedSlug(dto.slug);
-      const realNameSlug = await this.requireVerifiedRealName(account.phone);
-      if (!slugMatchesRealName(dto.slug, realNameSlug)) {
-        throw new BadRequestException(
-          `Username must be based on your verified name ("${realNameSlug}", or "${realNameSlug}-..." for a qualifier).`,
-        );
-      }
+    const slugChanged = dto.slug !== undefined && dto.slug !== profile.slug;
+    let realNameSlug: string | undefined;
+    if (slugChanged) {
+      assertNotReservedSlug(dto.slug!);
+      realNameSlug = await this.requireVerifiedRealName(account.phone);
+      this.assertSlugChangeAllowed(profile, dto.slug!, realNameSlug, 'your verified name');
     }
 
     try {
@@ -150,12 +149,38 @@ export class ProfilesService {
         data: {
           slug: dto.slug,
           displayName: dto.displayName,
-          usernameSetAt: dto.slug !== undefined && dto.slug !== profile.slug ? new Date() : undefined,
+          usernameSetAt: slugChanged ? new Date() : undefined,
+          usernameSourceName: slugChanged ? realNameSlug : undefined,
           ...toOptionalProfileFields(dto),
         },
       });
     } catch (err) {
       throw translateUniqueViolation(err);
+    }
+  }
+
+  /**
+   * The rename half of the username gate — "user will be given a week if
+   * he wants to reconsider, after 1 week username will become permanent
+   * forever... user will be able to change only when he has changed his
+   * realname in govt record." A verified name that no longer matches
+   * usernameSourceName (the name the CURRENT slug was built from) IS that
+   * govt-record-change signal — checked live against fresh evidence, never
+   * a separate flag someone could forget to set. Reused by update() and
+   * updateForOrganization(); create()/createForOrganization() have no
+   * existing profile to lock against, so they never call this.
+   */
+  private assertSlugChangeAllowed(profile: Profile, newSlug: string, realNameSlug: string, subjectLabel: string): void {
+    if (!slugMatchesRealName(newSlug, realNameSlug)) {
+      throw new BadRequestException(
+        `Username must be based on ${subjectLabel} ("${realNameSlug}", or "${realNameSlug}-..." for a qualifier).`,
+      );
+    }
+    const nameChangedSinceLock = realNameSlug !== profile.usernameSourceName;
+    if (!nameChangedSinceLock && isUsernameLocked(profile.usernameSetAt)) {
+      throw new ForbiddenException(
+        'This username is permanent. It can only be changed again if the verified name it was built from changes.',
+      );
     }
   }
 
@@ -199,6 +224,7 @@ export class ProfilesService {
           slug: dto.slug,
           displayName: dto.displayName,
           usernameSetAt: new Date(),
+          usernameSourceName: realNameSlug,
           ...toOptionalProfileFields(dto),
         },
       });
@@ -224,15 +250,13 @@ export class ProfilesService {
       throw new NotFoundException('No profile exists for this organization yet.');
     }
 
-    if (dto.slug !== undefined && dto.slug !== profile.slug) {
-      assertNotReservedSlug(dto.slug);
+    const slugChanged = dto.slug !== undefined && dto.slug !== profile.slug;
+    let realNameSlug: string | undefined;
+    if (slugChanged) {
+      assertNotReservedSlug(dto.slug!);
       const organization = await this.organizations.getVerified(membership.tenantId, organizationId);
-      const realNameSlug = slugifyRealName(organization.legalName);
-      if (!slugMatchesRealName(dto.slug, realNameSlug)) {
-        throw new BadRequestException(
-          `Username must be based on the organization's verified legal name ("${realNameSlug}", or "${realNameSlug}-..." for a qualifier).`,
-        );
-      }
+      realNameSlug = slugifyRealName(organization.legalName);
+      this.assertSlugChangeAllowed(profile, dto.slug!, realNameSlug, "the organization's verified legal name");
     }
 
     try {
@@ -241,7 +265,8 @@ export class ProfilesService {
         data: {
           slug: dto.slug,
           displayName: dto.displayName,
-          usernameSetAt: dto.slug !== undefined && dto.slug !== profile.slug ? new Date() : undefined,
+          usernameSetAt: slugChanged ? new Date() : undefined,
+          usernameSourceName: slugChanged ? realNameSlug : undefined,
           ...toOptionalProfileFields(dto),
         },
       });

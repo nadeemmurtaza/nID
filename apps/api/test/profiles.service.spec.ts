@@ -179,6 +179,87 @@ describeIfDb('ProfilesService — username creation/rename gates (live Postgres,
     });
   });
 
+  describe('update() — 7-day reconsideration window, permanent lock, govt-rename unlock', () => {
+    it('allows a rename within the 7-day reconsideration window', async () => {
+      const { account } = await makeVerifiedAccount('withinwindow', { givenName: 'Eve', familyName: 'Nguyen' });
+      const profile = await profiles.create(account, { slug: 'eve-nguyen', displayName: 'Eve Nguyen' });
+      testProfileIds.push(profile.id);
+
+      const updated = await profiles.update(account, { slug: 'eve-nguyen-2' });
+      expect(updated.slug).toBe('eve-nguyen-2');
+      expect(updated.usernameSourceName).toBe('eve-nguyen');
+    });
+
+    it('rejects a rename once the 7-day window has elapsed and the verified name has not changed', async () => {
+      const { account } = await makeVerifiedAccount('expiredwindow', { givenName: 'Frank', familyName: 'Ortiz' });
+      const profile = await profiles.create(account, { slug: 'frank-ortiz', displayName: 'Frank Ortiz' });
+      testProfileIds.push(profile.id);
+      await migratorPrisma.profile.update({
+        where: { id: profile.id },
+        data: { usernameSetAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) },
+      });
+
+      await expect(profiles.update(account, { slug: 'frank-ortiz-nyc' })).rejects.toThrow(ForbiddenException);
+    });
+
+    it('allows a rename past the 7-day lock when the verified name has genuinely changed (govt-record rename)', async () => {
+      const { account } = await makeVerifiedAccount('renameunlock', { givenName: 'Grace', familyName: 'Kim' });
+      const profile = await profiles.create(account, { slug: 'grace-kim', displayName: 'Grace Kim' });
+      testProfileIds.push(profile.id);
+      await migratorPrisma.profile.update({
+        where: { id: profile.id },
+        data: { usernameSetAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) },
+      });
+
+      // The signal a real legal-name change produces: a second, later
+      // PhoneNameEvidence row with a different name (matches the workflows
+      // activity's own "appends, never overwrites" behavior).
+      const account2 = await migratorPrisma.account.findUniqueOrThrow({ where: { id: account.id } });
+      const subject = await migratorPrisma.subject.findFirstOrThrow({ where: { accountId: account2.id } });
+      await migratorPrisma.phoneNameEvidence.create({
+        data: {
+          phone: account2.phone,
+          tenantId: subject.tenantId,
+          subjectId: subject.id,
+          caseId: 'test-case-rename',
+          givenName: 'Grace',
+          familyName: 'Lindqvist',
+          verifiedAt: new Date(),
+        },
+      });
+
+      const updated = await profiles.update(account, { slug: 'grace-lindqvist' });
+      expect(updated.slug).toBe('grace-lindqvist');
+      expect(updated.usernameSourceName).toBe('grace-lindqvist');
+      expect(updated.usernameSetAt.getTime()).toBeGreaterThan(Date.now() - 5000);
+    });
+
+    it('still rejects a post-lock rename to a slug that does not match the NEW verified name', async () => {
+      const { account } = await makeVerifiedAccount('renamemismatch', { givenName: 'Hank', familyName: 'Osei' });
+      const profile = await profiles.create(account, { slug: 'hank-osei', displayName: 'Hank Osei' });
+      testProfileIds.push(profile.id);
+      await migratorPrisma.profile.update({
+        where: { id: profile.id },
+        data: { usernameSetAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) },
+      });
+      const account2 = await migratorPrisma.account.findUniqueOrThrow({ where: { id: account.id } });
+      const subject = await migratorPrisma.subject.findFirstOrThrow({ where: { accountId: account2.id } });
+      await migratorPrisma.phoneNameEvidence.create({
+        data: {
+          phone: account2.phone,
+          tenantId: subject.tenantId,
+          subjectId: subject.id,
+          caseId: 'test-case-rename-mismatch',
+          givenName: 'Hank',
+          familyName: 'Boateng',
+          verifiedAt: new Date(),
+        },
+      });
+
+      await expect(profiles.update(account, { slug: 'totally-unrelated' })).rejects.toThrow(BadRequestException);
+    });
+  });
+
   describe('createForOrganization() — brand profile derives from the verified legal name', () => {
     it('rejects a slug unrelated to the organization\'s legalName', async () => {
       const { tenantId, apiKeyId } = await makeTenant('profiles-spec-org-mismatch');

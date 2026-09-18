@@ -1316,6 +1316,56 @@ real rule that didn't exist when those tests were written, fixed by
 deriving those slugs from the orgs' own `legalName` instead of loosening
 the rule.
 
+### Username lock: a week to reconsider, then permanent until a real govt-record name change
+
+"Once username is made, user will be given a week if he wants to
+reconsider, after 1 week username will become permanent forever. User
+will be able to change only when he has changed his realname in govt
+record." Two pieces:
+
+- **`Profile.usernameSourceName`** (new column) — the slugified verified
+  name (personal: `PhoneNameEvidence`; brand: `Organization.legalName`)
+  the *current* slug was actually derived from, stamped alongside
+  `usernameSetAt` on every accepted slug creation/change. This is what
+  makes "the govt record changed" a fact the service can check instead of
+  a story someone tells it: a fresh call to the exact same
+  `requireVerifiedRealName()` (personal) / `getVerified().legalName`
+  (brand) lookup `create()` already uses either matches
+  `usernameSourceName` (nothing has changed) or doesn't (it has) — no
+  separate "did the name change" flag to fall out of sync with reality.
+- **`isUsernameLocked()`** (`profiles/username.ts`) — `now() - usernameSetAt
+  > 7 days`, computed live off the same timestamp `create()` already
+  stamps, not a second stored boolean.
+
+`ProfilesService.assertSlugChangeAllowed()` (new, shared by `update()` and
+`updateForOrganization()`; `create()`/`createForOrganization()` have no
+existing profile to lock against) combines them: the realname-priority
+check runs first as always, then — only if the freshly re-derived
+verified-name slug still equals `usernameSourceName` — `isUsernameLocked()`
+gates the change. A verified name that has actually moved on from
+`usernameSourceName` skips the lock check entirely: that mismatch *is*
+the "realname changed in govt record" signal, and it unconditionally
+permits exactly one more change, which itself re-stamps both
+`usernameSetAt` and `usernameSourceName` to start the cycle over. A
+within-window edit (still inside the original 7 days) is unaffected by
+any of this and simply resets the clock the same way it already did.
+
+**Verified live**: full workspace `typecheck`/`lint`/`test`/`build`
+clean, including a fresh `prisma migrate deploy` applying the new
+`usernameSourceName` column against local Postgres. Four new live-Postgres
+tests in `profiles.service.spec.ts`: a rename inside the 7-day window
+succeeds; a rename after the window with the verified name unchanged is
+rejected (`ForbiddenException`) after backdating `usernameSetAt` 8 days;
+a rename past the window succeeds once a second, later `PhoneNameEvidence`
+row with a genuinely different name exists (the same append-not-overwrite
+signal `verification-method.activity.spec.ts` already proves the
+workflow produces), and the resulting profile's `usernameSourceName` /
+`usernameSetAt` are updated to match; and a post-unlock rename attempt to
+a slug that doesn't match the *new* name is still rejected
+(`BadRequestException`) — the unlock grants one legitimate change, not a
+blank check. Plus three `isUsernameLocked()` boundary tests in
+`username.spec.ts` (immediately after set, just under 7 days, just over).
+
 - **Phase 2** — sanctions/PEP screening, one
   country's national-ID registry adapter, manual-review tooling, retention/audit
   maturity.

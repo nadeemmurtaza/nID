@@ -1,4 +1,4 @@
-import { slugifyRealName, slugMatchesRealName } from './username';
+import { isUsernameLocked, slugifyRealName, slugMatchesRealName, USERNAME_RECONSIDERATION_WINDOW_MS } from './username';
 
 describe('slugifyRealName', () => {
   it('lowercases and hyphenates a plain name', () => {
@@ -38,5 +38,24 @@ describe('slugMatchesRealName', () => {
 
   it('fails closed on an empty real name rather than accepting anything', () => {
     expect(slugMatchesRealName('anything', '')).toBe(false);
+  });
+});
+
+describe('isUsernameLocked', () => {
+  it('is unlocked immediately after usernameSetAt', () => {
+    const setAt = new Date('2026-01-01T00:00:00Z');
+    expect(isUsernameLocked(setAt, setAt)).toBe(false);
+  });
+
+  it('is still unlocked just under 7 days later', () => {
+    const setAt = new Date('2026-01-01T00:00:00Z');
+    const now = new Date(setAt.getTime() + USERNAME_RECONSIDERATION_WINDOW_MS - 1000);
+    expect(isUsernameLocked(setAt, now)).toBe(false);
+  });
+
+  it('is locked just after 7 days have elapsed', () => {
+    const setAt = new Date('2026-01-01T00:00:00Z');
+    const now = new Date(setAt.getTime() + USERNAME_RECONSIDERATION_WINDOW_MS + 1000);
+    expect(isUsernameLocked(setAt, now)).toBe(true);
   });
 });
