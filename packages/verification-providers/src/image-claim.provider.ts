@@ -7,6 +7,7 @@ import type {
 import { parseImageCallback, type ImageCallbackPayload } from './image-callback-payload';
 import { mockScoreFor } from './mock-outcome';
 import { evaluateDocument } from '@nid/ocr-engine';
+import { evaluateForensics } from '@nid/forensics-engine';
 
 /**
  * Checks a submitted document against whatever this instance verifies — a
@@ -33,6 +34,20 @@ import { evaluateDocument } from '@nid/ocr-engine';
  * authority-issued checksum to validate against, so they land on
  * NEEDS_REVIEW with the extracted text attached rather than a fabricated
  * pass — see evaluateDocument()'s own comment for exactly why.
+ *
+ * Production mode also runs `@nid/forensics-engine`'s image-forensics check
+ * (error-level analysis, EXIF consistency, recapture-artifact detection)
+ * alongside the OCR/MRZ check, on every claim type — a forged or
+ * screen-recaptured document can still pass MRZ's checksum (the checksum
+ * only validates the digits OCR actually read, not whether the pixels
+ * behind them were manipulated) or simply has no MRZ to check at all. Its
+ * corroborated ('TAMPERED') verdict overrides even a PASSED OCR result to
+ * FAILED — real negative evidence beats a clean checksum read off tampered
+ * pixels; a single-signal ('SUSPICIOUS') verdict only ever downgrades an
+ * otherwise-PASSED result to NEEDS_REVIEW, never fails it outright, and
+ * never touches a result OCR already flagged — see
+ * evaluateForensics()'s own comment for why single-signal evidence isn't
+ * treated as strong enough to fail a case on its own.
  */
 export class ImageClaimProvider implements VerificationMethodProvider {
   constructor(
@@ -68,7 +83,22 @@ export class ImageClaimProvider implements VerificationMethodProvider {
       };
     }
 
-    const result = await evaluateDocument(input.imageBytes);
-    return { ...result, verified: true };
+    const [documentResult, forensics] = await Promise.all([
+      evaluateDocument(input.imageBytes),
+      evaluateForensics(input.imageBytes),
+    ]);
+
+    let status = documentResult.status;
+    if (forensics.verdict === 'TAMPERED') {
+      status = 'FAILED';
+    } else if (forensics.verdict === 'SUSPICIOUS' && status === 'PASSED') {
+      status = 'NEEDS_REVIEW';
+    }
+
+    return {
+      status,
+      raw: { ...documentResult.raw, forensics: { verdict: forensics.verdict, signals: forensics.signals } },
+      verified: true,
+    };
   }
 }

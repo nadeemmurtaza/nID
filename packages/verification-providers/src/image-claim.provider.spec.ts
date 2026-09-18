@@ -11,6 +11,18 @@ jest.mock('@nid/ocr-engine', () => ({
 }));
 const { evaluateDocument } = jest.requireMock('@nid/ocr-engine') as { evaluateDocument: jest.Mock };
 
+// Same reasoning as @nid/ocr-engine above — evaluateForensics's real
+// behavior (ELA, EXIF consistency, recapture/moire detection) is proven
+// for real, against real image bytes, in @nid/forensics-engine's own test
+// suite. Defaults to a clean verdict so the pre-existing OCR-focused tests
+// below don't need to know forensics exists; tests that care about the
+// combination override this per-call.
+jest.mock('@nid/forensics-engine', () => ({
+  evaluateForensics: jest.fn(),
+}));
+const { evaluateForensics } = jest.requireMock('@nid/forensics-engine') as { evaluateForensics: jest.Mock };
+const CLEAN_FORENSICS = { verdict: 'CLEAN', suspiciousSignalCount: 0, signals: {} };
+
 describe('ImageClaimProvider', () => {
   const context: VerificationContext = {
     caseId: 'case_1',
@@ -18,6 +30,10 @@ describe('ImageClaimProvider', () => {
     subjectId: 'subject_1',
     input: {},
   };
+
+  beforeEach(() => {
+    evaluateForensics.mockResolvedValue(CLEAN_FORENSICS);
+  });
 
   it('start() has nothing to send and returns pending immediately', async () => {
     const provider = new ImageClaimProvider('document_ocr', 'Document OCR', true);
@@ -105,5 +121,61 @@ describe('ImageClaimProvider', () => {
     });
 
     expect(result.status).toBe('NEEDS_REVIEW');
+  });
+
+  it('overrides a PASSED OCR result to FAILED when forensics finds corroborated tampering', async () => {
+    evaluateDocument.mockResolvedValueOnce({
+      status: 'PASSED',
+      raw: { engine: 'tesseract+mrz', mrz: { checksumValid: true } },
+    });
+    evaluateForensics.mockResolvedValueOnce({
+      verdict: 'TAMPERED',
+      suspiciousSignalCount: 2,
+      signals: { ela: { suspicious: true }, exif: { suspicious: true }, recapture: { suspicious: false } },
+    });
+
+    const provider = new ImageClaimProvider('document_ocr', 'Document OCR', false);
+    const result = await provider.handleCallback({ imageBytes: Buffer.from('bytes'), contentType: 'image/jpeg' });
+
+    expect(result.status).toBe('FAILED');
+    expect(result.verified).toBe(true);
+    expect(result.raw).toMatchObject({ forensics: { verdict: 'TAMPERED' } });
+    // The checksum-valid MRZ read is still worth keeping in the audit trail
+    // even though forensics vetoed it — evidence of what OCR itself found.
+    expect(result.raw).toMatchObject({ mrz: { checksumValid: true } });
+  });
+
+  it('downgrades a PASSED OCR result to NEEDS_REVIEW when exactly one forensics signal is suspicious', async () => {
+    evaluateDocument.mockResolvedValueOnce({ status: 'PASSED', raw: {} });
+    evaluateForensics.mockResolvedValueOnce({
+      verdict: 'SUSPICIOUS',
+      suspiciousSignalCount: 1,
+      signals: {},
+    });
+
+    const provider = new ImageClaimProvider('document_ocr', 'Document OCR', false);
+    const result = await provider.handleCallback({ imageBytes: Buffer.from('bytes'), contentType: 'image/jpeg' });
+
+    expect(result.status).toBe('NEEDS_REVIEW');
+  });
+
+  it('does not upgrade or otherwise touch a result OCR already failed, even with corroborated tampering', async () => {
+    evaluateDocument.mockResolvedValueOnce({ status: 'FAILED', raw: { reason: 'no_readable_text' } });
+    evaluateForensics.mockResolvedValueOnce({ verdict: 'TAMPERED', suspiciousSignalCount: 3, signals: {} });
+
+    const provider = new ImageClaimProvider('document_ocr', 'Document OCR', false);
+    const result = await provider.handleCallback({ imageBytes: Buffer.from('bytes'), contentType: 'image/jpeg' });
+
+    expect(result.status).toBe('FAILED');
+  });
+
+  it('leaves a PASSED OCR result untouched when forensics is clean', async () => {
+    evaluateDocument.mockResolvedValueOnce({ status: 'PASSED', raw: {} });
+    evaluateForensics.mockResolvedValueOnce(CLEAN_FORENSICS);
+
+    const provider = new ImageClaimProvider('document_ocr', 'Document OCR', false);
+    const result = await provider.handleCallback({ imageBytes: Buffer.from('bytes'), contentType: 'image/jpeg' });
+
+    expect(result.status).toBe('PASSED');
   });
 });
