@@ -16,19 +16,13 @@ Full rationale lives in the plan this scaffold was built from. Summary:
   already integrates as nID's tenant #1 — see below.
 - **Phase 1** — **document upload + OCR and liveness, policy composition
   beyond a single method, per-attribute verification badges (identity,
-  date of birth, education, employment) at three levels of proof, and
-  public profile pages with real badges, booking, and owner-managed
-  content, are done** — see below. Two Phase 1 items remain: wiring the dashboard's staff
-  login onto `Account` instead of raw API-key paste (a `TenantStaffMembership`
-  join table — "does this Account work for this Tenant" — is the natural next
-  step now that `Account` exists, deliberately not built in Phase 0 since
-  nothing needed it yet), and signed webhooks to more than one tenant. A
-  case-review queue for `NEEDS_REVIEW` attempts is also still unbuilt:
-  `CaseStatus.NEEDS_REVIEW` is now a real, reachable state (`document_ocr`/
-  `liveness` can both return it) and a case stops there correctly, but
-  nothing lets staff *act* on it yet — no dashboard view, no resolution
-  signal. It's a genuine dead end today, by design (the workflow doesn't
-  guess), not yet a queue.
+  date of birth, education, employment) at three levels of proof, public
+  profile pages with real badges, booking, and owner-managed content, the
+  `NEEDS_REVIEW` manual-review queue, and the dashboard's staff login
+  (`TenantStaffMembership`, replacing raw API-key paste), are all done** —
+  see below. Signed webhooks to more than one tenant already work today
+  (each `Tenant` carries its own `webhookUrl`/`webhookSecretPlaintext`,
+  delivery is per-tenant-keyed) — nothing left to build there either.
 
 ### KYC: document_ocr, liveness, and multi-method policies
 
@@ -951,6 +945,76 @@ passing on first run, no adjustment needed. Test data (Accounts, sessions,
 OTP codes, the scratch Tenant/OAuthClient) is fully torn down in
 `afterAll`, confirmed via a direct Postgres query showing zero leftover
 rows. Full workspace `typecheck`/`lint`/`test` passes.
+
+### Dashboard staff auth: TenantStaffMembership replaces raw API-key paste
+
+Closes the last Phase 0 item its own summary flagged and never circled back
+to: `apps/dashboard`'s login was a shared tenant API key pasted into a text
+field, stored in localStorage — which meant `VerificationCase.reviewerId`
+and every manual-review audit-log entry could only ever say "this API key
+resolved this case," never which real person did. A shared secret with no
+per-person accountability is a real hole in a KYC review trail, not a
+cosmetic gap.
+
+- **`TenantStaffMembership`** (new model + migration): the bridge between
+  the two trust domains this codebase already has — a real `Account`
+  (phone + OTP, the same portable identity `apps/login-ui`/
+  `apps/profile-ui` already use) mapped to a `Tenant` it's staff of. Needs
+  the same open-SELECT-for-bootstrap RLS exception `TenantApiKey`/
+  `OAuthClient`/`VerificationSession` already carry — resolving which
+  tenant(s) an Account staffs is how `app.tenant_id` gets determined for a
+  staff request in the first place.
+- **`TenantActorGuard`** (new, `apps/api/src/core/auth`): a strict
+  superset of `ApiKeyGuard` — accepts the exact same tenant API key (same
+  hash lookup) OR a real staff `Account` session token, resolved through
+  `TenantStaffMembership` to whichever tenant it's for. A caller with
+  membership on more than one tenant must send `X-Tenant-Id`; sending it
+  with only one membership is still validated, never silently ignored (a
+  live test caught exactly this gap during development — see below).
+  Deliberately scoped narrow: only the routes a human in `apps/dashboard`
+  actually calls (`GET /v1/verification-cases`, `GET .../:id`,
+  `POST .../:id/resolve`, `GET /v1/subjects/:id/badges`,
+  `GET .../attribute-badges`, `GET /v1/tenants/me`) moved onto it — every
+  server-to-server integration route (`create`, the `submit*` endpoints,
+  `subjects.create`, `organizations.*`) stays on plain `ApiKeyGuard`,
+  unchanged.
+- **`TenantStaffModule`** (new): `POST /v1/tenant-staff` (ApiKeyGuard —
+  inviting staff is a tenant-admin action) requires the invited phone to
+  already have a real, verified `Account` — no "pending invite"
+  placeholder state, the same honesty standard as the rest of this
+  codebase. `GET /v1/tenant-staff` lists real membership rows.
+- **`apps/dashboard`**: the API-key-paste login screen is gone, replaced
+  with the same phone+OTP UX `apps/login-ui`/`apps/profile-ui` already
+  use. `api-client.ts`'s stored value is now generically a "credential"
+  (an API key or a session token — the backend duck-types either), and
+  the header shows `(API key)` when a session actually did authenticate
+  with one, so it's never ambiguous which kind of access is signed in.
+  Seeded a real demo staff `Account` per tenant so the dashboard is
+  usable immediately after `pnpm db:seed`.
+- `VerificationCase.reviewerId` and its audit-log entries now record
+  whichever real actor resolved the case — a `TenantApiKey.id` or a real
+  staff `Account.id` — never a hardcoded `'TENANT_STAFF'` actorType stapled
+  onto an API key id the way it was before. `OrganizationMembership.addedByApiKeyId`
+  deliberately was **not** touched — nothing in `apps/dashboard` calls that
+  path yet, so widening it would be speculative, not real.
+
+**Verified live, including a bug a live pass actually caught**: 15 new
+tests in `apps/api/test/tenant-staff.spec.ts` (`TenantStaffService`
+invite/list, `TenantActorGuard`'s every branch, `SubjectsService.getBadges`
+recording the real actor) — all against real Postgres. A full real browser
+pass through the actual running dashboard (Playwright, no mocks): phone+OTP
+login as the seeded staff Account → real case list → opened a real case →
+approved it with a real reason → confirmed `Reviewer:` on the case-detail
+page shows the real staff `Account.id`, byte-for-byte the same id
+`TenantStaffMembership` was seeded with, not an API key. That same live
+pass caught two real bugs before they shipped: (1) `TenantActorGuard`
+silently ignored a mismatched `X-Tenant-Id` header when an account
+happened to have only one membership — fixed to always validate the
+header when present; (2) the case-detail badges panel broke with "Invalid
+or revoked API key" because `subjects.controller.ts`'s badges routes were
+still `ApiKeyGuard`-only — moved onto `TenantActorGuard` alongside
+`verification-cases.controller.ts`. Full workspace
+`typecheck`/`lint`/`test`/`build` passes.
 
 - **Phase 2** — sanctions/PEP screening, KYB/business-registry lookup, one
   country's national-ID registry adapter, manual-review tooling, retention/audit

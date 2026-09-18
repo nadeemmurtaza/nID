@@ -34,6 +34,24 @@ async function main(): Promise<void> {
       console.log(`${tenant.slug} API key: ${key.plaintext}`);
     }
 
+    // A real staff Account for apps/dashboard's phone+OTP login — the same
+    // portable Account every other "a person signs into something" flow
+    // uses, not a placeholder. Exercises TenantStaffMembership end to end
+    // without needing a real invite call first.
+    const staffPhone = slug === 'tenant-a' ? '+15550200001' : '+15550200002';
+    const staffAccount = await prisma.account.upsert({
+      where: { phone: staffPhone },
+      update: {},
+      create: { phone: staffPhone, phoneVerifiedAt: new Date() },
+    });
+    await prisma.tenantStaffMembership.upsert({
+      where: { tenantId_accountId: { tenantId: tenant.id, accountId: staffAccount.id } },
+      update: {},
+      create: { tenantId: tenant.id, accountId: staffAccount.id, role: 'STAFF' },
+    });
+    // eslint-disable-next-line no-console
+    console.log(`${tenant.slug} dashboard staff login: ${staffPhone} (phone+OTP, dev mode logs the code)`);
+
     if (slug === 'tenant-a') {
       // otp_sms alone proves the subject controls a phone number, not that
       // any document backs their identity — SELF_ATTESTED is the honest

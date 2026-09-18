@@ -1,27 +1,36 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { apiFetch, clearStoredApiKey, getStoredApiKey, setStoredApiKey, type Tenant } from './api-client';
+import {
+  apiFetch,
+  clearStoredCredential,
+  getStoredCredential,
+  setStoredCredential,
+  type Tenant,
+} from './api-client';
 
 type SessionState =
   | { kind: 'checking' }
   | { kind: 'signed-out' }
-  | { kind: 'signed-in'; apiKey: string; tenant: Tenant };
+  | { kind: 'signed-in'; credential: string; tenant: Tenant };
 
 /**
- * The dashboard's whole auth story, in one hook: an API key in
- * localStorage, verified against GET /v1/tenants/me on load. See
- * api-client.ts's note on why this is the right boundary for Phase 0.
+ * The dashboard's whole auth story, in one hook: a credential (a tenant API
+ * key or a real staff Account session token — see api-client.ts's own
+ * comment) in localStorage, verified against GET /v1/tenants/me on load.
+ * Phone+OTP login itself lives in LoginScreen (app/page.tsx) — this hook
+ * only cares about the resulting credential, exactly the same shape
+ * either kind of login produces.
  */
 export function useDashboardSession() {
   const [state, setState] = useState<SessionState>({ kind: 'checking' });
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
 
-  const tryKey = useCallback(async (key: string): Promise<boolean> => {
+  const tryCredential = useCallback(async (credential: string): Promise<boolean> => {
     try {
-      const tenant = await apiFetch<Tenant>('/v1/tenants/me', key);
-      setState({ kind: 'signed-in', apiKey: key, tenant });
+      const tenant = await apiFetch<Tenant>('/v1/tenants/me', credential);
+      setState({ kind: 'signed-in', credential, tenant });
       return true;
     } catch {
       return false;
@@ -29,33 +38,33 @@ export function useDashboardSession() {
   }, []);
 
   useEffect(() => {
-    const stored = getStoredApiKey();
+    const stored = getStoredCredential();
     if (!stored) {
       setState({ kind: 'signed-out' });
       return;
     }
-    void tryKey(stored).then((ok) => {
+    void tryCredential(stored).then((ok) => {
       if (!ok) {
-        clearStoredApiKey();
+        clearStoredCredential();
         setState({ kind: 'signed-out' });
       }
     });
-  }, [tryKey]);
+  }, [tryCredential]);
 
-  async function login(key: string): Promise<void> {
+  async function login(credential: string): Promise<void> {
     setLoginError(null);
     setLoggingIn(true);
-    const ok = await tryKey(key);
+    const ok = await tryCredential(credential);
     setLoggingIn(false);
     if (ok) {
-      setStoredApiKey(key);
+      setStoredCredential(credential);
     } else {
-      setLoginError('That API key was not accepted. Check it and try again.');
+      setLoginError('Signed in, but this account is not staff on any nID tenant yet — ask an admin to invite you.');
     }
   }
 
   function logout(): void {
-    clearStoredApiKey();
+    clearStoredCredential();
     setState({ kind: 'signed-out' });
   }
 

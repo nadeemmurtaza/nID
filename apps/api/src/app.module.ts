@@ -6,6 +6,7 @@ import { StorageModule } from './core/storage/storage.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { SubjectsModule } from './modules/subjects/subjects.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
+import { TenantStaffModule } from './modules/tenant-staff/tenant-staff.module';
 import { VerificationCasesModule } from './modules/verification-cases/verification-cases.module';
 import { SessionsModule } from './modules/sessions/sessions.module';
 import { AccountsModule } from './modules/accounts/accounts.module';
@@ -24,6 +25,7 @@ import { ProfileContentModule } from './modules/profile-content/profile-content.
     TenantsModule,
     SubjectsModule,
     OrganizationsModule,
+    TenantStaffModule,
     VerificationCasesModule,
     SessionsModule,
     AccountsModule,

@@ -37,32 +37,32 @@ export default function CaseDetailPage() {
     <>
       <Header tenant={state.tenant} onLogout={() => window.location.assign('/')} />
       <main className="shell">
-        <CaseDetail apiKey={state.apiKey} caseId={params.id} />
+        <CaseDetail credential={state.credential} caseId={params.id} />
       </main>
     </>
   );
 }
 
-function CaseDetail({ apiKey, caseId }: { apiKey: string; caseId: string }) {
+function CaseDetail({ credential, caseId }: { credential: string; caseId: string }) {
   const [kase, setKase] = useState<VerificationCaseDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [badges, setBadges] = useState<SubjectBadges | null>(null);
   const [badgesError, setBadgesError] = useState<string | null>(null);
 
   const load = () => {
-    apiFetch<VerificationCaseDetail>(`/v1/verification-cases/${caseId}`, apiKey)
+    apiFetch<VerificationCaseDetail>(`/v1/verification-cases/${caseId}`, credential)
       .then(setKase)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Could not load this case.'));
   };
 
-  useEffect(load, [apiKey, caseId]);
+  useEffect(load, [credential, caseId]);
 
   useEffect(() => {
     if (!kase) return;
-    apiFetch<SubjectBadges>(`/v1/subjects/${kase.subject.id}/badges`, apiKey)
+    apiFetch<SubjectBadges>(`/v1/subjects/${kase.subject.id}/badges`, credential)
       .then(setBadges)
       .catch((e: unknown) => setBadgesError(e instanceof Error ? e.message : 'Could not load badges.'));
-  }, [apiKey, kase]);
+  }, [credential, kase]);
 
   return (
     <>
@@ -137,7 +137,7 @@ function CaseDetail({ apiKey, caseId }: { apiKey: string; caseId: string }) {
             </table>
           )}
 
-          {kase.status === 'NEEDS_REVIEW' && <ResolvePanel apiKey={apiKey} caseId={kase.id} onResolved={load} />}
+          {kase.status === 'NEEDS_REVIEW' && <ResolvePanel credential={credential} caseId={kase.id} onResolved={load} />}
         </>
       )}
     </>
@@ -150,7 +150,7 @@ function CaseDetail({ apiKey, caseId }: { apiKey: string; caseId: string }) {
  * required: an override with no rationale defeats the point of the audit
  * trail this writes (see VerificationCasesService.resolveCase()).
  */
-function ResolvePanel({ apiKey, caseId, onResolved }: { apiKey: string; caseId: string; onResolved: () => void }) {
+function ResolvePanel({ credential, caseId, onResolved }: { credential: string; caseId: string; onResolved: () => void }) {
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -159,7 +159,7 @@ function ResolvePanel({ apiKey, caseId, onResolved }: { apiKey: string; caseId: 
     setError(null);
     setSubmitting(true);
     try {
-      await resolveCase(apiKey, caseId, decision, reason);
+      await resolveCase(credential, caseId, decision, reason);
       onResolved();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not resolve this case.');

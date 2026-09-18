@@ -8,6 +8,7 @@ import {
   type RankableAttributeEvidence,
 } from '../badges/badge-ranking';
 import type { CreateSubjectDto } from './dto/create-subject.dto';
+import type { ActorType } from '../../core/auth/types';
 
 @Injectable()
 export class SubjectsService {
@@ -99,7 +100,7 @@ export class SubjectsService {
    * this schema, so they're either verified or entirely absent, never
    * fabricated as self-attested.
    */
-  async getBadges(tenantId: string, apiKeyId: string, subjectId: string) {
+  async getBadges(tenantId: string, actorType: ActorType, actorId: string, subjectId: string) {
     return this.prisma.forTenant(tenantId, async (tx) => {
       const subject = await tx.subject.findUnique({ where: { id: subjectId } });
       if (!subject) {
@@ -132,8 +133,8 @@ export class SubjectsService {
       const badges = pickStrongestPerClaimType(evidence);
 
       await this.audit.record(tx, tenantId, {
-        actorType: 'API_KEY',
-        actorId: apiKeyId,
+        actorType,
+        actorId,
         action: 'subject.badges_read',
         subjectId: subject.id,
       });
@@ -154,7 +155,7 @@ export class SubjectsService {
    * getBadges(), since a bare Subject.addressLine1/email/etc. field being
    * set says nothing about whether it was ever checked.
    */
-  async getAttributeBadges(tenantId: string, apiKeyId: string, subjectId: string) {
+  async getAttributeBadges(tenantId: string, actorType: ActorType, actorId: string, subjectId: string) {
     return this.prisma.forTenant(tenantId, async (tx) => {
       const subject = await tx.subject.findUnique({ where: { id: subjectId } });
       if (!subject) {
@@ -181,8 +182,8 @@ export class SubjectsService {
       const badges = pickStrongestPerAttribute(rankable);
 
       await this.audit.record(tx, tenantId, {
-        actorType: 'API_KEY',
-        actorId: apiKeyId,
+        actorType,
+        actorId,
         action: 'subject.attribute_badges_read',
         subjectId: subject.id,
       });

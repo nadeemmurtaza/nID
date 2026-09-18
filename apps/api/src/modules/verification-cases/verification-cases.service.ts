@@ -7,6 +7,7 @@ import { TemporalClientService } from '../../core/temporal/temporal-client.servi
 import { StorageService } from '../../core/storage/storage.service';
 import { loadEnv } from '../../core/config/env';
 import type { CreateVerificationCaseDto } from './dto/create-verification-case.dto';
+import type { ActorType } from '../../core/auth/types';
 
 export interface UploadedMethodFile {
   buffer: Buffer;
@@ -141,8 +142,8 @@ export class VerificationCasesService {
     };
   }
 
-  /** The dashboard's case list — most recent first. */
-  async list(tenantId: string, apiKeyId: string) {
+  /** The dashboard's case list — most recent first. Reachable by a tenant API key or a real staff Account session — see TenantActorGuard. */
+  async list(tenantId: string, actorType: ActorType, actorId: string) {
     return this.prisma.forTenant(tenantId, async (tx) => {
       const cases = await tx.verificationCase.findMany({
         orderBy: { createdAt: 'desc' },
@@ -154,15 +155,15 @@ export class VerificationCasesService {
       // nationalIdNumber, no attempts) doesn't warrant N audit writes for
       // one dashboard page load.
       await this.audit.record(tx, tenantId, {
-        actorType: 'API_KEY',
-        actorId: apiKeyId,
+        actorType,
+        actorId,
         action: 'verification_case.list',
       });
       return cases;
     });
   }
 
-  async getById(tenantId: string, apiKeyId: string, caseId: string) {
+  async getById(tenantId: string, actorType: ActorType, actorId: string, caseId: string) {
     return this.prisma.forTenant(tenantId, async (tx) => {
       const kase = await tx.verificationCase.findUnique({
         where: { id: caseId },
@@ -174,8 +175,8 @@ export class VerificationCasesService {
         throw new NotFoundException('Verification case not found.');
       }
       await this.audit.record(tx, tenantId, {
-        actorType: 'API_KEY',
-        actorId: apiKeyId,
+        actorType,
+        actorId,
         action: 'verification_case.read',
         subjectId: kase.subjectId,
         caseId: kase.id,
@@ -195,7 +196,8 @@ export class VerificationCasesService {
    */
   async resolveCase(
     tenantId: string,
-    apiKeyId: string,
+    actorType: ActorType,
+    actorId: string,
     caseId: string,
     decision: 'APPROVED' | 'REJECTED',
     reason: string,
@@ -214,18 +216,17 @@ export class VerificationCasesService {
         data: {
           status: decision,
           decision: reason,
-          // Phase 0 has no separate staff-account system (docs/PHASES.md) —
-          // the tenant API key is the only reviewer identity that exists
-          // today, same simplification apps/dashboard's own header comment
-          // already documents for "who is signed in."
-          reviewerId: apiKeyId,
+          // Whichever real actor made this call — a tenant API key
+          // (server-to-server) or a real TenantStaffMembership-backed
+          // Account (a human in apps/dashboard) — see TenantActorGuard.
+          reviewerId: actorId,
           resolvedAt: new Date(),
         },
       });
 
       await this.audit.record(tx, tenantId, {
-        actorType: 'TENANT_STAFF',
-        actorId: apiKeyId,
+        actorType,
+        actorId,
         action: 'verification_case.resolve_manual',
         subjectId: kase.subjectId,
         caseId: kase.id,

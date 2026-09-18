@@ -13,8 +13,10 @@ import {
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ApiKeyGuard } from '../../core/auth/api-key.guard';
+import { TenantActorGuard } from '../../core/auth/tenant-actor.guard';
 import { CurrentTenant } from '../../core/auth/current-tenant.decorator';
-import type { AuthenticatedTenant } from '../../core/auth/types';
+import { CurrentActor } from '../../core/auth/current-actor.decorator';
+import type { AuthenticatedTenant, AuthenticatedActor } from '../../core/auth/types';
 import { CreateVerificationCaseDto } from './dto/create-verification-case.dto';
 import { SubmitOtpDto } from './dto/submit-otp.dto';
 import { ResolveCaseDto } from './dto/resolve-case.dto';
@@ -35,31 +37,37 @@ const framesUploadInterceptor = FilesInterceptor('frames', 12, {
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-@UseGuards(ApiKeyGuard)
 @Controller('v1/verification-cases')
 export class VerificationCasesController {
   constructor(private readonly cases: VerificationCasesService) {}
 
+  @UseGuards(ApiKeyGuard)
   @Post()
   create(@CurrentTenant() tenant: AuthenticatedTenant, @Body() dto: CreateVerificationCaseDto) {
     return this.cases.create(tenant.tenantId, tenant.apiKeyId, dto);
   }
 
+  /** apps/dashboard's case list — reachable by a tenant API key or a real staff Account session (see TenantActorGuard). */
+  @UseGuards(TenantActorGuard)
   @Get()
-  list(@CurrentTenant() tenant: AuthenticatedTenant) {
-    return this.cases.list(tenant.tenantId, tenant.apiKeyId);
+  list(@CurrentActor() actor: AuthenticatedActor) {
+    return this.cases.list(actor.tenantId, actor.actorType, actor.actorId);
   }
 
+  @UseGuards(TenantActorGuard)
   @Get(':id')
-  getById(@CurrentTenant() tenant: AuthenticatedTenant, @Param('id') id: string) {
-    return this.cases.getById(tenant.tenantId, tenant.apiKeyId, id);
+  getById(@CurrentActor() actor: AuthenticatedActor, @Param('id') id: string) {
+    return this.cases.getById(actor.tenantId, actor.actorType, actor.actorId, id);
   }
 
+  /** The manual-review queue's one action — always a human, so this is where TenantActorGuard's staff identity matters most. */
+  @UseGuards(TenantActorGuard)
   @Post(':id/resolve')
-  resolve(@CurrentTenant() tenant: AuthenticatedTenant, @Param('id') id: string, @Body() dto: ResolveCaseDto) {
-    return this.cases.resolveCase(tenant.tenantId, tenant.apiKeyId, id, dto.decision, dto.reason);
+  resolve(@CurrentActor() actor: AuthenticatedActor, @Param('id') id: string, @Body() dto: ResolveCaseDto) {
+    return this.cases.resolveCase(actor.tenantId, actor.actorType, actor.actorId, id, dto.decision, dto.reason);
   }
 
+  @UseGuards(ApiKeyGuard)
   @Post(':id/otp/submit')
   submitOtp(
     @CurrentTenant() tenant: AuthenticatedTenant,
@@ -69,6 +77,7 @@ export class VerificationCasesController {
     return this.cases.submitOtpCode(tenant.tenantId, tenant.apiKeyId, id, dto.code);
   }
 
+  @UseGuards(ApiKeyGuard)
   @Post(':id/document/submit')
   @UseInterceptors(uploadInterceptor)
   submitDocument(
@@ -86,6 +95,7 @@ export class VerificationCasesController {
     });
   }
 
+  @UseGuards(ApiKeyGuard)
   @Post(':id/liveness/submit')
   @UseInterceptors(framesUploadInterceptor)
   submitLiveness(
@@ -104,6 +114,7 @@ export class VerificationCasesController {
     );
   }
 
+  @UseGuards(ApiKeyGuard)
   @Post(':id/claims/:method/submit')
   @UseInterceptors(uploadInterceptor)
   submitClaimDocument(
@@ -122,6 +133,7 @@ export class VerificationCasesController {
     });
   }
 
+  @UseGuards(ApiKeyGuard)
   @Post(':id/claims/:method/report')
   submitSelfReport(
     @CurrentTenant() tenant: AuthenticatedTenant,
@@ -132,6 +144,7 @@ export class VerificationCasesController {
     return this.cases.submitSelfReport(tenant.tenantId, tenant.apiKeyId, id, method, dto.reportedValue);
   }
 
+  @UseGuards(ApiKeyGuard)
   @Post(':id/claims/:method/agent-attest')
   submitAgentAttestation(
     @CurrentTenant() tenant: AuthenticatedTenant,
@@ -142,6 +155,7 @@ export class VerificationCasesController {
     return this.cases.submitAgentAttestation(tenant.tenantId, tenant.apiKeyId, id, method, dto.decision, dto.notes);
   }
 
+  @UseGuards(ApiKeyGuard)
   @Post(':id/claims/:method/code')
   submitCode(
     @CurrentTenant() tenant: AuthenticatedTenant,
@@ -152,6 +166,7 @@ export class VerificationCasesController {
     return this.cases.submitCode(tenant.tenantId, tenant.apiKeyId, id, method, dto.code);
   }
 
+  @UseGuards(ApiKeyGuard)
   @Post(':id/claims/:method/location')
   submitLocation(
     @CurrentTenant() tenant: AuthenticatedTenant,

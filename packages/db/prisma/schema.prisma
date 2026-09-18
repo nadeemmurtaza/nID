@@ -97,6 +97,7 @@ model Tenant {
   updatedAt            DateTime @updatedAt
 
   apiKeys      TenantApiKey[]
+  staff        TenantStaffMembership[]
   policies     VerificationPolicy[]
   subjects     Subject[]
   cases        VerificationCase[]
@@ -274,10 +275,12 @@ model OrganizationMembership {
   organizationId String
   personSubjectId String
   role           String?
-  /// The TenantApiKey.id that performed the attestation — Phase 0 has no
-  /// separate staff-account system (same simplification VerificationCase.reviewerId
-  /// already documents), so the tenant API key is the only "who confirmed this
-  /// membership" identity that exists today.
+  /// The TenantApiKey.id that performed the attestation. Unlike
+  /// VerificationCase.reviewerId (which TenantStaffMembership now also lets
+  /// a real staff Account write — see its own schema comment), org
+  /// membership attestation has no dashboard UI at all yet — nothing calls
+  /// this except a tenant's own backend, so it's still deliberately
+  /// API-key-only rather than a speculative staff-facing field nothing uses.
   addedByApiKeyId String
   createdAt      DateTime @default(now())
 
@@ -314,6 +317,11 @@ model VerificationCase {
   /// Correlates this case to its Temporal workflow execution (apps/workflows).
   temporalWorkflowId String?
   decision           String?
+  /// A TenantApiKey.id or a staff Account.id — whichever actually resolved
+  /// this case (TenantActorGuard/AuthenticatedActor in apps/api resolves
+  /// which, via TenantStaffMembership for a real human). Set only when a
+  /// NEEDS_REVIEW case gets manually resolved through
+  /// POST .../:id/resolve — never for an automated PASSED/FAILED outcome.
   reviewerId         String?
   /// Copied from VerificationPolicy at creation time (immutable per case,
   /// same denormalization pattern as VerificationMethodAttempt.providerKey)
@@ -440,9 +448,37 @@ model Account {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  sessions      AccountSession[]
-  loginRequests OAuthLoginRequest[]
-  profile       Profile?
+  sessions        AccountSession[]
+  loginRequests   OAuthLoginRequest[]
+  profile         Profile?
+  staffMemberships TenantStaffMembership[]
+}
+
+/// The bridge between the two trust domains this file's own header comment
+/// describes: a real staff identity for a Tenant, backed by the same
+/// portable Account (phone + OTP) every other "a person signs into
+/// something" flow in this codebase already uses — apps/dashboard replaces
+/// its Phase 0 raw-API-key-paste login with this, and
+/// VerificationCase.reviewerId / OrganizationMembership.addedByApiKeyId's
+/// own "no separate staff-account system yet" caveat is exactly what this
+/// closes. Tenant-owned data (which humans can act for MY tenant is
+/// sensitive), but needs the same open-SELECT-for-bootstrap RLS exception
+/// TenantApiKey/OAuthClient/VerificationSession already carry — resolving
+/// "which tenant(s) does this now-authenticated Account staff" is how
+/// app.tenant_id gets determined for a staff session in the first place,
+/// so it can't itself require app.tenant_id to already be set.
+model TenantStaffMembership {
+  id        String   @id @default(cuid())
+  tenantId  String
+  accountId String
+  role      String   @default("STAFF")
+  createdAt DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, accountId])
+  @@index([accountId])
 }
 
 /// One OTP challenge for signing up or logging into an Account. Verifying
