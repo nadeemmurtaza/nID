@@ -94,7 +94,22 @@ export interface VerificationCaseDetail extends VerificationCaseListItem {
   policyId: string;
   temporalWorkflowId: string | null;
   decision: string | null;
+  reviewerId: string | null;
   attempts: VerificationMethodAttempt[];
+}
+
+/** The manual-review queue's one action — see apps/api's resolveCase(). */
+export function resolveCase(
+  apiKey: string,
+  caseId: string,
+  decision: 'APPROVED' | 'REJECTED',
+  reason: string,
+): Promise<VerificationCaseDetail> {
+  return apiFetch<VerificationCaseDetail>(`/v1/verification-cases/${caseId}/resolve`, apiKey, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ decision, reason }),
+  });
 }
 
 /** One entry per ClaimType a Subject has ever passed a case for — see apps/api's badges endpoint. */

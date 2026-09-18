@@ -5,4 +5,7 @@ export * from './otp-sms.provider';
 export * from './image-claim.provider';
 export * from './liveness.provider';
 export * from './registry-check.provider';
+export * from './self-reported-check.provider';
+export * from './agent-attested-check.provider';
+export * from './organization-membership.provider';
 export * from './registry';

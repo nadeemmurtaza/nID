@@ -128,5 +128,63 @@ describe('RegistryCheckProvider', () => {
       expect(result.verified).toBe(false);
       expect(result.raw).toMatchObject({ reason: 'missing_reference_id' });
     });
+
+    it('sends accountTitle for bank_account_title, since the vendor has no other way to know the claimed name', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ status: 'PASSED', raw: {} }),
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const provider = new RegistryCheckProvider('bank_account_title', 'Bank account title check', false, {
+        apiUrl: 'https://bank.example.test/checks',
+        apiKey: 'test-key',
+      });
+      await provider.start({
+        ...context,
+        input: { referenceId: 'PK00BANK0000012345678901', accountTitle: 'Jane Q. Subject' },
+      });
+
+      const sentBody = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      expect(sentBody).toMatchObject({
+        method: 'bank_account_title',
+        referenceId: 'PK00BANK0000012345678901',
+        accountTitle: 'Jane Q. Subject',
+      });
+    });
+
+    it('never sends an accountTitle field for education/employment registries — they resolve identity from referenceId alone', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ status: 'PASSED', raw: {} }),
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const provider = new RegistryCheckProvider('education_registry', 'Education registry check', false, {
+        apiUrl: 'https://registry.example.test/checks',
+        apiKey: 'test-key',
+      });
+      await provider.start(context);
+
+      const sentBody = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      expect(sentBody).not.toHaveProperty('accountTitle');
+    });
+
+    it('fails closed on a missing accountTitle for bank_account_title instead of calling the vendor at all', async () => {
+      const fetchMock = jest.fn();
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const provider = new RegistryCheckProvider('bank_account_title', 'Bank account title check', false, {
+        apiUrl: 'https://bank.example.test/checks',
+        apiKey: 'test-key',
+      });
+      const result = await provider.start({ ...context, input: { referenceId: 'PK00BANK0000012345678901' } });
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect('pending' in result).toBe(false);
+      if ('pending' in result) return;
+      expect(result.status).toBe('FAILED');
+      expect(result.raw).toMatchObject({ reason: 'missing_account_title' });
+    });
   });
 });

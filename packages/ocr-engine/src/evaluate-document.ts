@@ -1,5 +1,6 @@
 import { extractText, extractMrzCandidateText } from './tesseract-ocr';
 import { parseTd3Mrz, looksLikeMrzCandidate } from './mrz';
+import { autoCropToMrzBand } from './mrz-crop';
 
 const MIN_READABLE_TEXT_LENGTH = 20;
 
@@ -24,13 +25,25 @@ export async function evaluateDocument(imageBytes: Buffer): Promise<DocumentEval
   // has no idea what to do with a long run of a repeated filler character
   // that never occurs in real English, and tends to hallucinate stray
   // punctuation into it. Only worth a second, slower, MRZ-restricted pass
-  // once the first pass already suggests one is there; real-world MRZ
-  // recognition also crops tightly to the MRZ band first, which this
-  // pipeline doesn't do yet — see docs/PHASES.md for that as a real,
-  // documented follow-up rather than a silently accepted limitation.
-  const mrzText = looksLikeMrzCandidate(text) ? await extractMrzCandidateText(imageBytes) : undefined;
+  // once the first pass already suggests one is there. That second pass
+  // runs against an auto-cropped MRZ band when one is found (real-world MRZ
+  // recognition always crops first — see mrz-crop.ts) rather than the
+  // whole page, which stops the photo/header text from diluting the
+  // whitelisted pass's signal; a crop miss falls back to the full image
+  // rather than failing the check.
+  let mrzText: string | undefined;
+  let mrzCropApplied = false;
+  if (looksLikeMrzCandidate(text)) {
+    const crop = await autoCropToMrzBand(imageBytes);
+    mrzCropApplied = crop.cropped;
+    mrzText = await extractMrzCandidateText(crop.imageBytes);
+  }
 
-  return decideFromExtractedText(text, mrzText);
+  const evaluation = decideFromExtractedText(text, mrzText);
+  // Debuggability, not a decision input — whether the crop heuristic found
+  // a band is worth a reviewer knowing when a checksum still comes back
+  // invalid, but it never changes PASSED/FAILED/NEEDS_REVIEW itself.
+  return { ...evaluation, raw: { ...evaluation.raw, mrzCropApplied } };
 }
 
 /**

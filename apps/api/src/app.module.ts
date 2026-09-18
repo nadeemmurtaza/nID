@@ -5,6 +5,7 @@ import { TemporalClientModule } from './core/temporal/temporal-client.module';
 import { StorageModule } from './core/storage/storage.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { SubjectsModule } from './modules/subjects/subjects.module';
+import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { VerificationCasesModule } from './modules/verification-cases/verification-cases.module';
 import { SessionsModule } from './modules/sessions/sessions.module';
 import { AccountsModule } from './modules/accounts/accounts.module';
@@ -22,6 +23,7 @@ import { ProfileContentModule } from './modules/profile-content/profile-content.
     StorageModule,
     TenantsModule,
     SubjectsModule,
+    OrganizationsModule,
     VerificationCasesModule,
     SessionsModule,
     AccountsModule,

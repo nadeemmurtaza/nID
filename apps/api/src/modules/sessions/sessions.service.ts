@@ -13,6 +13,8 @@ export interface UploadedMethodFile {
 
 /** Methods reachable through the generic .../claims/:method/submit route — see submitClaimDocument(). */
 const CLAIM_DOCUMENT_METHODS = new Set(['dob_document', 'education_document', 'employment_document']);
+/** Methods reachable through the generic .../claims/:method/report route — see submitSelfReport(). */
+const SELF_REPORT_METHODS = new Set(['ecp_voter_registration']);
 
 /**
  * The subject-facing half of a verification case — resolved by
@@ -94,6 +96,14 @@ export class SessionsService {
       throw new BadRequestException(`"${method}" is not a claim-document method.`);
     }
     return this.submitUploadedMethod(token, method, 'verification_case.submit_claim_document', file);
+  }
+
+  /** ecp_voter_registration — see VerificationCasesService.submitSelfReport() / SelfReportedCheckProvider. */
+  async submitSelfReport(token: string, method: string, reportedValue: string): Promise<{ accepted: true }> {
+    if (!SELF_REPORT_METHODS.has(method)) {
+      throw new BadRequestException(`"${method}" is not a self-report method.`);
+    }
+    return this.submitMethod(token, method, 'verification_case.submit_self_report', { reportedValue });
   }
 
   private async submitMethod(

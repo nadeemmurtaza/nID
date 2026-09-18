@@ -38,6 +38,8 @@ const UPLOAD_ROUTE_FOR_METHOD: Record<string, string> = {
 
 /** education_registry / employment_registry resolve automatically, server-side — no upload here. */
 const REGISTRY_CHECK_METHODS = new Set(['education_registry', 'employment_registry']);
+/** ecp_voter_registration — the subject types back what a government SMS shortcode told them; see SelfReportedCheckProvider. */
+const SELF_REPORT_METHODS = new Set(['ecp_voter_registration']);
 
 export default function SessionPage() {
   const params = useParams<{ token: string }>();
@@ -101,6 +103,27 @@ export default function SessionPage() {
     }
   }
 
+  async function submitReport(method: string, reportedValue: string): Promise<void> {
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${API_URL}/v1/sessions/${token}/claims/${method}/report`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reportedValue }),
+      });
+      if (!res.ok) {
+        setSubmitError(await errorMessageFrom(res));
+        setSubmitting(false);
+        return;
+      }
+      await fetchStatus();
+    } catch {
+      setSubmitError('Could not reach the verification service. Check your connection.');
+      setSubmitting(false);
+    }
+  }
+
   async function submitFile(method: string, file: File): Promise<void> {
     setSubmitError(null);
     setSubmitting(true);
@@ -132,6 +155,7 @@ export default function SessionPage() {
             data={state.data}
             submitOtp={submitOtp}
             submitFile={submitFile}
+            submitReport={submitReport}
             submitting={submitting}
             submitError={submitError}
           />
@@ -173,12 +197,14 @@ function ResultView({
   data,
   submitOtp,
   submitFile,
+  submitReport,
   submitting,
   submitError,
 }: {
   data: SessionStatus;
   submitOtp: (code: string) => void | Promise<void>;
   submitFile: (method: string, file: File) => void | Promise<void>;
+  submitReport: (method: string, reportedValue: string) => void | Promise<void>;
   submitting: boolean;
   submitError: string | null;
 }) {
@@ -282,6 +308,21 @@ function ResultView({
     );
   }
 
+  const reportConfig = SELF_REPORT_STEP_CONFIG[current.method];
+  if (SELF_REPORT_METHODS.has(current.method) && reportConfig) {
+    return (
+      <>
+        {stepLabel}
+        <TextReportStep
+          {...reportConfig}
+          onSubmit={(value) => submitReport(current.method, value)}
+          submitting={submitting}
+          submitError={submitError}
+        />
+      </>
+    );
+  }
+
   return (
     <>
       <h1>Unsupported method</h1>
@@ -315,6 +356,19 @@ const UPLOAD_STEP_CONFIG: Record<string, { title: string; description: string; b
     title: 'Upload your employment document',
     description: 'An offer letter, pay stub, or employment verification letter.',
     buttonLabel: 'Upload document',
+  },
+};
+
+const SELF_REPORT_STEP_CONFIG: Record<
+  string,
+  { title: string; description: string; placeholder: string; buttonLabel: string }
+> = {
+  ecp_voter_registration: {
+    title: 'Check your voter registration',
+    description:
+      'Text your CNIC number to 8300 to check with the Election Commission of Pakistan, then type back exactly what they replied.',
+    placeholder: 'e.g. "Registered — Lahore NA-130" or the full reply text',
+    buttonLabel: 'Submit reply',
   },
 };
 
@@ -414,6 +468,58 @@ function UploadStep({
         <div className="status-line">
           <span className="dot pending" />
           <span>Checking your upload…</span>
+        </div>
+      )}
+    </>
+  );
+}
+
+function TextReportStep({
+  title,
+  description,
+  placeholder,
+  buttonLabel,
+  onSubmit,
+  submitting,
+  submitError,
+}: {
+  title: string;
+  description: string;
+  placeholder: string;
+  buttonLabel: string;
+  onSubmit: (value: string) => void | Promise<void>;
+  submitting: boolean;
+  submitError: string | null;
+}) {
+  const [value, setValue] = useState('');
+
+  return (
+    <>
+      <h1>{title}</h1>
+      <p className="lead">{description}</p>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (value.trim()) void onSubmit(value.trim());
+        }}
+      >
+        <input
+          type="text"
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          disabled={submitting}
+          autoFocus
+        />
+        <button type="submit" disabled={submitting || value.trim().length === 0}>
+          {submitting ? 'Submitting…' : buttonLabel}
+        </button>
+      </form>
+      {submitError && <p className="error-text">{submitError}</p>}
+      {submitting && !submitError && (
+        <div className="status-line">
+          <span className="dot pending" />
+          <span>Sending your reply…</span>
         </div>
       )}
     </>

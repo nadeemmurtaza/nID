@@ -279,6 +279,36 @@ tbody tr:hover {
   margin: 0;
 }
 
+.resolve-panel {
+  max-width: 480px;
+  margin-bottom: 24px;
+}
+
+.resolve-panel textarea {
+  width: 100%;
+  font: inherit;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  resize: vertical;
+  margin-bottom: 10px;
+}
+
+.resolve-actions {
+  display: flex;
+  gap: 10px;
+}
+
+button.primary-block.approve {
+  background: var(--success);
+}
+
+button.primary-block.reject {
+  background: var(--danger);
+}
+
 .empty-state {
   color: var(--muted);
   font-size: 14px;

@@ -54,8 +54,7 @@ async function main(): Promise<void> {
       // then document_ocr + liveness do the actual identity check. Order
       // matters: verification.workflow.ts runs methods.methods in array
       // order and stops at the first FAILED/NEEDS_REVIEW. document_ocr +
-      // liveness together earn DOCUMENT_VERIFIED — no registry/sanctions
-      // check exists yet, so nothing earns REGISTRY_VERIFIED for IDENTITY.
+      // liveness together earn DOCUMENT_VERIFIED.
       await prisma.verificationPolicy.upsert({
         where: { tenantId_name: { tenantId: tenant.id, name: 'kyc' } },
         update: { claimType: 'IDENTITY', level: 'DOCUMENT_VERIFIED' },
@@ -63,6 +62,77 @@ async function main(): Promise<void> {
           tenantId: tenant.id,
           name: 'kyc',
           methods: ['otp_sms', 'document_ocr', 'liveness'],
+          claimType: 'IDENTITY',
+          level: 'DOCUMENT_VERIFIED',
+        },
+      });
+
+      // IDENTITY's REGISTRY_VERIFIED slot: a bank confirming its own
+      // records for an account (`referenceId`) name the subject's claimed
+      // `accountTitle` — an authoritative third-party source, same
+      // REGISTRY_VERIFIED reasoning as education_registry/
+      // employment_registry below, just for IDENTITY instead of a
+      // separate claim.
+      await prisma.verificationPolicy.upsert({
+        where: { tenantId_name: { tenantId: tenant.id, name: 'bank-account-title' } },
+        update: { claimType: 'IDENTITY', level: 'REGISTRY_VERIFIED' },
+        create: {
+          tenantId: tenant.id,
+          name: 'bank-account-title',
+          methods: ['bank_account_title'],
+          claimType: 'IDENTITY',
+          level: 'REGISTRY_VERIFIED',
+        },
+      });
+
+      // A DOCUMENT_VERIFIED-level IDENTITY policy, not REGISTRY_VERIFIED:
+      // this method never queries ECP itself (no institutional API exists —
+      // see SelfReportedCheckProvider's header comment), it only carries a
+      // human reviewer's judgment on the subject's self-report. Same honest
+      // ceiling document_ocr's own human-in-the-loop path can reach, not
+      // the stronger claim an actual registry API call would earn.
+      await prisma.verificationPolicy.upsert({
+        where: { tenantId_name: { tenantId: tenant.id, name: 'ecp-voter-registration' } },
+        update: { claimType: 'IDENTITY', level: 'DOCUMENT_VERIFIED' },
+        create: {
+          tenantId: tenant.id,
+          name: 'ecp-voter-registration',
+          methods: ['ecp_voter_registration'],
+          claimType: 'IDENTITY',
+          level: 'DOCUMENT_VERIFIED',
+        },
+      });
+
+      // Inheriting a badge from a verified Organization one already belongs
+      // to (org_membership) — DOCUMENT_VERIFIED, not REGISTRY_VERIFIED: the
+      // policy's declared level is fixed and denormalized onto every case
+      // at creation (see VerificationCase.level's schema comment), so it
+      // can't dynamically match whatever level the Organization's own KYB
+      // case actually earned — DOCUMENT_VERIFIED is the honest floor for
+      // "a real, DB-enforced check ran," same ceiling ecp-voter-registration
+      // above settles for when the underlying proof can vary in strength.
+      await prisma.verificationPolicy.upsert({
+        where: { tenantId_name: { tenantId: tenant.id, name: 'org-membership' } },
+        update: { claimType: 'IDENTITY', level: 'DOCUMENT_VERIFIED' },
+        create: {
+          tenantId: tenant.id,
+          name: 'org-membership',
+          methods: ['org_membership'],
+          claimType: 'IDENTITY',
+          level: 'DOCUMENT_VERIFIED',
+        },
+      });
+
+      // An agent physically inspecting original documents — real evidence
+      // from an authenticated tenant actor, the same DOCUMENT_VERIFIED tier
+      // document_ocr earns, just captured in person instead of via OCR.
+      await prisma.verificationPolicy.upsert({
+        where: { tenantId_name: { tenantId: tenant.id, name: 'agent-in-person-document' } },
+        update: { claimType: 'IDENTITY', level: 'DOCUMENT_VERIFIED' },
+        create: {
+          tenantId: tenant.id,
+          name: 'agent-in-person-document',
+          methods: ['agent_in_person_document'],
           claimType: 'IDENTITY',
           level: 'DOCUMENT_VERIFIED',
         },

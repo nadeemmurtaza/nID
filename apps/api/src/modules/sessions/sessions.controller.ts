@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Get, Param, Post, UploadedFile, 
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { SubmitOtpDto } from './dto/submit-otp.dto';
+import { SubmitSelfReportDto } from './dto/submit-self-report.dto';
 import { SessionsService } from './sessions.service';
 
 const uploadInterceptor = FileInterceptor('file', {
@@ -70,5 +71,10 @@ export class SessionsController {
       contentType: file.mimetype,
       filename: file.originalname,
     });
+  }
+
+  @Post(':token/claims/:method/report')
+  submitSelfReport(@Param('token') token: string, @Param('method') method: string, @Body() dto: SubmitSelfReportDto) {
+    return this.sessions.submitSelfReport(token, method, dto.reportedValue);
   }
 }

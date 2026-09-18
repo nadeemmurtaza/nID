@@ -12,29 +12,38 @@ const VALID_STATUSES: ReadonlySet<string> = new Set<MockOutcome>(['PASSED', 'FAI
 
 /**
  * Confirms a claim against an authoritative third-party source — a
- * university registrar (education_registry) or an employer/payroll
- * verification service (employment_registry). Unlike the document-upload
- * providers (ImageClaimProvider), everything this needs is already in the
- * case's input at creation time (whatever reference the tenant supplied —
- * a student ID, an employee ID), so start() resolves immediately rather
- * than waiting on a subject upload; handleCallback is never used, exactly
- * like otp_sms's synchronous missing-phone failure path.
+ * university registrar (education_registry), an employer/payroll
+ * verification service (employment_registry), or a bank confirming an
+ * account's registered title matches the subject's claimed name
+ * (bank_account_title). Unlike the document-upload providers
+ * (ImageClaimProvider), everything this needs is already in the case's
+ * input at creation time (whatever reference the tenant supplied — a
+ * student ID, an employee ID, a bank account number/IBAN), so start()
+ * resolves immediately rather than waiting on a subject upload;
+ * handleCallback is never used, exactly like otp_sms's synchronous
+ * missing-phone failure path.
  *
  * Neither National Student Clearinghouse nor Truework/The Work Number
  * offer self-serve signup — both require an actual institutional or
- * business agreement, which no amount of code produces. What IS real here:
- * a generic HTTP client against a contract this codebase defines itself —
+ * business agreement, which no amount of code produces (same story for any
+ * real bank account-verification API). What IS real here: a generic HTTP
+ * client against a contract this codebase defines itself —
  *
  *   POST {apiUrl}
  *   Authorization: Bearer {apiKey}
- *   { "method": "education_registry" | "employment_registry",
- *     "referenceId": string, "subjectId": string, "tenantId": string }
+ *   { "method": "education_registry" | "employment_registry" | "bank_account_title",
+ *     "referenceId": string, "subjectId": string, "tenantId": string,
+ *     "accountTitle"?: string }
  *   -> { "status": "PASSED" | "FAILED" | "NEEDS_REVIEW", "score"?: number, "raw"?: object }
  *
- * — so the moment a real agreement exists with any vendor, either point
- * apiUrl straight at it if it already speaks this shape, or put a thin
- * translating adapter in front of it. No code here needs to change either
- * way; only the env vars do.
+ * `accountTitle` only ever accompanies bank_account_title (the tenant's
+ * claimed account-holder name for the vendor to compare its own records
+ * against — education/employment registries already resolve a claimed
+ * identity from `referenceId` on their own end, so it's omitted there
+ * rather than sent as an always-empty field). So the moment a real
+ * agreement exists with any vendor, either point apiUrl straight at it if
+ * it already speaks this shape, or put a thin translating adapter in front
+ * of it. No code here needs to change either way; only the env vars do.
  */
 export class RegistryCheckProvider implements VerificationMethodProvider {
   constructor(
@@ -51,7 +60,11 @@ export class RegistryCheckProvider implements VerificationMethodProvider {
       return {
         status,
         score: mockScoreFor(status),
-        raw: { mode: 'dev_mock', referenceId: context.input['referenceId'] ?? null },
+        raw: {
+          mode: 'dev_mock',
+          referenceId: context.input['referenceId'] ?? null,
+          accountTitle: context.input['accountTitle'] ?? null,
+        },
         verified: true,
       };
     }
@@ -72,6 +85,10 @@ export class RegistryCheckProvider implements VerificationMethodProvider {
     if (typeof referenceId !== 'string' || referenceId.length === 0) {
       return { status: 'FAILED', raw: { reason: 'missing_reference_id' }, verified: false };
     }
+    const accountTitle = context.input['accountTitle'];
+    if (this.key === 'bank_account_title' && (typeof accountTitle !== 'string' || accountTitle.length === 0)) {
+      return { status: 'FAILED', raw: { reason: 'missing_account_title' }, verified: false };
+    }
 
     let response: Response;
     try {
@@ -83,6 +100,7 @@ export class RegistryCheckProvider implements VerificationMethodProvider {
           referenceId,
           subjectId: context.subjectId,
           tenantId: context.tenantId,
+          ...(typeof accountTitle === 'string' && accountTitle.length > 0 ? { accountTitle } : {}),
         }),
       });
     } catch (err) {

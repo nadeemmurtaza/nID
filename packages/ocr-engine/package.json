@@ -7,10 +7,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "jest",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "lint": "eslint src --max-warnings=0"
   },
   "dependencies": {
+    "jimp": "^1.6.1",
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {

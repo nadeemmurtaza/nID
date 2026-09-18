@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { apiFetch, type SubjectBadges, type VerificationCaseDetail } from '../../../lib/api-client';
+import { apiFetch, resolveCase, type SubjectBadges, type VerificationCaseDetail } from '../../../lib/api-client';
 import { useDashboardSession } from '../../../lib/use-dashboard-session';
 import { Header } from '../../components/header';
 import { subjectName } from '../../format';
@@ -49,11 +49,13 @@ function CaseDetail({ apiKey, caseId }: { apiKey: string; caseId: string }) {
   const [badges, setBadges] = useState<SubjectBadges | null>(null);
   const [badgesError, setBadgesError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () => {
     apiFetch<VerificationCaseDetail>(`/v1/verification-cases/${caseId}`, apiKey)
       .then(setKase)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Could not load this case.'));
-  }, [apiKey, caseId]);
+  };
+
+  useEffect(load, [apiKey, caseId]);
 
   useEffect(() => {
     if (!kase) return;
@@ -97,6 +99,8 @@ function CaseDetail({ apiKey, caseId }: { apiKey: string; caseId: string }) {
             <dd>{kase.subject.email ?? '—'}</dd>
             <dt>Decision</dt>
             <dd>{kase.decision ?? '—'}</dd>
+            <dt>Reviewer</dt>
+            <dd>{kase.reviewerId ?? '—'}</dd>
             <dt>Created</dt>
             <dd>{new Date(kase.createdAt).toLocaleString()}</dd>
             <dt>Resolved</dt>
@@ -132,8 +136,69 @@ function CaseDetail({ apiKey, caseId }: { apiKey: string; caseId: string }) {
               </tbody>
             </table>
           )}
+
+          {kase.status === 'NEEDS_REVIEW' && <ResolvePanel apiKey={apiKey} caseId={kase.id} onResolved={load} />}
         </>
       )}
+    </>
+  );
+}
+
+/**
+ * The manual-review queue's one action — a case the automated pipeline
+ * correctly stopped at NEEDS_REVIEW rather than guessing. A reason is
+ * required: an override with no rationale defeats the point of the audit
+ * trail this writes (see VerificationCasesService.resolveCase()).
+ */
+function ResolvePanel({ apiKey, caseId, onResolved }: { apiKey: string; caseId: string; onResolved: () => void }) {
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(decision: 'APPROVED' | 'REJECTED'): Promise<void> {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await resolveCase(apiKey, caseId, decision, reason);
+      onResolved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not resolve this case.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <>
+      <h2>Resolve</h2>
+      <div className="resolve-panel">
+        <textarea
+          placeholder="Why? (required — becomes this case's decision and audit-log entry)"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          disabled={submitting}
+          rows={3}
+        />
+        <div className="resolve-actions">
+          <button
+            type="button"
+            className="primary-block approve"
+            disabled={submitting || reason.trim().length < 3}
+            onClick={() => submit('APPROVED')}
+          >
+            Approve
+          </button>
+          <button
+            type="button"
+            className="primary-block reject"
+            disabled={submitting || reason.trim().length < 3}
+            onClick={() => submit('REJECTED')}
+          >
+            Reject
+          </button>
+        </div>
+        {error && <p className="error-text">{error}</p>}
+      </div>
     </>
   );
 }

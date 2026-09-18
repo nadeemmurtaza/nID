@@ -6,6 +6,9 @@ import { CurrentTenant } from '../../core/auth/current-tenant.decorator';
 import type { AuthenticatedTenant } from '../../core/auth/types';
 import { CreateVerificationCaseDto } from './dto/create-verification-case.dto';
 import { SubmitOtpDto } from './dto/submit-otp.dto';
+import { ResolveCaseDto } from './dto/resolve-case.dto';
+import { SubmitSelfReportDto } from './dto/submit-self-report.dto';
+import { SubmitAgentAttestationDto } from './dto/submit-agent-attestation.dto';
 import { VerificationCasesService } from './verification-cases.service';
 
 const uploadInterceptor = FileInterceptor('file', {
@@ -31,6 +34,11 @@ export class VerificationCasesController {
   @Get(':id')
   getById(@CurrentTenant() tenant: AuthenticatedTenant, @Param('id') id: string) {
     return this.cases.getById(tenant.tenantId, tenant.apiKeyId, id);
+  }
+
+  @Post(':id/resolve')
+  resolve(@CurrentTenant() tenant: AuthenticatedTenant, @Param('id') id: string, @Body() dto: ResolveCaseDto) {
+    return this.cases.resolveCase(tenant.tenantId, tenant.apiKeyId, id, dto.decision, dto.reason);
   }
 
   @Post(':id/otp/submit')
@@ -92,5 +100,25 @@ export class VerificationCasesController {
       contentType: file.mimetype,
       filename: file.originalname,
     });
+  }
+
+  @Post(':id/claims/:method/report')
+  submitSelfReport(
+    @CurrentTenant() tenant: AuthenticatedTenant,
+    @Param('id') id: string,
+    @Param('method') method: string,
+    @Body() dto: SubmitSelfReportDto,
+  ) {
+    return this.cases.submitSelfReport(tenant.tenantId, tenant.apiKeyId, id, method, dto.reportedValue);
+  }
+
+  @Post(':id/claims/:method/agent-attest')
+  submitAgentAttestation(
+    @CurrentTenant() tenant: AuthenticatedTenant,
+    @Param('id') id: string,
+    @Param('method') method: string,
+    @Body() dto: SubmitAgentAttestationDto,
+  ) {
+    return this.cases.submitAgentAttestation(tenant.tenantId, tenant.apiKeyId, id, method, dto.decision, dto.notes);
   }
 }

@@ -305,6 +305,130 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
     expect(kase.status).toBe('NEEDS_REVIEW');
   });
 
+  it('ecp_voter_registration: a real self-report always resolves to NEEDS_REVIEW, never an automated pass', async () => {
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-ecp-voter', ['ecp_voter_registration']);
+
+    const started = await startMethodActivity({ caseId, tenantId, subjectId, method: 'ecp_voter_registration', input: {} });
+    expect(started.pending).toBe(true);
+
+    const completed = await completeMethodActivity({
+      caseId,
+      tenantId,
+      subjectId,
+      method: 'ecp_voter_registration',
+      resultMeta: {},
+      // A real subject-typed reply — no file, no storageKey, exactly what
+      // SessionsController's .../claims/:method/report route forwards.
+      payload: { reportedValue: 'Registered — Lahore NA-130' },
+    });
+    expect(completed.status).toBe('NEEDS_REVIEW');
+    expect(completed.raw).toMatchObject({ reportedValue: 'Registered — Lahore NA-130' });
+
+    await resolveCaseActivity({
+      tenantId,
+      caseId,
+      subjectId,
+      caseStatus: 'NEEDS_REVIEW',
+      decision: 'NEEDS_REVIEW',
+      raw: completed.raw,
+    });
+    const kase = await migratorPrisma.verificationCase.findUniqueOrThrow({ where: { id: caseId } });
+    expect(kase.status).toBe('NEEDS_REVIEW');
+  });
+
+  it('org_membership: a confirmed member of a verified organization inherits PASSED synchronously — no upload, no signal', async () => {
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-org-membership', ['org_membership']);
+
+    // The Organization has to be genuinely verified first — its own real
+    // KYB case, APPROVED, claimType IDENTITY — same as
+    // OrganizationMembershipProvider's own spec proves in isolation; this
+    // test proves the full activity wiring (dispatch, persistence) around it.
+    const orgSubject = await migratorPrisma.subject.create({ data: { tenantId, type: 'ORGANIZATION' } });
+    const organization = await migratorPrisma.organization.create({
+      data: { tenantId, subjectId: orgSubject.id, legalName: 'Activity Test Org' },
+    });
+    const kybPolicy = await migratorPrisma.verificationPolicy.upsert({
+      where: { tenantId_name: { tenantId, name: 'activity-test-kyb' } },
+      update: {},
+      create: { tenantId, name: 'activity-test-kyb', methods: [], claimType: 'IDENTITY', level: 'DOCUMENT_VERIFIED' },
+    });
+    const kybCase = await migratorPrisma.verificationCase.create({
+      data: {
+        tenantId,
+        subjectId: orgSubject.id,
+        policyId: kybPolicy.id,
+        status: 'APPROVED',
+        claimType: 'IDENTITY',
+        level: 'DOCUMENT_VERIFIED',
+      },
+    });
+    await migratorPrisma.organizationMembership.create({
+      data: { tenantId, organizationId: organization.id, personSubjectId: subjectId, role: 'Engineer', addedByApiKeyId: 'test' },
+    });
+
+    const started = await startMethodActivity({
+      caseId,
+      tenantId,
+      subjectId,
+      method: 'org_membership',
+      input: { organizationId: organization.id },
+    });
+    expect(started.pending).toBe(false);
+    if (started.pending) throw new Error('unreachable');
+    expect(started.status).toBe('PASSED');
+    expect(started.raw).toMatchObject({ organizationId: organization.id, inheritedFromCaseId: kybCase.id });
+
+    await resolveCaseActivity({ tenantId, caseId, subjectId, caseStatus: 'APPROVED', decision: 'APPROVED', raw: started.raw });
+    const kase = await migratorPrisma.verificationCase.findUniqueOrThrow({ where: { id: caseId } });
+    expect(kase.status).toBe('APPROVED');
+  });
+
+  it('org_membership: an unconfirmed member of a verified organization is NEEDS_REVIEW, never auto-passed', async () => {
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-org-membership-unconfirmed', ['org_membership']);
+    const orgSubject = await migratorPrisma.subject.create({ data: { tenantId, type: 'ORGANIZATION' } });
+    const organization = await migratorPrisma.organization.create({
+      data: { tenantId, subjectId: orgSubject.id, legalName: 'Unconfirmed Membership Org' },
+    });
+    // Deliberately no OrganizationMembership row — the subject merely
+    // claims organizationId, nobody at the org confirmed it.
+
+    const started = await startMethodActivity({
+      caseId,
+      tenantId,
+      subjectId,
+      method: 'org_membership',
+      input: { organizationId: organization.id },
+    });
+    expect(started.pending).toBe(false);
+    if (started.pending) throw new Error('unreachable');
+    expect(started.status).toBe('NEEDS_REVIEW');
+    expect(started.raw).toMatchObject({ reason: 'membership_not_confirmed' });
+  });
+
+  it('agent_in_person_document: a tenant agent\'s attestation resolves directly (PASSED or FAILED), traceable to the agent', async () => {
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-agent-attest', ['agent_in_person_document']);
+
+    const started = await startMethodActivity({ caseId, tenantId, subjectId, method: 'agent_in_person_document', input: {} });
+    expect(started.pending).toBe(true);
+
+    const completed = await completeMethodActivity({
+      caseId,
+      tenantId,
+      subjectId,
+      method: 'agent_in_person_document',
+      resultMeta: {},
+      // Exactly what VerificationCasesController's .../claims/:method/agent-attest
+      // route forwards — a tenant API key acting as the agent, never the subject.
+      payload: { decision: 'PASSED', agentId: 'tenant-api-key-123', notes: 'Original passport + CNIC inspected in branch.' },
+    });
+    expect(completed.status).toBe('PASSED');
+    expect(completed.raw).toMatchObject({ agentId: 'tenant-api-key-123' });
+
+    await resolveCaseActivity({ tenantId, caseId, subjectId, caseStatus: 'APPROVED', decision: 'APPROVED', raw: completed.raw });
+    const kase = await migratorPrisma.verificationCase.findUniqueOrThrow({ where: { id: caseId } });
+    expect(kase.status).toBe('APPROVED');
+  });
+
   it('multi-method policy: the case is not resolved until every method has run, in order', async () => {
     const { tenantId, subjectId, caseId } = await makeCase('activity-test-multi', ['otp_sms', 'document_ocr']);
 

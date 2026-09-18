@@ -16,7 +16,13 @@ export interface UploadedMethodFile {
 /** Methods reachable through the generic .../claims/:method/submit routes — see submitClaimDocument(). */
 const CLAIM_DOCUMENT_METHODS = new Set(['dob_document', 'education_document', 'employment_document']);
 /** Methods that resolve synchronously in RegistryCheckProvider.start() and need a `referenceId` at creation. */
-const REGISTRY_CHECK_METHODS = new Set(['education_registry', 'employment_registry']);
+const REGISTRY_CHECK_METHODS = new Set(['education_registry', 'employment_registry', 'bank_account_title']);
+/** Methods reachable through the generic .../claims/:method/report route — see submitSelfReport(). */
+const SELF_REPORT_METHODS = new Set(['ecp_voter_registration']);
+/** Methods reachable through the generic .../claims/:method/agent-attest route — see submitAgentAttestation(). */
+const AGENT_ATTESTED_METHODS = new Set(['agent_in_person_document']);
+/** Methods that resolve synchronously in OrganizationMembershipProvider.start() and need an `organizationId` at creation. */
+const ORG_MEMBERSHIP_METHODS = new Set(['org_membership']);
 
 @Injectable()
 export class VerificationCasesService {
@@ -167,6 +173,57 @@ export class VerificationCasesService {
     });
   }
 
+  /**
+   * The manual-review queue's one action: a human decision on a case the
+   * automated pipeline correctly stopped at NEEDS_REVIEW rather than
+   * guessing (verification.workflow.ts's `resolveCaseActivity` call for
+   * that status is the case's terminal write — there is no live workflow
+   * left to signal, so this is a direct status transition, not a Temporal
+   * signal). Only reachable from NEEDS_REVIEW: an already-resolved case
+   * (however it got there) is not this endpoint's to relitigate.
+   */
+  async resolveCase(
+    tenantId: string,
+    apiKeyId: string,
+    caseId: string,
+    decision: 'APPROVED' | 'REJECTED',
+    reason: string,
+  ) {
+    return this.prisma.forTenant(tenantId, async (tx) => {
+      const kase = await tx.verificationCase.findUnique({ where: { id: caseId } });
+      if (!kase) {
+        throw new NotFoundException('Verification case not found.');
+      }
+      if (kase.status !== 'NEEDS_REVIEW') {
+        throw new BadRequestException(`Only a case in NEEDS_REVIEW can be manually resolved (this one is ${kase.status}).`);
+      }
+
+      const updated = await tx.verificationCase.update({
+        where: { id: caseId },
+        data: {
+          status: decision,
+          decision: reason,
+          // Phase 0 has no separate staff-account system (docs/PHASES.md) —
+          // the tenant API key is the only reviewer identity that exists
+          // today, same simplification apps/dashboard's own header comment
+          // already documents for "who is signed in."
+          reviewerId: apiKeyId,
+          resolvedAt: new Date(),
+        },
+      });
+
+      await this.audit.record(tx, tenantId, {
+        actorType: 'TENANT_STAFF',
+        actorId: apiKeyId,
+        action: 'verification_case.resolve_manual',
+        subjectId: kase.subjectId,
+        caseId: kase.id,
+      });
+
+      return updated;
+    });
+  }
+
   async submitOtpCode(tenantId: string, apiKeyId: string, caseId: string, code: string): Promise<{ accepted: true }> {
     return this.submitMethod(tenantId, apiKeyId, caseId, 'otp_sms', 'verification_case.submit_otp', {
       submittedCode: code,
@@ -216,6 +273,56 @@ export class VerificationCasesService {
       throw new BadRequestException(`"${method}" is not a claim-document method.`);
     }
     return this.submitUploadedMethod(tenantId, apiKeyId, caseId, method, 'verification_case.submit_claim_document', file);
+  }
+
+  /**
+   * ecp_voter_registration — a subject's typed-in report of what a
+   * government SMS shortcode told them, never a file. Same generic
+   * text-payload signal mechanism otp_sms already uses
+   * (submitMethod()), not the upload path — see
+   * SelfReportedCheckProvider's header comment for why this method can
+   * never auto-resolve.
+   */
+  async submitSelfReport(
+    tenantId: string,
+    apiKeyId: string,
+    caseId: string,
+    method: string,
+    reportedValue: string,
+  ): Promise<{ accepted: true }> {
+    if (!SELF_REPORT_METHODS.has(method)) {
+      throw new BadRequestException(`"${method}" is not a self-report method.`);
+    }
+    return this.submitMethod(tenantId, apiKeyId, caseId, method, 'verification_case.submit_self_report', {
+      reportedValue,
+    });
+  }
+
+  /**
+   * agent_in_person_document — an authorized tenant agent's direct
+   * attestation after physically inspecting the subject's original
+   * documents. `agentId` is this same apiKeyId, carried into the payload
+   * so AgentAttestedCheckProvider's result is always traceable to a real
+   * tenant actor (see its header comment) — never the subject's own
+   * session, which is why this route requires ApiKeyGuard rather than
+   * apps/verify-ui's subject-facing session token.
+   */
+  async submitAgentAttestation(
+    tenantId: string,
+    apiKeyId: string,
+    caseId: string,
+    method: string,
+    decision: 'PASSED' | 'FAILED',
+    notes: string | undefined,
+  ): Promise<{ accepted: true }> {
+    if (!AGENT_ATTESTED_METHODS.has(method)) {
+      throw new BadRequestException(`"${method}" is not an agent-attested method.`);
+    }
+    return this.submitMethod(tenantId, apiKeyId, caseId, method, 'verification_case.submit_agent_attestation', {
+      decision,
+      notes,
+      agentId: apiKeyId,
+    });
   }
 
   /** Shared by every "the subject submitted something for the method the case is currently waiting on" path. */
@@ -320,7 +427,13 @@ function buildMethodInput(
   }
   for (const method of methods) {
     if (REGISTRY_CHECK_METHODS.has(method)) {
-      methodInput[method] = { referenceId: dto.referenceId };
+      methodInput[method] =
+        method === 'bank_account_title'
+          ? { referenceId: dto.referenceId, accountTitle: dto.accountTitle }
+          : { referenceId: dto.referenceId };
+    }
+    if (ORG_MEMBERSHIP_METHODS.has(method)) {
+      methodInput[method] = { organizationId: dto.organizationId };
     }
   }
   return methodInput;

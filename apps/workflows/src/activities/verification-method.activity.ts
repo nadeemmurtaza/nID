@@ -38,6 +38,11 @@ const registry = buildVerificationProviderRegistry({
     apiUrl: process.env['EMPLOYMENT_REGISTRY_API_URL'],
     apiKey: process.env['EMPLOYMENT_REGISTRY_API_KEY'],
   },
+  bankAccountTitleConfig: {
+    apiUrl: process.env['BANK_ACCOUNT_TITLE_API_URL'],
+    apiKey: process.env['BANK_ACCOUNT_TITLE_API_KEY'],
+  },
+  db: prisma,
 });
 // Local-disk only today — apps/api writes an upload here, this Activity
 // reads it back, both pointed at the same LOCAL_STORAGE_DIR. See

@@ -412,6 +412,126 @@ marks a real contact message read. Full workspace `typecheck`/`lint`/
 `badge-ranking.spec.ts` (strongest-first ranking, self-attested-fallback
 never overwriting a stronger badge).
 
+### KYC hardening: manual review, bank_account_title, ECP self-report, MRZ auto-crop
+
+Four independent pieces of hardening on the existing verification-method
+pipeline, each landing without touching `verification.workflow.ts` or the
+activity dispatch logic — proof that the provider abstraction (docs/HOUSE-RULES.md
+rule 1) actually pays off when new methods arrive:
+
+- **Manual-review queue.** `NEEDS_REVIEW` is a terminal Temporal workflow
+  state — the workflow has already returned by the time a case sits there,
+  so resolving it can't be a signal, only a direct, audited DB transition.
+  `POST /v1/verification-cases/:id/resolve` (`ResolveCaseDto {decision,
+  reason}`) does exactly that, finally giving `VerificationCase.reviewerId`
+  a real writer. `apps/dashboard`'s case-detail page grew a `ResolvePanel`
+  (required reason, Approve/Reject) shown only when a case is
+  `NEEDS_REVIEW`.
+- **`bank_account_title`.** Reuses `RegistryCheckProvider` rather than
+  forking a new class — its HTTP contract already fit, just needed an
+  optional `accountTitle` field sent only for this method (the vendor
+  compares a claimed name against its own bank records; education/employment
+  registries resolve identity from `referenceId` alone and never send it).
+  Seeded at `IDENTITY` / `REGISTRY_VERIFIED`.
+- **`ecp_voter_registration`.** Pakistan's ECP voter-registration lookup
+  (send a CNIC via SMS to 8300) is consumer-only — no institutional API
+  exists for a third party to query it. `SelfReportedCheckProvider` (new,
+  `packages/verification-providers/src/self-reported-check.provider.ts`)
+  takes the subject's own report of what the government's reply said and
+  *always* resolves to `NEEDS_REVIEW`, never an automated pass — nothing
+  independently confirms the report is true, so a human reviewer's
+  judgment (the queue above) is the only honest terminal state. PTA's
+  SIM-count lookup was deliberately **not** built as a sibling method: it's
+  a risk signal ("how many SIMs on this CNIC"), not a pass/fail identity
+  claim, and forcing it into this model would misrepresent what it proves.
+  Seeded at `IDENTITY` / `DOCUMENT_VERIFIED`.
+- **MRZ auto-crop.** `packages/ocr-engine/src/mrz-crop.ts`'s
+  `autoCropToMrzBand()` finds a passport's MRZ band with no ML model: a
+  TD3 bio-data page's MRZ is, per the ICAO Doc 9303 layout itself, two
+  lines of dense, full-width monospace text at the very bottom of the
+  page — a genuinely distinctive row-by-row dark-pixel-density signature
+  versus the photo/header area above it. `evaluateDocument()` now crops to
+  that band (falling back to the full image on a miss) before the
+  MRZ-restricted OCR pass, so the photo/header no longer dilutes it.
+  Proven with real Jimp-rendered fixture images (`mrz-crop.spec.ts`), not
+  mocked pixel data.
+
+**Verified live**: `resolveCase` proven via curl (validation errors,
+successful resolve, re-resolve rejection) plus a full Playwright pass
+through the dashboard's new panel; `bank_account_title` proven against a
+real loopback HTTP server and real case creation; `ecp_voter_registration`
+proven at the activity layer against real Postgres (`RUN_DB_TESTS=true`)
+and via a real Playwright pass through `apps/verify-ui`'s new
+`TextReportStep`; `mrz-crop.ts` proven with real Jimp image encode/decode
+round trips (a genuine crop, a no-band fallback, and a photo-region
+false-positive rejection). Full workspace `typecheck`/`lint`/`test` pass.
+
+### Organization-verified membership and agent in-person document verification
+
+Two more verification methods, both internal-evidence rather than
+vendor-backed — the first provider in this codebase to query nID's own
+data instead of an HTTP API or a subject's own submission:
+
+- **`org_membership`.** "This person works at an already-verified
+  organization, so they inherit its verification" — a real trusted-employer
+  vouching pattern, not a shortcut. `OrganizationMembershipProvider`
+  (`packages/verification-providers/src/organization-membership.provider.ts`)
+  requires BOTH: the claimed `Organization` has at least one `APPROVED`
+  `VerificationCase` for `claimType: IDENTITY` (real KYB, not an assumption
+  from the row merely existing), AND an `OrganizationMembership` row
+  already confirms this Subject as a member — an org admin's attestation
+  via `POST /v1/organizations/:id/members`, never the subject's own
+  claimed `organizationId` taken at face value. Missing either resolves to
+  `NEEDS_REVIEW` (both are "true but not yet provable," never evidence the
+  claim is false), not `FAILED`. New `apps/api` module
+  (`modules/organizations`): `POST /v1/organizations` (creates the backing
+  `Subject` + `Organization`), `GET /v1/organizations/:id` (derives
+  `isVerified`/`verifiedLevel` the same way the provider does), `POST`/`GET
+  .../:id/members`. `OrganizationMembership` is a normal tenant-owned
+  table with the standard RLS policy (migration
+  `20260918160000_add_organization_membership`). Seeded at `IDENTITY` /
+  `DOCUMENT_VERIFIED` — the policy's declared level is fixed and
+  denormalized onto every case at creation, so it can't dynamically match
+  whatever level the Organization's own KYB case actually earned;
+  `DOCUMENT_VERIFIED` is the honest floor for "a real, DB-enforced check
+  ran."
+- **`agent_in_person_document`.** A tenant agent physically holds the
+  subject's *original* documents, inspects them, and attests to what they
+  saw — first-party evidence from an authenticated tenant actor, the same
+  trust level a bank teller's in-person ID check already carries. Unlike
+  `SelfReportedCheckProvider`, `AgentAttestedCheckProvider`
+  (`packages/verification-providers/src/agent-attested-check.provider.ts`)
+  resolves directly to `PASSED`/`FAILED` — the human-judgment step already
+  happened out of band. Reachable only through
+  `POST /v1/verification-cases/:id/claims/:method/agent-attest`
+  (`SubmitAgentAttestationDto {decision, notes}`), tenant API-key
+  authenticated like the resolve-case route, never the subject's own
+  session token — `agentId` (the tenant API key's id) travels into `raw`
+  so every decision is traceable to a real actor. Seeded at `IDENTITY` /
+  `DOCUMENT_VERIFIED`.
+
+**Verified live**: `OrganizationMembershipProvider` proven with 6 tests
+against real RLS-enforced Postgres (`RUN_DB_TESTS=true`) — missing/unknown
+org, unconfirmed membership, unverified org, the real-inheritance PASSED
+path, and a tenant-isolation proof (a tenantB Subject genuinely invisible
+under tenantA's `app.tenant_id` context). Both new activity-level flows
+(`org_membership`'s synchronous resolution, `agent_in_person_document`'s
+pending→callback resolution) proven end to end against real Postgres in
+`apps/workflows/test/verification-method.activity.spec.ts`, bypassing only
+the unreachable Temporal server (same established workaround as every
+other method here). The `organizations` module proven with real curl
+end-to-end: create an org (unverified), create a person Subject, confirm
+membership (traceable `addedByApiKeyId`), directly approve the org's own
+KYB case exactly as a real completed KYB flow would, and watch
+`GET /v1/organizations/:id` flip to `isVerified: true` with the right
+`verifiedCaseId`/`verifiedLevel` — plus negative paths (404 on an unknown
+org, 400 on a missing `legalName`, 400 on adding a non-`PERSON` Subject as
+a member, 401 with no API key, 400 on an invalid `agent-attest` decision).
+Full workspace `typecheck`/`lint`/`test` pass across every touched
+package, including the new `@nid/db` dependency `packages/verification-providers`
+now has — its first, since every other provider was previously pure
+HTTP/self-contained.
+
 - **Phase 2** — sanctions/PEP screening, KYB/business-registry lookup, one
   country's national-ID registry adapter, manual-review tooling, retention/audit
   maturity.

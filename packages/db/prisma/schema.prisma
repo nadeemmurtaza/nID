@@ -190,8 +190,39 @@ model Organization {
 
   subject         Subject                      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   beneficialOwners OrganizationBeneficialOwner[]
+  memberships      OrganizationMembership[]
 
   @@index([tenantId])
+}
+
+/// A person (Subject, type = PERSON) an org admin has confirmed is a member
+/// (typically an employee) of this Organization — the attestation act
+/// itself, created via POST /v1/organizations/:id/members by whichever
+/// tenant API key is acting for that org. This is what org_membership
+/// (packages/verification-providers/src/organization-membership.provider.ts)
+/// checks for before it will let a member inherit a badge from the
+/// Organization's own verification — a person merely *claiming* to work
+/// somewhere (organizationId in VerificationCase input) is never enough on
+/// its own, exactly the same reasoning OrganizationBeneficialOwner already
+/// applies to KYB beneficial owners.
+model OrganizationMembership {
+  id             String   @id @default(cuid())
+  tenantId       String
+  organizationId String
+  personSubjectId String
+  role           String?
+  /// The TenantApiKey.id that performed the attestation — Phase 0 has no
+  /// separate staff-account system (same simplification VerificationCase.reviewerId
+  /// already documents), so the tenant API key is the only "who confirmed this
+  /// membership" identity that exists today.
+  addedByApiKeyId String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, personSubjectId])
+  @@index([tenantId])
+  @@index([personSubjectId])
 }
 
 /// A person (Subject, type = PERSON) who is a beneficial owner of an Organization.

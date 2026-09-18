@@ -1,8 +1,12 @@
+import type { PrismaClient } from '@nid/db';
 import type { VerificationMethodProvider } from './types';
 import { OtpSmsProvider } from './otp-sms.provider';
 import { ImageClaimProvider } from './image-claim.provider';
 import { LivenessProvider } from './liveness.provider';
 import { RegistryCheckProvider, type RegistryCheckConfig } from './registry-check.provider';
+import { SelfReportedCheckProvider } from './self-reported-check.provider';
+import { AgentAttestedCheckProvider } from './agent-attested-check.provider';
+import { OrganizationMembershipProvider } from './organization-membership.provider';
 
 /**
  * Every provider that exists in this codebase, regardless of whether a given
@@ -31,6 +35,15 @@ function allProviders(options: VerificationProviderRegistryOptions): Verificatio
       options.registryCheckDevMode,
       options.employmentRegistryConfig,
     ),
+    new RegistryCheckProvider(
+      'bank_account_title',
+      'Bank account title check',
+      options.registryCheckDevMode,
+      options.bankAccountTitleConfig,
+    ),
+    new SelfReportedCheckProvider('ecp_voter_registration', 'ECP voter registration self-report'),
+    new AgentAttestedCheckProvider('agent_in_person_document', 'Agent in-person document inspection'),
+    new OrganizationMembershipProvider(options.db),
   ];
 }
 
@@ -48,6 +61,15 @@ export interface VerificationProviderRegistryOptions {
   educationRegistryConfig?: RegistryCheckConfig;
   /** EMPLOYMENT_REGISTRY_API_URL / EMPLOYMENT_REGISTRY_API_KEY — ignored while registryCheckDevMode is true. */
   employmentRegistryConfig?: RegistryCheckConfig;
+  /** BANK_ACCOUNT_TITLE_API_URL / BANK_ACCOUNT_TITLE_API_KEY — ignored while registryCheckDevMode is true. */
+  bankAccountTitleConfig?: RegistryCheckConfig;
+  /**
+   * org_membership looks up the Organization graph directly rather than
+   * calling a vendor — first-party evidence, not a mock to toggle off in
+   * dev — so it always needs a real Prisma client, the same one the caller
+   * (apps/workflows) already holds at module scope.
+   */
+  db: PrismaClient;
 }
 
 /**
