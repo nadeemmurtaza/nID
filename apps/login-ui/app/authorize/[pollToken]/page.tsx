@@ -12,6 +12,8 @@ import {
   type Account,
   type LoginRequestStatus,
 } from '../../../lib/api';
+import { Logomark } from '../../components/logomark';
+import { OtpInput } from '../../components/otp-input';
 
 type Phase =
   | { kind: 'loading' }
@@ -142,6 +144,9 @@ export default function AuthorizePage() {
   return (
     <main>
       <div className="card">
+        <div className="login-logo">
+          <Logomark size={44} />
+        </div>
         <p className="brand">nID</p>
 
         {phase.kind === 'loading' && (
@@ -310,18 +315,22 @@ function PhoneLoginForm({
 
   return (
     <form onSubmit={verifyCode}>
-      <input
-        type="text"
-        inputMode="numeric"
-        maxLength={6}
-        placeholder="000000"
-        value={code}
-        onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-        disabled={submitting}
-        autoFocus
-      />
+      <p className="qr-hint">Enter the code sent to {phone.trim()}.</p>
+      <OtpInput value={code} onChange={setCode} disabled={submitting} autoFocus />
       <button type="submit" disabled={submitting || code.length === 0}>
         {submitting ? 'Verifying…' : 'Verify code'}
+      </button>
+      <button
+        type="button"
+        className="secondary"
+        onClick={() => {
+          setStep('phone');
+          setCode('');
+          setError(null);
+        }}
+        disabled={submitting}
+      >
+        Use a different number
       </button>
       {error && <p className="error-text">{error}</p>}
     </form>

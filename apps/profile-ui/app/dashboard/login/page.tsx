@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ApiError, startOtp, verifyOtp } from '../../../lib/owner-api';
 import { setStoredAccountSession } from '../../../lib/session';
+import { Logomark } from '../../components/logomark';
+import { OtpInput } from '../../components/otp-input';
 
 /** Same phone+OTP UX as apps/login-ui's PhoneLoginForm, minus the OAuth-approve step this app has no use for. */
 export default function DashboardLoginPage() {
@@ -46,21 +48,15 @@ export default function DashboardLoginPage() {
   return (
     <main className="center-page">
       <div className="card">
-        <p
-          style={{
-            marginBottom: 18,
-            fontSize: 13,
-            fontWeight: 600,
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-            color: 'var(--muted)',
-          }}
-        >
-          nID Profiles
-        </p>
+        <div className="login-logo">
+          <Logomark size={44} />
+        </div>
+        <p className="brand">nID Profiles</p>
         <h1>Manage your profile</h1>
-        <p className="lead" style={{ color: 'var(--muted)', fontSize: 14, lineHeight: 1.5, marginBottom: 20 }}>
-          Sign in with your nID account to edit your page.
+        <p className="lead">
+          {step === 'phone'
+            ? 'Sign in with your nID account to edit your page.'
+            : `Enter the code sent to ${phone.trim()}.`}
         </p>
 
         {step === 'phone' ? (
@@ -81,18 +77,20 @@ export default function DashboardLoginPage() {
           </form>
         ) : (
           <form onSubmit={verify}>
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              placeholder="000000"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-              disabled={submitting}
-              autoFocus
-            />
+            <OtpInput value={code} onChange={setCode} disabled={submitting} autoFocus />
             <button type="submit" disabled={submitting || code.length === 0}>
               {submitting ? 'Verifying…' : 'Verify code'}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                setStep('phone');
+                setCode('');
+                setError(null);
+              }}
+            >
+              Use a different number
             </button>
             {error && <p className="error-text">{error}</p>}
           </form>

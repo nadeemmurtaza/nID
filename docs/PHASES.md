@@ -1016,6 +1016,53 @@ still `ApiKeyGuard`-only — moved onto `TenantActorGuard` alongside
 `verification-cases.controller.ts`. Full workspace
 `typecheck`/`lint`/`test`/`build` passes.
 
+### Design pass: a real visual identity for the three end-user-facing apps
+
+The sign-up/login screens across `apps/dashboard`, `apps/profile-ui`, and
+`apps/login-ui` worked but looked like unstyled scaffolding — no logomark,
+system-default fonts, a bare `<input maxLength={6}>` for OTP entry, no
+hover/focus polish. Flagged during a screenshot request and fixed as its
+own pass rather than folded silently into feature work.
+
+- **Logomark** (`app/components/logomark.tsx`, identical copy in all three
+  apps — this codebase's established convention of no cross-app frontend
+  sharing, not an oversight): a hand-drawn SVG "N" letterform in a rounded
+  blue square with a green checkmark badge overlapping the corner, not a
+  text label. Also serves as `app/icon.svg` in each app — Next's App
+  Router auto-serves it as the favicon with zero extra config.
+- **`OtpInput`** (`app/components/otp-input.tsx`, same three-way copy):
+  replaces the plain 6-digit text field everywhere a phone+OTP form exists
+  (`apps/dashboard`'s staff login, `apps/profile-ui`'s owner login,
+  `apps/login-ui`'s `PhoneLoginForm`) with six separate boxes — auto-advance
+  on digit entry, Backspace steps back and clears, arrow-key navigation,
+  and pasting a full code fills every box at once. Real OTP-entry UX, not
+  a different-looking version of the same field.
+- **Type + surface polish**: self-hosted Inter (`next/font/google`, no
+  runtime call to Google's CDN) via each app's `layout.tsx`; `--shadow-sm`/
+  `--shadow-md` tokens (light + dark) replacing flat borders on cards;
+  focus rings changed from a hard `outline` to a soft `border-color` +
+  `box-shadow` glow matching `--accent`; buttons gained a `hover`
+  brightness bump and an `active` press-down transform. All additive to
+  each app's existing `globals.css` token set — no visual behavior changed
+  for anything the design pass didn't touch.
+- Every login/authorize screen now leads with the logomark above a
+  centered brand label, and the OTP step shows dynamic lead text
+  (`Enter the code sent to {phone}`) plus a "Use a different number" reset
+  — a pattern that didn't exist before (the old flow had no way back to
+  the phone step without reloading the page).
+
+**Verified live**: `typecheck`/`lint`/`build` clean for all three apps
+(`dashboard`, `profile-ui`, `login-ui`). A full real-browser Playwright
+pass against all three running dev servers: screenshotted the phone step
+and OTP step for each app's login/authorize screen, then drove one flow
+fully end-to-end — typed a real phone number into `apps/dashboard`'s
+redesigned form, read the real dev-mode OTP code back out of the API's
+log output, entered it digit-by-digit into the new `OtpInput` boxes (each
+keystroke exercising its real auto-advance logic, not just a value set
+via JS), submitted, and landed on the real case list with the header
+correctly rendering the new logomark next to the tenant name — proving
+the redesign didn't just look right, it still authenticates for real.
+
 - **Phase 2** — sanctions/PEP screening, KYB/business-registry lookup, one
   country's national-ID registry adapter, manual-review tooling, retention/audit
   maturity.

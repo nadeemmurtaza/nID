@@ -11,6 +11,8 @@ import {
 } from '../lib/api-client';
 import { useDashboardSession } from '../lib/use-dashboard-session';
 import { Header } from './components/header';
+import { Logomark } from './components/logomark';
+import { OtpInput } from './components/otp-input';
 import { subjectName } from './format';
 
 export default function DashboardHome() {
@@ -92,9 +94,16 @@ function LoginScreen({
   return (
     <div className="login-wrap">
       <div className="login-card">
+        <div className="login-logo">
+          <Logomark size={44} />
+        </div>
         <p className="brand">nID Dashboard</p>
         <h1>Sign in as staff</h1>
-        <p className="lead">Sign in with your nID account. An admin invites your phone number as staff first.</p>
+        <p className="lead">
+          {step === 'phone'
+            ? 'Sign in with your nID account. An admin invites your phone number as staff first.'
+            : `Enter the code sent to ${phone.trim()}.`}
+        </p>
 
         {step === 'phone' ? (
           <form onSubmit={sendCode}>
@@ -114,24 +123,27 @@ function LoginScreen({
           </form>
         ) : (
           <form onSubmit={verify}>
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              placeholder="000000"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-              disabled={submitting}
-              autoFocus
-            />
+            <OtpInput value={code} onChange={setCode} disabled={submitting} autoFocus />
             {stepError && <p className="error-text">{stepError}</p>}
             {error && <p className="error-text">{error}</p>}
             <button
               className="primary-block"
               type="submit"
-              disabled={submitting || loading || code.length === 0}
+              disabled={submitting || loading || code.length < 6}
             >
               {submitting || loading ? 'Verifying…' : 'Verify code'}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                setStep('phone');
+                setCode('');
+                setStepError(null);
+              }}
+              disabled={submitting}
+            >
+              Use a different number
             </button>
           </form>
         )}
