@@ -1,0 +1,178 @@
+/**
+ * Live-Postgres coverage for AccountsService — "Login with nID"'s own
+ * signup+login primitive had none until now (unlike every later feature in
+ * this codebase, it shipped validated only by a one-off manual curl pass,
+ * never as a regression test). Same RUN_DB_TESTS gating and
+ * PrismaService-direct-instantiation approach as
+ * apps/workflows/test/verification-method.activity.spec.ts calling its
+ * activities directly against real Postgres — no HTTP layer, no Nest DI
+ * bootstrap, just the real service against the real database.
+ *
+ *   RUN_DB_TESTS=true pnpm --filter @nid/api test
+ */
+import { UnauthorizedException } from '@nestjs/common';
+import { createPrismaClient, type PrismaClient } from '@nid/db';
+import { sha256Hex } from '@nid/shared-types';
+import { AccountsService } from '../src/modules/accounts/accounts.service';
+import { PrismaService } from '../src/core/db/prisma.service';
+
+const RUN_DB_TESTS = process.env['RUN_DB_TESTS'] === 'true';
+const describeIfDb = RUN_DB_TESTS ? describe : describe.skip;
+
+describeIfDb('AccountsService (live Postgres)', () => {
+  let prismaService: PrismaService;
+  let migratorPrisma: PrismaClient;
+  let accounts: AccountsService;
+  const testPhones: string[] = [];
+
+  beforeAll(() => {
+    prismaService = new PrismaService();
+    migratorPrisma = createPrismaClient(process.env['DATABASE_URL']);
+    accounts = new AccountsService(prismaService);
+  });
+
+  afterAll(async () => {
+    // Account/AccountOtpCode/AccountSession carry no tenantId and have no
+    // tenant RLS policy at all (see PrismaService.unscoped's own comment) —
+    // real cleanup, not a mock reset, same as otp_sms's own activity test
+    // cleaning up real rows it created.
+    await migratorPrisma.accountSession.deleteMany({
+      where: { account: { phone: { in: testPhones } } },
+    });
+    await migratorPrisma.accountOtpCode.deleteMany({ where: { phone: { in: testPhones } } });
+    await migratorPrisma.account.deleteMany({ where: { phone: { in: testPhones } } });
+    await migratorPrisma.$disconnect();
+    await prismaService.onModuleDestroy();
+  });
+
+  function uniquePhone(label: string): string {
+    const phone = `+1555${label}${Date.now().toString().slice(-4)}`;
+    testPhones.push(phone);
+    return phone;
+  }
+
+  /** Mirrors otp_sms's own activity test: overwrite the persisted hash to one whose plaintext this test knows, rather than scraping the dev-mode log line. */
+  async function overwriteOtpCode(phone: string, knownCode: string): Promise<void> {
+    await migratorPrisma.accountOtpCode.updateMany({
+      where: { phone },
+      data: { codeHash: sha256Hex(knownCode) },
+    });
+  }
+
+  it('startOtp writes a real, hashed, unconsumed challenge for the phone', async () => {
+    const phone = uniquePhone('a1');
+    await accounts.startOtp(phone);
+
+    const challenge = await migratorPrisma.accountOtpCode.findFirst({ where: { phone } });
+    expect(challenge).not.toBeNull();
+    expect(challenge!.consumedAt).toBeNull();
+    expect(challenge!.codeHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(challenge!.expiresAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('throws when OTP_SMS_DEV_MODE is off instead of pretending to deliver an SMS', async () => {
+    const phone = uniquePhone('a2');
+    const original = process.env['OTP_SMS_DEV_MODE'];
+    process.env['OTP_SMS_DEV_MODE'] = 'false';
+    try {
+      await expect(accounts.startOtp(phone)).rejects.toThrow(/no production SMS vendor wired up/);
+    } finally {
+      process.env['OTP_SMS_DEV_MODE'] = original;
+    }
+  });
+
+  it('verifying the first-ever correct code both creates the Account and logs it in', async () => {
+    const phone = uniquePhone('a3');
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '424242');
+
+    const result = await accounts.verifyOtp(phone, '424242');
+
+    expect(result.account.phone).toBe(phone);
+    expect(result.account.phoneVerifiedAt).not.toBeNull();
+    expect(typeof result.sessionToken).toBe('string');
+
+    const storedSession = await migratorPrisma.accountSession.findUnique({
+      where: { tokenHash: sha256Hex(result.sessionToken) },
+    });
+    expect(storedSession?.accountId).toBe(result.account.id);
+
+    const consumed = await migratorPrisma.accountOtpCode.findFirst({ where: { phone } });
+    expect(consumed?.consumedAt).not.toBeNull();
+  });
+
+  it('rejects a wrong code without consuming the real one', async () => {
+    const phone = uniquePhone('a4');
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '111111');
+
+    await expect(accounts.verifyOtp(phone, '000000')).rejects.toThrow(UnauthorizedException);
+
+    const stillPending = await migratorPrisma.accountOtpCode.findFirst({ where: { phone } });
+    expect(stillPending?.consumedAt).toBeNull();
+  });
+
+  it('rejects the same code a second time — single-use even within the TTL window', async () => {
+    const phone = uniquePhone('a5');
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '555555');
+
+    await accounts.verifyOtp(phone, '555555');
+    await expect(accounts.verifyOtp(phone, '555555')).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('rejects an expired code even with the right digits', async () => {
+    const phone = uniquePhone('a6');
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '999999');
+    await migratorPrisma.accountOtpCode.updateMany({
+      where: { phone },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+
+    await expect(accounts.verifyOtp(phone, '999999')).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('a returning phone reuses the same Account instead of creating a duplicate', async () => {
+    const phone = uniquePhone('a7');
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '111222');
+    const first = await accounts.verifyOtp(phone, '111222');
+
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '333444');
+    const second = await accounts.verifyOtp(phone, '333444');
+
+    expect(second.account.id).toBe(first.account.id);
+    const accountRows = await migratorPrisma.account.findMany({ where: { phone } });
+    expect(accountRows).toHaveLength(1);
+  });
+
+  it('resolveSession returns the real account for a valid token', async () => {
+    const phone = uniquePhone('a8');
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '246810');
+    const { sessionToken, account } = await accounts.verifyOtp(phone, '246810');
+
+    const resolved = await accounts.resolveSession(sessionToken);
+    expect(resolved.id).toBe(account.id);
+  });
+
+  it('resolveSession rejects an unknown token', async () => {
+    await expect(accounts.resolveSession('not-a-real-token')).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('resolveSession rejects an expired session', async () => {
+    const phone = uniquePhone('a9');
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '135790');
+    const { sessionToken } = await accounts.verifyOtp(phone, '135790');
+
+    await migratorPrisma.accountSession.updateMany({
+      where: { tokenHash: sha256Hex(sessionToken) },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+
+    await expect(accounts.resolveSession(sessionToken)).rejects.toThrow(UnauthorizedException);
+  });
+});

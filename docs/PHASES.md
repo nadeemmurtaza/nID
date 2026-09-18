@@ -911,6 +911,47 @@ provider-layer unit tests. The seed script was re-run live: the
 (`SELECT ... FROM "VerificationPolicy" WHERE name = 'estamp-registry'`).
 Full workspace `typecheck`/`lint`/`test`/`build` passes.
 
+### "Login with nID": closing the test-coverage gap
+
+`AccountsService`/`OAuthService` shipped in Phase 0 validated only by a
+one-off manual curl pass, never as a regression test — the one feature in
+this codebase without automated coverage. `apps/api/test/accounts.service.spec.ts`
+and `apps/api/test/oauth.service.spec.ts` close that, following the same
+live-Postgres, `RUN_DB_TESTS`-gated, direct-instantiation approach
+`apps/workflows/test/verification-method.activity.spec.ts` and
+`apps/api/test/tenant-isolation.spec.ts` already established — the real
+service classes constructed directly (`new AccountsService(prismaService)`,
+`new OAuthService(prismaService)`), no Nest DI bootstrap, no HTTP layer,
+against real Postgres.
+
+`AccountsService`: a real OTP challenge is written and hashed correctly;
+`OTP_SMS_DEV_MODE=false` throws instead of pretending to send an SMS; the
+first correct code both creates the Account and logs it in; a wrong code
+is rejected without consuming the real one; the same code is rejected a
+second time (single-use within the TTL); an expired code is rejected even
+with the right digits; a returning phone reuses the same Account row, never
+a duplicate; `resolveSession` returns the real account for a valid token
+and rejects an unknown or expired one. (Overwriting the persisted OTP hash
+to a known plaintext, rather than scraping the dev-mode log line, mirrors
+exactly how `otp_sms`'s own activity test already handles this.)
+
+`OAuthService`: the full happy path end to end — create a login request,
+poll `PENDING`, approve as a real authenticated Account, poll `APPROVED`,
+claim the one-time code, exchange it for real identity claims — plus every
+security-critical negative path: unknown client, unregistered redirect
+URI, approving a request that isn't pending, claiming before approval, a
+second claim on the same request, a wrong client secret, a mismatched
+redirect URI at exchange time, replaying an already-consumed code, an
+unknown poll token, and a `PENDING` request past its TTL correctly reading
+as `EXPIRED` rather than still approvable.
+
+**Verified live**: both suites run clean against real Postgres
+(`RUN_DB_TESTS=true pnpm --filter @nid/api test`) — 21 new tests, all
+passing on first run, no adjustment needed. Test data (Accounts, sessions,
+OTP codes, the scratch Tenant/OAuthClient) is fully torn down in
+`afterAll`, confirmed via a direct Postgres query showing zero leftover
+rows. Full workspace `typecheck`/`lint`/`test` passes.
+
 - **Phase 2** — sanctions/PEP screening, KYB/business-registry lookup, one
   country's national-ID registry adapter, manual-review tooling, retention/audit
   maturity.
