@@ -780,6 +780,51 @@ button {
   width: 100%;
 }
 
+/* A section made of several steps (e.g. Profile: Basics/Contact/Address/
+   Visibility) gets its own small segmented sub-nav at the top of the
+   panel — visually distinct (pill segments, not underline tabs) from the
+   main .tabs sidebar so the two nav levels don't read as the same thing. */
+.subnav {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 24px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  overflow-x: auto;
+}
+
+.subnav-btn {
+  flex: 1;
+  text-align: center;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: calc(var(--radius-control) - 2px);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.subnav-btn:hover {
+  color: var(--fg);
+}
+
+.subnav-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 1px var(--accent);
+}
+
+.subnav-btn.active {
+  background: var(--card-bg);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
 @media (min-width: 880px) {
   .dashboard-shell {
     flex-direction: row;

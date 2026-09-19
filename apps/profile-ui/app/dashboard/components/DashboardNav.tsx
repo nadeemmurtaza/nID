@@ -50,7 +50,10 @@ export function DashboardNav({ slug, pathname, onSignOut }: Props) {
 
       <div className="tabs">
         {NAV_ITEMS.map(({ href, label, Icon }) => {
-          const active = pathname === href;
+          // 'Profile' has its own sub-routes (basics/contact/address/
+          // visibility) — stays highlighted for all of them, not just an
+          // exact match.
+          const active = href === '/dashboard/profile' ? pathname?.startsWith(href) ?? false : pathname === href;
           return (
             <Link key={href} href={href} className={`tab-btn${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined}>
               <Icon />
