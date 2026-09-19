@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { Logomark } from '../../components/logomark';
+import { OtpInput } from '../../components/otp-input';
 
 const API_URL = process.env.NEXT_PUBLIC_NID_API_URL ?? 'http://localhost:4000';
 
@@ -163,9 +165,14 @@ export default function SessionPage() {
     }
   }
 
+  const cardClass = state.kind === 'ready' ? resultCardClass(state.data.status) : '';
+
   return (
     <main>
-      <div className="card">
+      <div className={`card${cardClass ? ` ${cardClass}` : ''}`}>
+        <div className="login-logo">
+          <Logomark size={40} />
+        </div>
         <p className="brand">nID Verification</p>
         {state.kind === 'loading' && <Loading />}
         {state.kind === 'error' && <ErrorView message={state.message} />}
@@ -213,6 +220,16 @@ async function errorMessageFrom(res: Response): Promise<string> {
   return message ?? 'That submission did not work. Try again.';
 }
 
+/** A thin top-accent color on the outer card for a terminal outcome, matching the
+ * result panel's icon/heading color below — so the outcome reads at a glance. */
+function resultCardClass(status: CaseStatus): string {
+  if (status === 'APPROVED') return 'card-success';
+  if (status === 'REJECTED') return 'card-danger';
+  if (status === 'NEEDS_REVIEW') return 'card-info';
+  if (status === 'EXPIRED') return 'card-warn';
+  return '';
+}
+
 function ResultView({
   data,
   submitOtp,
@@ -232,41 +249,41 @@ function ResultView({
 }) {
   if (data.status === 'APPROVED') {
     return (
-      <>
+      <div className="result-panel result-success">
         <div className="result-icon">✅</div>
         <h1>You&apos;re verified</h1>
         <p className="lead">Your identity has been confirmed. You can close this page.</p>
-      </>
+      </div>
     );
   }
 
   if (data.status === 'REJECTED') {
     return (
-      <>
+      <div className="result-panel result-danger">
         <div className="result-icon">❌</div>
         <h1>Verification failed</h1>
         <p className="lead">We couldn&apos;t confirm your identity. Ask whoever sent you here for a new link.</p>
-      </>
+      </div>
     );
   }
 
   if (data.status === 'NEEDS_REVIEW') {
     return (
-      <>
+      <div className="result-panel result-info">
         <div className="result-icon">🕵️</div>
         <h1>We need to take a closer look</h1>
         <p className="lead">Your submission needs manual review before we can confirm it. We&apos;ll follow up.</p>
-      </>
+      </div>
     );
   }
 
   if (data.status === 'EXPIRED') {
     return (
-      <>
+      <div className="result-panel result-warn">
         <div className="result-icon">⏱️</div>
         <h1>This link expired</h1>
         <p className="lead">The window closed before verification finished. Ask for a new link to try again.</p>
-      </>
+      </div>
     );
   }
 
@@ -289,7 +306,18 @@ function ResultView({
   }
 
   const stepLabel =
-    data.attempts.length > 1 ? <p className="step">Step {stepIndex + 1} of {data.attempts.length}</p> : null;
+    data.attempts.length > 1 ? (
+      <div className="step-indicator">
+        <div className="step-dots">
+          {data.attempts.map((_, i) => (
+            <span key={i} className={`step-dot${i < stepIndex ? ' done' : i === stepIndex ? ' active' : ''}`} />
+          ))}
+        </div>
+        <p className="step-text">
+          Step {stepIndex + 1} of {data.attempts.length}
+        </p>
+      </div>
+    ) : null;
 
   if (current.method === 'otp_sms') {
     return (
@@ -421,17 +449,7 @@ function OtpStep({
           void onSubmit(code);
         }}
       >
-        <input
-          type="text"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={6}
-          placeholder="000000"
-          value={code}
-          onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-          disabled={submitting}
-          autoFocus
-        />
+        <OtpInput value={code} onChange={setCode} disabled={submitting} autoFocus />
         <button type="submit" disabled={submitting || code.length === 0}>
           {submitting ? 'Verifying…' : 'Submit code'}
         </button>

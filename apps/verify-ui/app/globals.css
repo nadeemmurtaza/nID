@@ -1,25 +1,56 @@
 :root {
-  color-scheme: light dark;
   --bg: #ffffff;
-  --fg: #111318;
-  --muted: #5b6270;
-  --border: #dfe2e8;
+  --bg-subtle: #f7f8fa;
+  --fg: #14171a;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --border-strong: #d1d5db;
   --accent: #2f6fed;
+  --accent-hover: #2557c7;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(47, 111, 237, 0.1);
   --danger: #c4392b;
+  --danger-soft: rgba(196, 57, 43, 0.1);
   --success: #1a8a5f;
-  --card-bg: #f8f9fb;
+  --success-soft: rgba(26, 138, 95, 0.1);
+  --warn: #b3801a;
+  --warn-soft: rgba(179, 128, 26, 0.1);
+  --info: #6a4fc4;
+  --info-soft: rgba(106, 79, 196, 0.1);
+  --card-bg: #ffffff;
+  --row-hover: #f7f8fa;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 16px rgba(15, 23, 42, 0.08);
+  --radius-card: 14px;
+  --radius-control: 8px;
+  --radius-sub: 10px;
+  --radius-pill: 999px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0e1013;
-    --fg: #e8eaee;
-    --muted: #9aa1ad;
-    --border: #2a2e36;
-    --accent: #6ea1ff;
-    --danger: #ff7a68;
-    --success: #4fd39a;
-    --card-bg: #16181d;
+    --bg-subtle: #15181c;
+    --fg: #f2f3f5;
+    --muted: #9099a3;
+    --border: #262b31;
+    --border-strong: #333941;
+    --accent: #5b8def;
+    --accent-hover: #7aa3f2;
+    --accent-fg: #0e1013;
+    --accent-soft: rgba(91, 141, 239, 0.16);
+    --danger: #e06456;
+    --danger-soft: rgba(224, 100, 86, 0.16);
+    --success: #2ebf85;
+    --success-soft: rgba(46, 191, 133, 0.16);
+    --warn: #d9a63d;
+    --warn-soft: rgba(217, 166, 61, 0.16);
+    --info: #9683e0;
+    --info-soft: rgba(150, 131, 224, 0.16);
+    --card-bg: #17191d;
+    --row-hover: #1b1e23;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.36);
   }
 }
 
@@ -37,7 +68,8 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
 }
 
 main {
@@ -53,8 +85,32 @@ main {
   max-width: 380px;
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   padding: 28px 24px;
+  box-shadow: var(--shadow-sm);
+  border-top: 3px solid transparent;
+}
+
+.card.card-success {
+  border-top-color: var(--success);
+}
+
+.card.card-danger {
+  border-top-color: var(--danger);
+}
+
+.card.card-warn {
+  border-top-color: var(--warn);
+}
+
+.card.card-info {
+  border-top-color: var(--info);
+}
+
+.login-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
 }
 
 .brand {
@@ -84,16 +140,47 @@ input[type='text'] {
   letter-spacing: 0.15em;
   text-align: center;
   padding: 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--fg);
   margin-bottom: 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 input[type='text']:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.otp-input {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.otp-input input {
+  width: 44px;
+  height: 52px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-align: center;
+  padding: 0;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  margin-bottom: 0;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.otp-input input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 button {
@@ -101,11 +188,38 @@ button {
   font-size: 15px;
   font-weight: 600;
   padding: 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: none;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
   cursor: pointer;
+  transition: filter 0.1s ease, transform 0.05s ease;
+}
+
+button:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+button.secondary {
+  background: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px;
+}
+
+button.secondary:not(:disabled):hover {
+  filter: none;
+  text-decoration: underline;
 }
 
 button:disabled {
@@ -149,7 +263,7 @@ button:disabled {
   position: relative;
   width: 100%;
   aspect-ratio: 1 / 1;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   overflow: hidden;
   background: #000;
   margin-bottom: 12px;
@@ -172,7 +286,7 @@ button:disabled {
   font-weight: 600;
   font-size: 14px;
   padding: 6px 14px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .result-icon {
@@ -181,22 +295,102 @@ button:disabled {
   margin-bottom: 12px;
 }
 
-.step {
+/* Terminal outcome panels (Approved / Rejected / Needs review / Expired) —
+   each gets its own token-driven color so the outcome reads unambiguously
+   at a glance, not just from the heading text. See .card-* above for the
+   matching top-accent on the outer card. */
+.result-panel .result-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 30px;
+}
+
+.result-success .result-icon {
+  background: var(--success-soft);
+}
+.result-success h1 {
+  color: var(--success);
+}
+
+.result-danger .result-icon {
+  background: var(--danger-soft);
+}
+.result-danger h1 {
+  color: var(--danger);
+}
+
+.result-warn .result-icon {
+  background: var(--warn-soft);
+}
+.result-warn h1 {
+  color: var(--warn);
+}
+
+.result-info .result-icon {
+  background: var(--info-soft);
+}
+.result-info h1 {
+  color: var(--info);
+}
+
+/* Step N of M — a thin segmented progress bar instead of plain text. */
+.step-indicator {
+  margin: 0 0 18px;
+}
+
+.step-dots {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.step-dot {
+  flex: 1 1 0;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+}
+
+.step-dot.done {
+  background: var(--success);
+}
+
+.step-dot.active {
+  background: var(--accent);
+}
+
+.step-text {
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  margin: 0 0 10px;
+  margin: 0;
 }
 
 input[type='file'] {
   width: 100%;
   font-size: 13px;
   color: var(--muted);
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px dashed var(--border);
-  background: var(--bg);
+  padding: 14px 10px;
+  border-radius: var(--radius-control);
+  border: 1px dashed var(--border-strong);
+  background: var(--bg-subtle);
   margin-bottom: 12px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+input[type='file']:hover {
+  border-color: var(--accent);
+}
+
+input[type='file']:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
 }
