@@ -1,29 +1,57 @@
 :root {
   color-scheme: light dark;
   --bg: #ffffff;
-  --fg: #111318;
-  --muted: #5b6270;
-  --border: #dfe2e8;
+  --bg-subtle: #f7f8fa;
+  --fg: #14171a;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --border-strong: #d1d5db;
   --accent: #2f6fed;
+  --accent-hover: #2557c7;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(47, 111, 237, 0.1);
   --danger: #c4392b;
+  --danger-soft: rgba(196, 57, 43, 0.1);
   --success: #1a8a5f;
-  --card-bg: #f8f9fb;
-  --shadow-sm: 0 1px 2px rgba(17, 19, 24, 0.05);
-  --shadow-md: 0 8px 24px rgba(17, 19, 24, 0.08), 0 1px 2px rgba(17, 19, 24, 0.06);
+  --success-soft: rgba(26, 138, 95, 0.1);
+  --warn: #b3801a;
+  --warn-soft: rgba(179, 128, 26, 0.1);
+  --info: #6a4fc4;
+  --info-soft: rgba(106, 79, 196, 0.1);
+  --card-bg: #ffffff;
+  --row-hover: #f7f8fa;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 16px rgba(15, 23, 42, 0.08);
+  --radius-card: 14px;
+  --radius-control: 8px;
+  --radius-sub: 10px;
+  --radius-pill: 999px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0e1013;
-    --fg: #e8eaee;
-    --muted: #9aa1ad;
-    --border: #2a2e36;
-    --accent: #6ea1ff;
-    --danger: #ff7a68;
-    --success: #4fd39a;
-    --card-bg: #16181d;
+    --bg-subtle: #15181c;
+    --fg: #f2f3f5;
+    --muted: #9099a3;
+    --border: #262b31;
+    --border-strong: #333941;
+    --accent: #5b8def;
+    --accent-hover: #7aa3f2;
+    --accent-fg: #0e1013;
+    --accent-soft: rgba(91, 141, 239, 0.16);
+    --danger: #e06456;
+    --danger-soft: rgba(224, 100, 86, 0.16);
+    --success: #2ebf85;
+    --success-soft: rgba(46, 191, 133, 0.16);
+    --warn: #d9a63d;
+    --warn-soft: rgba(217, 166, 61, 0.16);
+    --info: #9683e0;
+    --info-soft: rgba(150, 131, 224, 0.16);
+    --card-bg: #17191d;
+    --row-hover: #1b1e23;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.36);
   }
 }
 
@@ -58,7 +86,7 @@ main {
   max-width: 400px;
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   padding: 32px 28px;
   text-align: center;
   box-shadow: var(--shadow-md);
@@ -80,7 +108,8 @@ main {
 }
 
 h1 {
-  font-size: 19px;
+  font-size: 21px;
+  font-weight: 600;
   margin: 0 0 8px;
 }
 
@@ -91,23 +120,36 @@ p.lead {
   line-height: 1.5;
 }
 
+/* Form fields ------------------------------------------------------- */
+
 input[type='text'] {
   width: 100%;
+  min-height: 44px;
   font-size: 16px;
   text-align: center;
   padding: 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--fg);
   margin-bottom: 12px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+input[type='text']:hover:not(:disabled) {
+  border-color: var(--border-strong);
 }
 
 input[type='text']:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+input[type='text']:disabled {
+  opacity: 0.6;
 }
 
 .otp-input {
@@ -124,57 +166,101 @@ input[type='text']:focus {
   font-weight: 700;
   text-align: center;
   padding: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--fg);
   margin-bottom: 0;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.otp-input input:hover:not(:disabled) {
+  border-color: var(--border-strong);
 }
 
 .otp-input input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-button {
+/* Buttons ------------------------------------------------------------
+   .btn is the shared base (height, radius, focus ring); pick exactly one
+   modifier for fill/emphasis: primary (main CTA), secondary (bordered,
+   equal weight but lower emphasis), or ghost (text-only tertiary action). */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
+  min-height: 44px;
   font-size: 15px;
   font-weight: 600;
-  padding: 12px;
-  border-radius: 8px;
-  border: none;
-  background: var(--accent);
-  color: #fff;
+  font-family: inherit;
+  padding: 0 16px;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
   cursor: pointer;
-  transition: filter 0.1s, transform 0.05s;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s,
+    transform 0.05s;
 }
 
-button:not(:disabled):hover {
-  filter: brightness(1.08);
+.btn + .btn {
+  margin-top: 8px;
 }
 
-button:not(:disabled):active {
+.btn:not(:disabled):active {
   transform: translateY(1px);
 }
 
-button.secondary {
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 1px var(--accent);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn-secondary {
+  background: var(--bg);
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+
+.btn-secondary:not(:disabled):hover {
+  background: var(--row-hover);
+}
+
+.btn-ghost {
+  min-height: 40px;
   background: none;
+  border-color: transparent;
   color: var(--accent);
   font-size: 13px;
   font-weight: 500;
-  padding: 8px;
 }
 
-button.secondary:not(:disabled):hover {
-  filter: none;
-  text-decoration: underline;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: default;
+.btn-ghost:not(:disabled):hover {
+  background: var(--accent-soft);
 }
 
 .error-text {
@@ -183,31 +269,64 @@ button:disabled {
   margin-top: 8px;
 }
 
-.divider {
+/* View toggle (QR / phone number) ------------------------------------ */
+
+.view-tabs {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--muted);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin: 20px 0;
+  gap: 4px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: 4px;
+  margin: 16px 0;
 }
 
-.divider::before,
-.divider::after {
-  content: '';
+.view-tab {
   flex: 1;
-  height: 1px;
-  background: var(--border);
+  min-height: 36px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 8px;
+  border-radius: calc(var(--radius-control) - 2px);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.view-tab:hover {
+  color: var(--fg);
+}
+
+.view-tab.active {
+  background: var(--card-bg);
+  color: var(--fg);
+  box-shadow: var(--shadow-sm);
+}
+
+.view-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 1px var(--accent);
+}
+
+.qr-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .qr-wrap {
   background: #fff;
-  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sub);
   padding: 12px;
   display: inline-block;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow-sm);
 }
 
 .qr-wrap img {
@@ -217,9 +336,9 @@ button:disabled {
 }
 
 .qr-hint {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
-  margin: 0 0 4px;
+  margin: 0;
 }
 
 .result-icon {
@@ -235,21 +354,35 @@ button:disabled {
   gap: 8px;
   font-size: 13px;
   color: var(--muted);
-  margin-top: 14px;
+  margin-top: 16px;
 }
 
 .dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
-  background: #d9a441;
+  border-radius: var(--radius-pill);
+  background: var(--warn);
   flex: none;
 }
 
 .account-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sub);
   padding: 12px;
-  font-size: 14px;
+  text-align: left;
   margin-bottom: 12px;
+}
+
+.account-chip .account-chip-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.account-chip .account-chip-value {
+  font-size: 14px;
+  font-weight: 600;
 }

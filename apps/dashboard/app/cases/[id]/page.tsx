@@ -15,7 +15,10 @@ export default function CaseDetailPage() {
   if (state.kind === 'checking') {
     return (
       <div className="login-wrap">
-        <p className="lead">Checking for a saved session…</p>
+        <div className="loading-row">
+          <span className="spinner" aria-hidden="true" />
+          Checking for a saved session…
+        </div>
       </div>
     );
   }
@@ -71,71 +74,90 @@ function CaseDetail({ credential, caseId }: { credential: string; caseId: string
       </Link>
 
       {error && <p className="error-text">{error}</p>}
-      {!error && !kase && <p className="lead">Loading…</p>}
+      {!error && !kase && (
+        <div className="loading-row">
+          <span className="spinner" aria-hidden="true" />
+          Loading…
+        </div>
+      )}
 
       {kase && (
         <>
-          <h1>{subjectName(kase.subject)}</h1>
+          <div className="page-header">
+            <h1>{subjectName(kase.subject)}</h1>
+          </div>
 
-          <h2>Badges</h2>
-          {badgesError && <p className="error-text">{badgesError}</p>}
-          {!badgesError && !badges && <p className="lead">Loading badges…</p>}
-          {badges && <BadgesPanel badges={badges.badges} />}
+          <section className="panel-card">
+            <h2>Badges</h2>
+            {badgesError && <p className="error-text">{badgesError}</p>}
+            {!badgesError && !badges && (
+              <div className="loading-row">
+                <span className="spinner" aria-hidden="true" />
+                Loading badges…
+              </div>
+            )}
+            {badges && <BadgesPanel badges={badges.badges} />}
+          </section>
 
-          <dl className="detail-grid">
-            <dt>This case verifies</dt>
-            <dd>
-              {kase.claimType} <span className={`badge ${kase.level}`}>{kase.level}</span>
-            </dd>
-            <dt>Status</dt>
-            <dd>
-              <span className={`badge ${kase.status}`}>{kase.status}</span>
-            </dd>
-            <dt>Subject type</dt>
-            <dd>{kase.subject.type}</dd>
-            <dt>Phone</dt>
-            <dd>{kase.subject.phone ?? '—'}</dd>
-            <dt>Email</dt>
-            <dd>{kase.subject.email ?? '—'}</dd>
-            <dt>Decision</dt>
-            <dd>{kase.decision ?? '—'}</dd>
-            <dt>Reviewer</dt>
-            <dd>{kase.reviewerId ?? '—'}</dd>
-            <dt>Created</dt>
-            <dd>{new Date(kase.createdAt).toLocaleString()}</dd>
-            <dt>Resolved</dt>
-            <dd>{kase.resolvedAt ? new Date(kase.resolvedAt).toLocaleString() : '—'}</dd>
-            <dt>Case ID</dt>
-            <dd>
-              <code>{kase.id}</code>
-            </dd>
-          </dl>
+          <section className="panel-card">
+            <h2>Case details</h2>
+            <dl className="detail-grid">
+              <dt>This case verifies</dt>
+              <dd>
+                {kase.claimType} <span className={`badge ${kase.level}`}>{kase.level}</span>
+              </dd>
+              <dt>Status</dt>
+              <dd>
+                <span className={`badge ${kase.status}`}>{kase.status}</span>
+              </dd>
+              <dt>Subject type</dt>
+              <dd>{kase.subject.type}</dd>
+              <dt>Phone</dt>
+              <dd>{kase.subject.phone ?? '—'}</dd>
+              <dt>Email</dt>
+              <dd>{kase.subject.email ?? '—'}</dd>
+              <dt>Decision</dt>
+              <dd>{kase.decision ?? '—'}</dd>
+              <dt>Reviewer</dt>
+              <dd>{kase.reviewerId ?? '—'}</dd>
+              <dt>Created</dt>
+              <dd className="caption">{new Date(kase.createdAt).toLocaleString()}</dd>
+              <dt>Resolved</dt>
+              <dd className="caption">{kase.resolvedAt ? new Date(kase.resolvedAt).toLocaleString() : '—'}</dd>
+              <dt>Case ID</dt>
+              <dd>
+                <code className="caption">{kase.id}</code>
+              </dd>
+            </dl>
+          </section>
 
-          <h2>Verification attempts</h2>
-          {kase.attempts.length === 0 ? (
-            <p className="empty-state">No attempts yet.</p>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Method</th>
-                  <th>Status</th>
-                  <th>Started</th>
-                  <th>Completed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {kase.attempts.map((a) => (
-                  <tr key={a.id}>
-                    <td>{a.method}</td>
-                    <td>{a.status}</td>
-                    <td>{new Date(a.startedAt).toLocaleString()}</td>
-                    <td>{a.completedAt ? new Date(a.completedAt).toLocaleString() : '—'}</td>
+          <section className="panel-card">
+            <h2>Verification attempts</h2>
+            {kase.attempts.length === 0 ? (
+              <p className="empty-state attempts-empty">No attempts yet.</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Status</th>
+                    <th>Started</th>
+                    <th>Completed</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                </thead>
+                <tbody>
+                  {kase.attempts.map((a) => (
+                    <tr key={a.id}>
+                      <td>{a.method}</td>
+                      <td>{a.status}</td>
+                      <td className="caption">{new Date(a.startedAt).toLocaleString()}</td>
+                      <td className="caption">{a.completedAt ? new Date(a.completedAt).toLocaleString() : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
 
           {kase.status === 'NEEDS_REVIEW' && <ResolvePanel credential={credential} caseId={kase.id} onResolved={load} />}
         </>
@@ -169,7 +191,7 @@ function ResolvePanel({ credential, caseId, onResolved }: { credential: string; 
   }
 
   return (
-    <>
+    <section className="panel-card resolve-card">
       <h2>Resolve</h2>
       <div className="resolve-panel">
         <textarea
@@ -182,7 +204,7 @@ function ResolvePanel({ credential, caseId, onResolved }: { credential: string; 
         <div className="resolve-actions">
           <button
             type="button"
-            className="primary-block approve"
+            className="btn btn-success"
             disabled={submitting || reason.trim().length < 3}
             onClick={() => submit('APPROVED')}
           >
@@ -190,7 +212,7 @@ function ResolvePanel({ credential, caseId, onResolved }: { credential: string; 
           </button>
           <button
             type="button"
-            className="primary-block reject"
+            className="btn btn-danger"
             disabled={submitting || reason.trim().length < 3}
             onClick={() => submit('REJECTED')}
           >
@@ -199,7 +221,7 @@ function ResolvePanel({ credential, caseId, onResolved }: { credential: string; 
         </div>
         {error && <p className="error-text">{error}</p>}
       </div>
-    </>
+    </section>
   );
 }
 

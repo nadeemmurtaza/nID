@@ -45,6 +45,11 @@ export default function AuthorizePage() {
   const [account, setAccount] = useState<{ token: string; phone: string } | null>(null);
   const [approving, setApproving] = useState(false);
   const [isOriginatingTab, setIsOriginatingTab] = useState(false);
+  // Which sign-in method is on screen in the `pending` phase. Purely a local
+  // view concern — the approval-polling effect below is keyed on pollToken,
+  // not on this, so switching between the two views never affects whether a
+  // QR scan on another device (or a cached-account continue) gets noticed.
+  const [view, setView] = useState<'qr' | 'phone'>('qr');
   const claimedRef = useRef(false);
 
   useEffect(() => {
@@ -188,7 +193,7 @@ export default function AuthorizePage() {
             <h1>Sign in to {clientName || 'this app'}</h1>
             <p className="lead">With your nID account.</p>
 
-            {account ? (
+            {account && view === 'qr' && (
               <ExistingAccount
                 phone={account.phone}
                 submitting={approving}
@@ -196,27 +201,55 @@ export default function AuthorizePage() {
                 onSwitch={() => {
                   clearStoredAccountSession();
                   setAccount(null);
+                  setView('phone');
                 }}
-              />
-            ) : (
-              <PhoneLoginForm
-                onApproved={(token, phone) => {
-                  setStoredAccountSession(token);
-                  setAccount({ token, phone });
-                }}
-                approveWithToken={approveWithToken}
               />
             )}
 
-            <div className="divider">or scan to continue on your phone</div>
-            <div className="qr-wrap">
-              {qrDataUrl ? (
-                <img src={qrDataUrl} alt="QR code for this sign-in link" />
-              ) : (
-                <div style={{ width: 160, height: 160 }} />
-              )}
+            <div className="view-tabs" role="tablist" aria-label="Sign-in method">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === 'qr'}
+                className={`view-tab${view === 'qr' ? ' active' : ''}`}
+                onClick={() => setView('qr')}
+              >
+                Scan a QR code
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === 'phone'}
+                className={`view-tab${view === 'phone' ? ' active' : ''}`}
+                onClick={() => setView('phone')}
+              >
+                Use your phone number instead
+              </button>
             </div>
-            <p className="qr-hint">Scanning opens this same sign-in page on your phone.</p>
+
+            {view === 'qr' ? (
+              <div className="qr-panel" role="tabpanel">
+                <div className="qr-wrap">
+                  {qrDataUrl ? (
+                    <img src={qrDataUrl} alt="QR code for this sign-in link" />
+                  ) : (
+                    <div style={{ width: 160, height: 160 }} />
+                  )}
+                </div>
+                <p className="qr-hint">Scan with your phone&apos;s camera to continue there.</p>
+              </div>
+            ) : (
+              <div role="tabpanel">
+                <PhoneLoginForm
+                  onApproved={(token, phone) => {
+                    setStoredAccountSession(token);
+                    setAccount({ token, phone });
+                    setView('qr');
+                  }}
+                  approveWithToken={approveWithToken}
+                />
+              </div>
+            )}
           </>
         )}
       </div>
@@ -237,11 +270,14 @@ function ExistingAccount({
 }) {
   return (
     <>
-      <div className="account-chip">Signed in as {phone}</div>
-      <button type="button" onClick={onContinue} disabled={submitting}>
+      <div className="account-chip">
+        <span className="account-chip-label">Signed in as</span>
+        <span className="account-chip-value">{phone}</span>
+      </div>
+      <button type="button" className="btn btn-primary" onClick={onContinue} disabled={submitting}>
         {submitting ? 'Continuing…' : `Continue as ${phone}`}
       </button>
-      <button type="button" className="secondary" onClick={onSwitch} disabled={submitting}>
+      <button type="button" className="btn btn-ghost" onClick={onSwitch} disabled={submitting}>
         Use a different number
       </button>
     </>
@@ -305,7 +341,7 @@ function PhoneLoginForm({
           disabled={submitting}
           autoFocus
         />
-        <button type="submit" disabled={submitting || phone.trim().length === 0}>
+        <button type="submit" className="btn btn-primary" disabled={submitting || phone.trim().length === 0}>
           {submitting ? 'Sending…' : 'Continue with phone'}
         </button>
         {error && <p className="error-text">{error}</p>}
@@ -315,14 +351,16 @@ function PhoneLoginForm({
 
   return (
     <form onSubmit={verifyCode}>
-      <p className="qr-hint">Enter the code sent to {phone.trim()}.</p>
+      <p className="qr-hint" style={{ marginBottom: 12 }}>
+        Enter the code sent to {phone.trim()}.
+      </p>
       <OtpInput value={code} onChange={setCode} disabled={submitting} autoFocus />
-      <button type="submit" disabled={submitting || code.length === 0}>
+      <button type="submit" className="btn btn-primary" disabled={submitting || code.length === 0}>
         {submitting ? 'Verifying…' : 'Verify code'}
       </button>
       <button
         type="button"
-        className="secondary"
+        className="btn btn-ghost"
         onClick={() => {
           setStep('phone');
           setCode('');

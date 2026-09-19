@@ -21,7 +21,10 @@ export default function DashboardHome() {
   if (state.kind === 'checking') {
     return (
       <div className="login-wrap">
-        <p className="lead">Checking for a saved session…</p>
+        <div className="loading-row">
+          <span className="spinner" aria-hidden="true" />
+          Checking for a saved session…
+        </div>
       </div>
     );
   }
@@ -34,6 +37,9 @@ export default function DashboardHome() {
     <>
       <Header tenant={state.tenant} onLogout={logout} />
       <main className="shell">
+        <div className="page-header">
+          <h1>Verification cases</h1>
+        </div>
         <CaseList credential={state.credential} />
       </main>
     </>
@@ -117,7 +123,11 @@ function LoginScreen({
               autoFocus
             />
             {stepError && <p className="error-text">{stepError}</p>}
-            <button className="primary-block" type="submit" disabled={submitting || phone.trim().length === 0}>
+            <button
+              className="btn btn-primary btn-block"
+              type="submit"
+              disabled={submitting || phone.trim().length === 0}
+            >
               {submitting ? 'Sending…' : 'Send code'}
             </button>
           </form>
@@ -127,7 +137,7 @@ function LoginScreen({
             {stepError && <p className="error-text">{stepError}</p>}
             {error && <p className="error-text">{error}</p>}
             <button
-              className="primary-block"
+              className="btn btn-primary btn-block"
               type="submit"
               disabled={submitting || loading || code.length < 6}
             >
@@ -135,7 +145,7 @@ function LoginScreen({
             </button>
             <button
               type="button"
-              className="secondary"
+              className="btn btn-ghost btn-block"
               onClick={() => {
                 setStep('phone');
                 setCode('');
@@ -163,7 +173,14 @@ function CaseList({ credential }: { credential: string }) {
   }, [credential]);
 
   if (error) return <p className="error-text">{error}</p>;
-  if (!cases) return <p className="lead">Loading cases…</p>;
+  if (!cases) {
+    return (
+      <div className="loading-row">
+        <span className="spinner" aria-hidden="true" />
+        Loading cases…
+      </div>
+    );
+  }
   if (cases.length === 0) {
     return (
       <div className="empty-state">
@@ -173,29 +190,31 @@ function CaseList({ credential }: { credential: string }) {
   }
 
   return (
-    <table>
-      <thead>
-        <tr>
-          <th>Subject</th>
-          <th>Claim</th>
-          <th>Status</th>
-          <th>Created</th>
-        </tr>
-      </thead>
-      <tbody>
-        {cases.map((c) => (
-          <tr key={c.id}>
-            <td>
-              <Link href={`/cases/${c.id}`}>{subjectName(c.subject)}</Link>
-            </td>
-            <td>{c.claimType}</td>
-            <td>
-              <span className={`badge ${c.status}`}>{c.status}</span>
-            </td>
-            <td>{new Date(c.createdAt).toLocaleString()}</td>
+    <div className="panel-card">
+      <table>
+        <thead>
+          <tr>
+            <th>Subject</th>
+            <th>Claim</th>
+            <th>Status</th>
+            <th>Created</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {cases.map((c) => (
+            <tr key={c.id}>
+              <td>
+                <Link href={`/cases/${c.id}`}>{subjectName(c.subject)}</Link>
+              </td>
+              <td>{c.claimType}</td>
+              <td>
+                <span className={`badge ${c.status}`}>{c.status}</span>
+              </td>
+              <td className="caption">{new Date(c.createdAt).toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

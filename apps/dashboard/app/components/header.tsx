@@ -21,7 +21,7 @@ export function Header({ tenant, onLogout }: { tenant: Tenant; onLogout: () => v
           </div>
         </div>
       </div>
-      <button className="logout-btn" onClick={onLogout} type="button">
+      <button className="btn btn-secondary btn-sm" onClick={onLogout} type="button">
         Sign out
       </button>
     </header>
