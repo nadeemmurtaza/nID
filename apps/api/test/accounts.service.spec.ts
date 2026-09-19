@@ -175,4 +175,61 @@ describeIfDb('AccountsService (live Postgres)', () => {
 
     await expect(accounts.resolveSession(sessionToken)).rejects.toThrow(UnauthorizedException);
   });
+
+  it('locks a code out after 5 wrong guesses, closing the unthrottled brute-force path', async () => {
+    const phone = uniquePhone('b1');
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '424242');
+
+    for (let i = 0; i < 5; i++) {
+      await expect(accounts.verifyOtp(phone, '000000')).rejects.toThrow(UnauthorizedException);
+    }
+    // The 6th call is the real code, but the code is already locked — even the correct code is now rejected.
+    await expect(accounts.verifyOtp(phone, '424242')).rejects.toThrow(/Too many incorrect attempts/);
+
+    const locked = await migratorPrisma.accountOtpCode.findFirst({ where: { phone } });
+    expect(locked?.consumedAt).not.toBeNull();
+  });
+
+  it('enforces a resend cooldown while a code is outstanding, but not after a successful login', async () => {
+    const phone = uniquePhone('b2');
+    await accounts.startOtp(phone);
+    await expect(accounts.startOtp(phone)).rejects.toThrow(/wait before requesting/);
+
+    await overwriteOtpCode(phone, '424242');
+    await accounts.verifyOtp(phone, '424242');
+    await expect(accounts.startOtp(phone)).resolves.toBeUndefined();
+  });
+
+  it('logout revokes only the session presented', async () => {
+    const phone = uniquePhone('b3');
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '111111');
+    const first = await accounts.verifyOtp(phone, '111111');
+
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '222222');
+    const second = await accounts.verifyOtp(phone, '222222');
+
+    await accounts.revokeSession(sha256Hex(first.sessionToken));
+
+    await expect(accounts.resolveSession(first.sessionToken)).rejects.toThrow(UnauthorizedException);
+    await expect(accounts.resolveSession(second.sessionToken)).resolves.toMatchObject({ id: second.account.id });
+  });
+
+  it('logout-all revokes every session for the account — the only recovery path for a leaked/guessed token', async () => {
+    const phone = uniquePhone('b4');
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '333333');
+    const first = await accounts.verifyOtp(phone, '333333');
+
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '444444');
+    const second = await accounts.verifyOtp(phone, '444444');
+
+    await accounts.revokeAllSessions(first.account.id);
+
+    await expect(accounts.resolveSession(first.sessionToken)).rejects.toThrow(UnauthorizedException);
+    await expect(accounts.resolveSession(second.sessionToken)).rejects.toThrow(UnauthorizedException);
+  });
 });

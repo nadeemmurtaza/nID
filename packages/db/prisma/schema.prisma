@@ -563,6 +563,11 @@ model AccountOtpCode {
   id         String    @id @default(cuid())
   phone      String
   codeHash   String
+  /// Wrong-guess counter for THIS code only — verifyOtp() locks the code
+  /// (sets consumedAt) once this reaches its MAX_OTP_ATTEMPTS constant,
+  /// forcing a fresh startOtp() rather than letting one code be guessed
+  /// across its whole 10-minute TTL. See accounts.service.ts.
+  attempts   Int       @default(0)
   consumedAt DateTime?
   expiresAt  DateTime
   createdAt  DateTime  @default(now())

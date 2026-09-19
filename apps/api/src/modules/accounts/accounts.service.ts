@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { generateSessionToken, sha256Hex } from '@nid/shared-types';
 import type { Account } from '@nid/db';
 import { PrismaService } from '../../core/db/prisma.service';
@@ -8,6 +8,10 @@ import { loadEnv } from '../../core/config/env';
 const OTP_CODE_LENGTH = 6;
 const OTP_TTL_MINUTES = 10;
 const SESSION_TTL_DAYS = 30;
+/** Wrong guesses allowed against one code before it's locked and a fresh one is required. */
+const MAX_OTP_ATTEMPTS = 5;
+/** Minimum gap between two startOtp() calls for the same phone — bounds how many live codes (and therefore how many total guesses) an attacker can accumulate. */
+const OTP_RESEND_COOLDOWN_SECONDS = 30;
 
 /**
  * nID's own account system — a portable identity a person creates once
@@ -27,6 +31,19 @@ export class AccountsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async startOtp(phone: string): Promise<void> {
+    // Cooldown only while a code is still outstanding (unconsumed) — an
+    // active guessing attempt keeps consumedAt null, so this blocks an
+    // attacker from stacking up more live, guessable codes; a genuine
+    // successful login (which consumes its code) can always request the
+    // next one immediately.
+    const outstanding = await this.prisma.unscoped.accountOtpCode.findFirst({
+      where: { phone, consumedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (outstanding && Date.now() - outstanding.createdAt.getTime() < OTP_RESEND_COOLDOWN_SECONDS * 1000) {
+      throw new BadRequestException('Please wait before requesting another code.');
+    }
+
     const code = randomInt(0, 10 ** OTP_CODE_LENGTH).toString().padStart(OTP_CODE_LENGTH, '0');
     const codeHash = sha256Hex(code);
 
@@ -44,13 +61,32 @@ export class AccountsService {
   }
 
   async verifyOtp(phone: string, code: string): Promise<{ sessionToken: string; account: Account }> {
-    const codeHash = sha256Hex(code);
+    // Looked up by phone alone (not phone+codeHash) so a WRONG guess still
+    // finds the live challenge to count against it — otherwise a mismatch
+    // would silently no-op instead of consuming an attempt, and the code
+    // stays guessable, unthrottled, for its whole 10-minute TTL.
     const challenge = await this.prisma.unscoped.accountOtpCode.findFirst({
-      where: { phone, codeHash, consumedAt: null, expiresAt: { gt: new Date() } },
+      where: { phone, consumedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: 'desc' },
     });
 
     if (!challenge) {
+      throw new UnauthorizedException('That code is incorrect or has expired.');
+    }
+
+    if (challenge.attempts >= MAX_OTP_ATTEMPTS) {
+      await this.prisma.unscoped.accountOtpCode.update({
+        where: { id: challenge.id },
+        data: { consumedAt: new Date() },
+      });
+      throw new UnauthorizedException('Too many incorrect attempts. Request a new code.');
+    }
+
+    if (sha256Hex(code) !== challenge.codeHash) {
+      await this.prisma.unscoped.accountOtpCode.update({
+        where: { id: challenge.id },
+        data: { attempts: { increment: 1 } },
+      });
       throw new UnauthorizedException('That code is incorrect or has expired.');
     }
 
@@ -89,5 +125,20 @@ export class AccountsService {
       throw new UnauthorizedException('Invalid or expired session.');
     }
     return session.account;
+  }
+
+  /** Logs out the one session presented — e.g. a "log out this device" action. */
+  async revokeSession(tokenHash: string): Promise<void> {
+    await this.prisma.unscoped.accountSession.deleteMany({ where: { tokenHash } });
+  }
+
+  /**
+   * Logs out every session for this Account — the only remediation a user
+   * has if a session token may have leaked or been guessed (there was
+   * previously no way to invalidate a session short of its natural
+   * 30-day expiry).
+   */
+  async revokeAllSessions(accountId: string): Promise<void> {
+    await this.prisma.unscoped.accountSession.deleteMany({ where: { accountId } });
   }
 }
