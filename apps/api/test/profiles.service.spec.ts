@@ -12,13 +12,14 @@
  *
  *   RUN_DB_TESTS=true pnpm --filter @nid/api test
  */
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createPrismaClient, type PrismaClient } from '@nid/db';
 import { generateApiKey } from '@nid/shared-types';
 import { PrismaService } from '../src/core/db/prisma.service';
 import { AuditService } from '../src/core/audit/audit.service';
 import { CrossTenantBadgesService } from '../src/modules/badges/cross-tenant-badges.service';
 import { OrganizationsService } from '../src/modules/organizations/organizations.service';
+import { ProfileGrantFieldDto } from '../src/modules/profiles/dto/create-grant.dto';
 import { ProfilesService } from '../src/modules/profiles/profiles.service';
 
 const RUN_DB_TESTS = process.env['RUN_DB_TESTS'] === 'true';
@@ -336,6 +337,120 @@ describeIfDb('ProfilesService — username creation/rename gates (live Postgres,
 
       const publicProfile = await profiles.getPublicBySlug('northwind-traders-co');
       expect(publicProfile.realName).toBe('Northwind Traders Co');
+    });
+  });
+
+  describe('field grants — "show only one specific info to only one person or organization"', () => {
+    it('reveals a granted field only to the exact account it was granted to, never anonymous or a third party', async () => {
+      const { account: owner } = await makeVerifiedAccount('grantowner1', { givenName: 'Kim', familyName: 'Ali' });
+      const ownerProfile = await profiles.create(owner, {
+        slug: 'kim-ali',
+        displayName: 'Kim Ali',
+        isPublished: true,
+        phone: '+15559990000',
+      });
+      testProfileIds.push(ownerProfile.id);
+
+      const { account: grantee } = await makeVerifiedAccount('grantee1', { givenName: 'Leo', familyName: 'Diaz' });
+      const granteeProfile = await profiles.create(grantee, { slug: 'leo-diaz', displayName: 'Leo Diaz', isPublished: true });
+      testProfileIds.push(granteeProfile.id);
+
+      const { account: stranger } = await makeVerifiedAccount('stranger1', { givenName: 'Mia', familyName: 'Fox' });
+      const strangerProfile = await profiles.create(stranger, { slug: 'mia-fox', displayName: 'Mia Fox', isPublished: true });
+      testProfileIds.push(strangerProfile.id);
+
+      // Anonymous and a random third party never see the phone — public default stays off.
+      expect((await profiles.getPublicBySlug('kim-ali')).phone).toBeNull();
+      expect((await profiles.getPublicBySlug('kim-ali', stranger)).phone).toBeNull();
+
+      await profiles.createGrantForAccount(owner.id, { field: ProfileGrantFieldDto.PHONE, granteeSlug: 'leo-diaz' });
+
+      expect((await profiles.getPublicBySlug('kim-ali', grantee)).phone).toBe('+15559990000');
+      // The grant is scoped to PHONE only — it never widens any other private field.
+      expect((await profiles.getPublicBySlug('kim-ali', grantee)).publicEmail).toBeNull();
+    });
+
+    it('hides the field again once the grant is revoked', async () => {
+      const { account: owner } = await makeVerifiedAccount('grantowner2', { givenName: 'Nora', familyName: 'Singh' });
+      const ownerProfile = await profiles.create(owner, {
+        slug: 'nora-singh',
+        displayName: 'Nora Singh',
+        isPublished: true,
+        publicEmail: 'nora@example.com',
+      });
+      testProfileIds.push(ownerProfile.id);
+      const { account: grantee } = await makeVerifiedAccount('grantee2', { givenName: 'Omar', familyName: 'Reyes' });
+      const granteeProfile = await profiles.create(grantee, { slug: 'omar-reyes', displayName: 'Omar Reyes', isPublished: true });
+      testProfileIds.push(granteeProfile.id);
+
+      const grant = await profiles.createGrantForAccount(owner.id, { field: ProfileGrantFieldDto.EMAIL, granteeSlug: 'omar-reyes' });
+      expect((await profiles.getPublicBySlug('nora-singh', grantee)).publicEmail).toBe('nora@example.com');
+
+      await profiles.revokeGrantForAccount(owner.id, grant.id);
+
+      expect((await profiles.getPublicBySlug('nora-singh', grantee)).publicEmail).toBeNull();
+    });
+
+    it('rejects granting access to your own profile', async () => {
+      const { account: owner } = await makeVerifiedAccount('grantself', { givenName: 'Priya', familyName: 'Nair' });
+      const ownerProfile = await profiles.create(owner, { slug: 'priya-nair', displayName: 'Priya Nair' });
+      testProfileIds.push(ownerProfile.id);
+
+      await expect(
+        profiles.createGrantForAccount(owner.id, { field: ProfileGrantFieldDto.PHONE, granteeSlug: 'priya-nair' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects granting to a username that does not exist', async () => {
+      const { account: owner } = await makeVerifiedAccount('grantmissing', { givenName: 'Quinn', familyName: 'Ito' });
+      const ownerProfile = await profiles.create(owner, { slug: 'quinn-ito', displayName: 'Quinn Ito' });
+      testProfileIds.push(ownerProfile.id);
+
+      await expect(
+        profiles.createGrantForAccount(owner.id, { field: ProfileGrantFieldDto.PHONE, granteeSlug: 'nobody-with-this-handle' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('a grant to an organization is visible to any of its ACTIVE members, not only whoever it was granted through', async () => {
+      const { account: owner } = await makeVerifiedAccount('grantowner3', { givenName: 'Rita', familyName: 'Voss' });
+      const ownerProfile = await profiles.create(owner, {
+        slug: 'rita-voss',
+        displayName: 'Rita Voss',
+        isPublished: true,
+        addressLine1: '1 Market St',
+        city: 'Karachi',
+      });
+      testProfileIds.push(ownerProfile.id);
+
+      const { tenantId, apiKeyId } = await makeTenant('profiles-spec-grant-org');
+      const org = await organizations.create(tenantId, apiKeyId, { legalName: 'Voss Partners LLC' });
+      await migratorPrisma.verificationCase.create({
+        data: { tenantId, subjectId: org.subjectId, policyId: (await ensureAnyPolicy(tenantId)).id, status: 'APPROVED', claimType: 'IDENTITY', level: 'REGISTRY_VERIFIED', resolvedAt: new Date() },
+      });
+      const admin = await organizations.invite(tenantId, apiKeyId, org.id, { phone: uniquePhone('grantorgadmin'), isAdmin: true });
+      await organizations.respondToInvite(admin.accountId!, admin.id, 'ACCEPTED');
+      const orgProfile = await profiles.createForOrganization(admin.accountId!, org.id, {
+        slug: 'voss-partners-llc',
+        displayName: 'Voss Partners',
+        isPublished: true,
+      });
+      testProfileIds.push(orgProfile.id);
+
+      // A second, non-admin ACTIVE member of the same org — the grant must reach them too, not just the admin.
+      const memberPhone = uniquePhone('grantorgmember');
+      testPhones.push(memberPhone);
+      const memberAccount = await migratorPrisma.account.create({ data: { phone: memberPhone, phoneVerifiedAt: new Date() } });
+      await organizations.invite(tenantId, apiKeyId, org.id, { phone: memberPhone, isAdmin: false });
+      const memberInvites = await organizations.listMyInvites(memberAccount.id);
+      await organizations.respondToInvite(memberAccount.id, memberInvites[0]!.id, 'ACCEPTED');
+
+      const { account: outsider } = await makeVerifiedAccount('grantorgoutsider', { givenName: 'Sam', familyName: 'Quek' });
+      testProfileIds.push((await profiles.create(outsider, { slug: 'sam-quek', displayName: 'Sam Quek', isPublished: true })).id);
+
+      await profiles.createGrantForAccount(owner.id, { field: ProfileGrantFieldDto.ADDRESS, granteeSlug: 'voss-partners-llc' });
+
+      expect((await profiles.getPublicBySlug('rita-voss', memberAccount)).addressLine1).toBe('1 Market St');
+      expect((await profiles.getPublicBySlug('rita-voss', outsider)).addressLine1).toBeNull();
     });
   });
 

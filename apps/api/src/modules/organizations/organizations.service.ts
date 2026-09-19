@@ -131,6 +131,22 @@ export class OrganizationsService {
     return membership;
   }
 
+  /**
+   * Which Organizations this Account is an ACTIVE member of — used by
+   * ProfilesService to resolve organization-targeted ProfileFieldGrants
+   * for a viewer (any ACTIVE member sees what was shared with their org,
+   * not just admins; admin-only is requireActiveAdmin()'s own, stricter
+   * bar for acting *for* the Organization). Same unscoped, accountId-first
+   * query shape requireActiveAdmin() already uses.
+   */
+  async listActiveOrganizationIds(accountId: string): Promise<string[]> {
+    const memberships = await this.prisma.unscoped.organizationMembership.findMany({
+      where: { accountId, status: 'ACTIVE' },
+      select: { organizationId: true },
+    });
+    return memberships.map((m) => m.organizationId);
+  }
+
   async getById(tenantId: string, apiKeyId: string, organizationId: string) {
     return this.prisma.forTenant(tenantId, async (tx) => {
       const organization = await tx.organization.findUnique({ where: { id: organizationId } });

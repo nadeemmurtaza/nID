@@ -14,8 +14,19 @@ import { LinksManager } from './components/LinksManager';
 import { ImagesManager } from './components/ImagesManager';
 import { AppointmentsPanel } from './components/AppointmentsPanel';
 import { MessagesPanel } from './components/MessagesPanel';
+import { GrantsManager } from './components/GrantsManager';
 
-type Tab = 'profile' | 'services' | 'availability' | 'hours' | 'offers' | 'links' | 'images' | 'appointments' | 'messages';
+type Tab =
+  | 'profile'
+  | 'services'
+  | 'availability'
+  | 'hours'
+  | 'offers'
+  | 'links'
+  | 'images'
+  | 'appointments'
+  | 'messages'
+  | 'privacy';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'profile', label: 'Profile' },
@@ -27,6 +38,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'images', label: 'Photos' },
   { id: 'appointments', label: 'Appointments' },
   { id: 'messages', label: 'Messages' },
+  { id: 'privacy', label: 'Private shares' },
 ];
 
 export default function DashboardPage() {
@@ -104,6 +116,7 @@ export default function DashboardPage() {
         {tab === 'images' && <ImagesManager token={token} slug={profile.slug} />}
         {tab === 'appointments' && <AppointmentsPanel token={token} />}
         {tab === 'messages' && <MessagesPanel token={token} />}
+        {tab === 'privacy' && <GrantsManager token={token} />}
       </div>
     </main>
   );

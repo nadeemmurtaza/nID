@@ -271,6 +271,8 @@ model Organization {
   /// The one brand Profile this Organization owns, if any — see
   /// Profile.organizationId's own comment.
   profile          Profile?
+  /// Field grants OTHER profiles have made to this Organization.
+  fieldGrantsReceived ProfileFieldGrant[]
 
   @@index([tenantId])
 }
@@ -522,6 +524,9 @@ model Account {
   staffMemberships TenantStaffMembership[]
   subjects        Subject[]
   organizationMemberships OrganizationMembership[]
+  /// Field grants OTHER profiles have made to this Account — never this
+  /// Account's own Profile.fieldGrants (what it has granted out).
+  fieldGrantsReceived ProfileFieldGrant[]
 }
 
 /// The bridge between the two trust domains this file's own header comment
@@ -821,9 +826,49 @@ model Profile {
   availabilityRules AvailabilityRule[]
   appointments      Appointment[]
   contactMessages   ContactMessage[]
+  fieldGrants       ProfileFieldGrant[]
 
   @@index([accountId])
   @@index([organizationId])
+}
+
+/// The fields a ProfileFieldGrant can target — deliberately the same set
+/// that already has a public show* flag (plus REAL_NAME), since a grant is
+/// a private, single-recipient EXCEPTION to that same default-off gate,
+/// never a new category of data.
+enum ProfileGrantField {
+  PHONE
+  WHATSAPP
+  EMAIL
+  ADDRESS
+  REAL_NAME
+}
+
+/// "User can show only one specific info to only one person or
+/// organization by his own will" — a private, targeted exception to the
+/// owner's public show* defaults, which stay exactly as they are for
+/// everyone else. Exactly one of granteeAccountId/granteeOrganizationId is
+/// ever set, DB-enforced the same way Profile's own owner column is (this
+/// table's migration). Revoked, never deleted: revokedAt null is what
+/// "active" means, derived live the same way this codebase treats every
+/// other status field, and keeps a real record of who was ever granted
+/// what instead of losing that the moment access is pulled.
+model ProfileFieldGrant {
+  id                    String            @id @default(cuid())
+  profileId             String
+  field                 ProfileGrantField
+  granteeAccountId      String?
+  granteeOrganizationId String?
+  createdAt             DateTime          @default(now())
+  revokedAt             DateTime?
+
+  profile             Profile       @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  granteeAccount      Account?      @relation(fields: [granteeAccountId], references: [id], onDelete: Cascade)
+  granteeOrganization Organization? @relation(fields: [granteeOrganizationId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@index([granteeAccountId])
+  @@index([granteeOrganizationId])
 }
 
 model Service {

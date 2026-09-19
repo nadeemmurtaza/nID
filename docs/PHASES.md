@@ -1406,6 +1406,74 @@ existing; it's exposed once `showRealName: true` is set at creation
 (personal); and the organization equivalent exposes `legalName` for an
 opted-in brand profile.
 
+### Profile privacy: grant one field to one specific person or organization, by name
+
+"User can show only one specific info to only one person or organization
+by his own will." The show*/showRealName flags from the previous slice
+are binary and public-wide — on for everyone or off for everyone. This is
+the orthogonal, private case: a narrow, revocable exception carved out
+for exactly one recipient, without touching the public defaults at all.
+
+- **`ProfileFieldGrant`** (new model) — `{profileId, field, granteeAccountId
+  XOR granteeOrganizationId, revokedAt}`. Same "exactly one owner" DB
+  `CHECK` constraint Profile's own migration already established, and the
+  same "revoked, never deleted" convention as `OrganizationMembership`'s
+  `DECLINED` — `revokedAt IS NULL` is what "active" means, derived live,
+  and the row itself stays as a real record of who was ever granted what.
+  `field` is a `ProfileGrantField` enum — deliberately the same set that
+  already has a public `show*` flag (`PHONE`/`WHATSAPP`/`EMAIL`/`ADDRESS`/
+  `REAL_NAME`), since a grant is a private exception to that same gate,
+  never a new category of data invented on the side.
+- **The recipient is named by their own nID username**, not an internal
+  id or a phone number — `ProfilesService.createGrant()` resolves
+  `granteeSlug` to a Profile and grants to whichever of
+  `accountId`/`organizationId` that Profile has. Every grantable person or
+  org already has exactly one permanent handle (the username system this
+  whole feature started with) — reusing it here rather than inventing a
+  second identifier is the whole point of building the two together.
+- **`OptionalAccountSessionGuard`** (new, alongside `AccountSessionGuard`)
+  — the public `GET /v1/profiles/:slug` route must stay reachable
+  anonymously, but now also needs to know who's asking. Same Bearer-token
+  resolution, except a missing header or an invalid/expired token is
+  never an error here, just "anonymous viewer" — the same outcome as no
+  header at all. `getPublicBySlug()` takes the resolved viewer `Account`
+  (if any), and `toPublicProjection()` resolves every `Organization` that
+  Account currently has ACTIVE membership in
+  (`OrganizationsService.listActiveOrganizationIds()`, the same
+  `accountId`-scoped shape `requireActiveAdmin()` already uses) so an
+  org-targeted grant reaches any of its current members, not just
+  whichever admin the slug was originally typed at.
+- **Strictly additive, never narrowing**: `toPublicProjection()` computes
+  `showPhone || grants.has('PHONE')`, and likewise per field — a grant can
+  only widen what's already public, never hide something the owner chose
+  to show everyone. An anonymous request never even queries
+  `ProfileFieldGrant` at all.
+- **Owner-side management**: `POST`/`GET`/`DELETE /v1/profiles/me/grants`
+  (personal) and the `:id/profile/grants` equivalents on
+  `OrganizationProfilesController` (admin-gated, same
+  `requireActiveAdmin()` every other org-profile route already enforces).
+  `apps/profile-ui` gets a new "Private shares" tab
+  (`GrantsManager.tsx`) — pick a field, type the recipient's username,
+  share; revoke from the same list.
+
+**Verified live**: full workspace `typecheck`/`lint`/`test`/`build`
+clean, including a `prisma migrate deploy` for the new table. Five new
+live-Postgres tests in `profiles.service.spec.ts`: a granted field
+reaches exactly the named account and nobody else (not anonymous, not a
+random third party) and never widens any other field; revoking hides it
+again; granting to your own profile is rejected; granting to a
+nonexistent username is rejected; and an organization-targeted grant
+reaches a second, non-admin ACTIVE member of that org, not only whichever
+admin it was granted through. Beyond the test suite: a full real-HTTP
+pass against a live `apps/api` — two real accounts through the actual OTP
+endpoints, real profiles created over HTTP, an anonymous `GET` and an
+authenticated-but-ungranted `GET` both correctly hiding the phone number,
+then `POST .../me/grants` and a `GET` authenticated as the grantee
+correctly revealing it, then `DELETE .../me/grants/:id` and a final `GET`
+confirming it's hidden again — proving the `OptionalAccountSessionGuard`
+wiring and the grant lifecycle work over the real HTTP stack, not just
+through direct service calls.
+
 - **Phase 2** — sanctions/PEP screening, one
   country's national-ID registry adapter, manual-review tooling, retention/audit
   maturity.

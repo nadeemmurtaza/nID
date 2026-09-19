@@ -11,3 +11,11 @@ export const CurrentAccount = createParamDecorator((_data: unknown, ctx: Executi
   }
   return request.account;
 });
+
+/** The OptionalAccountSessionGuard counterpart — undefined for an anonymous viewer, never a thrown error. */
+export const CurrentAccountOptional = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): Account | undefined => {
+    const request = ctx.switchToHttp().getRequest<Request & { account?: Account }>();
+    return request.account;
+  },
+);

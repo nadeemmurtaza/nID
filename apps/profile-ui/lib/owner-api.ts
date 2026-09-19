@@ -108,6 +108,33 @@ export function uploadPhoto(token: string, file: File): Promise<OwnerProfile> {
   return authedUpload('/v1/profiles/me/photo', token, file);
 }
 
+// ---- field grants ----
+// "Show only one specific info to only one person or organization by his
+// own will" — a private, single-recipient exception to the show* toggles
+// above, granted by the recipient's own nID username.
+
+export type GrantField = 'PHONE' | 'WHATSAPP' | 'EMAIL' | 'ADDRESS' | 'REAL_NAME';
+
+export interface OwnerFieldGrant {
+  id: string;
+  field: GrantField;
+  granteeAccountId: string | null;
+  granteeOrganizationId: string | null;
+  createdAt: string;
+}
+
+export function listMyGrants(token: string): Promise<OwnerFieldGrant[]> {
+  return authedFetch('/v1/profiles/me/grants', token);
+}
+
+export function createGrant(token: string, field: GrantField, granteeSlug: string): Promise<OwnerFieldGrant> {
+  return authedFetch('/v1/profiles/me/grants', token, { method: 'POST', body: JSON.stringify({ field, granteeSlug }) });
+}
+
+export function revokeGrant(token: string, id: string): Promise<void> {
+  return authedFetch(`/v1/profiles/me/grants/${id}`, token, { method: 'DELETE' });
+}
+
 // ---- services ----
 
 export interface OwnerService {

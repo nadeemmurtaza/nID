@@ -1,13 +1,26 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@nid/db';
-import type { Account, Organization, Profile } from '@nid/db';
+import type { Account, Organization, Profile, ProfileFieldGrant, ProfileGrantField } from '@nid/db';
 import { PrismaService } from '../../core/db/prisma.service';
 import { CrossTenantBadgesService } from '../badges/cross-tenant-badges.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import type { Badge } from '../badges/badge-ranking';
+import type { CreateGrantDto } from './dto/create-grant.dto';
 import type { CreateProfileDto } from './dto/create-profile.dto';
 import type { UpdateProfileDto } from './dto/update-profile.dto';
 import { isUsernameLocked, slugifyRealName, slugMatchesRealName } from './username';
+
+/**
+ * The caller reading a public profile, when known — an anonymous request
+ * has neither. accountId is the viewer's own Account; organizationIds are
+ * every Organization that Account is an ACTIVE member of, since a grant
+ * made "to an organization" is visible to whoever currently acts for it,
+ * not just whichever admin the owner originally typed the slug for.
+ */
+interface ProfileViewer {
+  accountId: string;
+  organizationIds: string[];
+}
 
 /**
  * The fields a slug's public GET is allowed to reveal unconditionally —
@@ -283,7 +296,7 @@ export class ProfilesService {
    * yet is not a 404 vs 200 distinction the caller should be able to probe,
    * so both "no such slug" and "exists but unpublished" return 404).
    */
-  async getPublicBySlug(slug: string): Promise<PublicProfile> {
+  async getPublicBySlug(slug: string, viewerAccount?: Account): Promise<PublicProfile> {
     const profile = await this.prisma.unscoped.profile.findUnique({
       where: { slug },
       include: { account: true, organization: true },
@@ -292,7 +305,126 @@ export class ProfilesService {
       throw new NotFoundException('No published profile at this URL.');
     }
 
-    return this.toPublicProjection(profile, profile.account, profile.organization);
+    const viewer: ProfileViewer | undefined = viewerAccount
+      ? { accountId: viewerAccount.id, organizationIds: await this.organizations.listActiveOrganizationIds(viewerAccount.id) }
+      : undefined;
+    return this.toPublicProjection(profile, profile.account, profile.organization, viewer);
+  }
+
+  /**
+   * "User can show only one specific info to only one person or
+   * organization by his own will" — the recipient is looked up by their
+   * OWN nID username (the one-per-person/org handle the username system
+   * already guarantees), never an internal id, so the owner grants by the
+   * same handle anyone else would use to find that person or org.
+   * Reactivates a previously-revoked grant instead of piling up
+   * duplicates for the same (profile, field, grantee) triple.
+   */
+  private async createGrant(profileId: string, dto: CreateGrantDto): Promise<ProfileFieldGrant> {
+    const granteeProfile = await this.prisma.unscoped.profile.findUnique({ where: { slug: dto.granteeSlug } });
+    if (!granteeProfile) {
+      throw new NotFoundException(`No profile found for username "${dto.granteeSlug}".`);
+    }
+    if (granteeProfile.id === profileId) {
+      throw new BadRequestException('Cannot grant access to your own profile.');
+    }
+
+    const existing = await this.prisma.unscoped.profileFieldGrant.findFirst({
+      where: {
+        profileId,
+        field: dto.field,
+        granteeAccountId: granteeProfile.accountId,
+        granteeOrganizationId: granteeProfile.organizationId,
+      },
+    });
+    if (existing) {
+      return existing.revokedAt === null
+        ? existing
+        : this.prisma.unscoped.profileFieldGrant.update({ where: { id: existing.id }, data: { revokedAt: null } });
+    }
+
+    return this.prisma.unscoped.profileFieldGrant.create({
+      data: {
+        profileId,
+        field: dto.field,
+        granteeAccountId: granteeProfile.accountId,
+        granteeOrganizationId: granteeProfile.organizationId,
+      },
+    });
+  }
+
+  private async listGrants(profileId: string): Promise<ProfileFieldGrant[]> {
+    return this.prisma.unscoped.profileFieldGrant.findMany({
+      where: { profileId, revokedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /** Revoked, never deleted — see ProfileFieldGrant's own schema comment. */
+  private async revokeGrant(profileId: string, grantId: string): Promise<void> {
+    const grant = await this.prisma.unscoped.profileFieldGrant.findUnique({ where: { id: grantId } });
+    if (!grant || grant.profileId !== profileId) {
+      throw new NotFoundException('No such grant.');
+    }
+    if (grant.revokedAt === null) {
+      await this.prisma.unscoped.profileFieldGrant.update({ where: { id: grantId }, data: { revokedAt: new Date() } });
+    }
+  }
+
+  async createGrantForAccount(accountId: string, dto: CreateGrantDto): Promise<ProfileFieldGrant> {
+    const profile = await this.getMine(accountId);
+    return this.createGrant(profile.id, dto);
+  }
+
+  async listGrantsForAccount(accountId: string): Promise<ProfileFieldGrant[]> {
+    const profile = await this.getMine(accountId);
+    return this.listGrants(profile.id);
+  }
+
+  async revokeGrantForAccount(accountId: string, grantId: string): Promise<void> {
+    const profile = await this.getMine(accountId);
+    return this.revokeGrant(profile.id, grantId);
+  }
+
+  async createGrantForOrganization(accountId: string, organizationId: string, dto: CreateGrantDto): Promise<ProfileFieldGrant> {
+    await this.organizations.requireActiveAdmin(organizationId, accountId);
+    const profile = await this.getForOrganization(accountId, organizationId);
+    return this.createGrant(profile.id, dto);
+  }
+
+  async listGrantsForOrganization(accountId: string, organizationId: string): Promise<ProfileFieldGrant[]> {
+    await this.organizations.requireActiveAdmin(organizationId, accountId);
+    const profile = await this.getForOrganization(accountId, organizationId);
+    return this.listGrants(profile.id);
+  }
+
+  async revokeGrantForOrganization(accountId: string, organizationId: string, grantId: string): Promise<void> {
+    await this.organizations.requireActiveAdmin(organizationId, accountId);
+    const profile = await this.getForOrganization(accountId, organizationId);
+    return this.revokeGrant(profile.id, grantId);
+  }
+
+  /**
+   * Every field this profile has actively (non-revoked) granted to this
+   * exact viewer — an Account grant matches the viewer's own accountId; an
+   * Organization grant matches any Organization the viewer currently has
+   * ACTIVE membership in. Empty (never queried at all) for an anonymous
+   * viewer — a grant can only ever WIDEN what showRealName/show* already
+   * expose, never narrow it, so toPublicProjection ORs this in per field.
+   */
+  private async getActiveGrantedFields(profileId: string, viewer: ProfileViewer): Promise<Set<ProfileGrantField>> {
+    const grants = await this.prisma.unscoped.profileFieldGrant.findMany({
+      where: {
+        profileId,
+        revokedAt: null,
+        OR: [
+          { granteeAccountId: viewer.accountId },
+          ...(viewer.organizationIds.length > 0 ? [{ granteeOrganizationId: { in: viewer.organizationIds } }] : []),
+        ],
+      },
+      select: { field: true },
+    });
+    return new Set(grants.map((g) => g.field));
   }
 
   /**
@@ -331,9 +463,17 @@ export class ProfilesService {
     profile: Profile,
     account: Account | null,
     organization: Organization | null,
+    viewer?: ProfileViewer,
   ): Promise<PublicProfile> {
+    const grants = viewer ? await this.getActiveGrantedFields(profile.id, viewer) : new Set<ProfileGrantField>();
+    const showPhone = profile.showPhone || grants.has('PHONE');
+    const showWhatsapp = profile.showWhatsapp || grants.has('WHATSAPP');
+    const showEmail = profile.showEmail || grants.has('EMAIL');
+    const showAddress = profile.showAddress || grants.has('ADDRESS');
+    const showRealName = profile.showRealName || grants.has('REAL_NAME');
+
     const badges = profile.showBadges ? await this.getBadges(account, organization) : null;
-    const realName = profile.showRealName ? await this.getRealName(account, organization) : null;
+    const realName = showRealName ? await this.getRealName(account, organization) : null;
 
     return {
       id: profile.id,
@@ -344,16 +484,16 @@ export class ProfilesService {
       bio: profile.bio,
       photoKey: profile.photoKey,
       timezone: profile.timezone,
-      phone: profile.showPhone ? profile.phone : null,
-      whatsapp: profile.showWhatsapp ? profile.whatsapp : null,
-      publicEmail: profile.showEmail ? profile.publicEmail : null,
-      addressLine1: profile.showAddress ? profile.addressLine1 : null,
-      addressLine2: profile.showAddress ? profile.addressLine2 : null,
-      city: profile.showAddress ? profile.city : null,
-      region: profile.showAddress ? profile.region : null,
-      countryCode: profile.showAddress ? profile.countryCode : null,
-      latitude: profile.showAddress ? profile.latitude : null,
-      longitude: profile.showAddress ? profile.longitude : null,
+      phone: showPhone ? profile.phone : null,
+      whatsapp: showWhatsapp ? profile.whatsapp : null,
+      publicEmail: showEmail ? profile.publicEmail : null,
+      addressLine1: showAddress ? profile.addressLine1 : null,
+      addressLine2: showAddress ? profile.addressLine2 : null,
+      city: showAddress ? profile.city : null,
+      region: showAddress ? profile.region : null,
+      countryCode: showAddress ? profile.countryCode : null,
+      latitude: showAddress ? profile.latitude : null,
+      longitude: showAddress ? profile.longitude : null,
       showBooking: profile.showBooking,
       showOffers: profile.showOffers,
       showHours: profile.showHours,
