@@ -251,6 +251,62 @@ p.lead {
   padding: 4px 12px;
 }
 
+/* ---- per-field verification tags ----
+   A tiny, deliberately unglamorous sign next to a specific piece of
+   info (photo, name, phone, email) — "verified" means this exact value
+   was independently confirmed (e.g. this phone number is the one OTP
+   verified the Account itself); "unverified" means it's self-reported
+   and shown as such on purpose, never silently omitted, so a viewer is
+   never left guessing which is which. */
+.verify-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.verify-tag.verified {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.verify-tag.unverified {
+  color: var(--muted);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+}
+
+.name-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.name-row h1 {
+  margin: 0;
+}
+
+.photo-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.photo-wrap .hero-photo,
+.photo-wrap .hero-photo-fallback {
+  margin-bottom: 0;
+}
+
 /* ---- action buttons ---- */
 
 .actions-row {
@@ -301,6 +357,19 @@ p.lead {
   background: var(--whatsapp);
   border-color: var(--whatsapp);
   color: #fff;
+}
+
+.action-item {
+  flex: 1 1 auto;
+  min-width: 100px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.action-item .action-btn {
+  width: 100%;
 }
 
 /* ---- sections ---- */

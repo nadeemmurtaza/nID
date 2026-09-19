@@ -52,6 +52,19 @@ export interface PublicProfile {
   badges: Badge[] | null;
   /** The verified name behind the badges, never displayName's replacement — only present when the owner opts in via showRealName. */
   realName: string | null;
+  /**
+   * Whether the displayed phone/whatsapp number is the SAME number the
+   * owner's Account actually completed OTP verification with — never a
+   * general "this profile is legitimate" claim. Profile.phone/whatsapp
+   * are free-text fields (UpdateProfileDto has no format tie to
+   * Account.phone), so an owner can put any number here; this tells a
+   * viewer whether that specific number is the one this system actually
+   * confirmed control of. Always false for an organization-owned profile
+   * — there is no organization-level phone verification in this
+   * codebase to honestly claim here.
+   */
+  phoneVerified: boolean;
+  whatsappVerified: boolean;
 }
 
 /**
@@ -475,6 +488,14 @@ export class ProfilesService {
     const badges = profile.showBadges ? await this.getBadges(account, organization) : null;
     const realName = showRealName ? await this.getRealName(account, organization) : null;
 
+    // "Verified" here means one specific, checkable fact: this exact
+    // number is the one the owner's Account completed OTP verification
+    // with — not "this profile is trustworthy" in general. An org-owned
+    // profile has no account to compare against, so both are always
+    // false rather than guessed.
+    const phoneVerified = showPhone && account !== null && profile.phone !== null && profile.phone === account.phone;
+    const whatsappVerified = showWhatsapp && account !== null && profile.whatsapp !== null && profile.whatsapp === account.phone;
+
     return {
       id: profile.id,
       slug: profile.slug,
@@ -499,6 +520,8 @@ export class ProfilesService {
       showHours: profile.showHours,
       badges,
       realName,
+      phoneVerified,
+      whatsappVerified,
     };
   }
 

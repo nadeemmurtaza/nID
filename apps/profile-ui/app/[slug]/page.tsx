@@ -48,12 +48,32 @@ export default async function ProfilePage({ params }: PageProps) {
       )}
 
       <div className="hero">
-        {profile.photoKey ? (
-          <img className="hero-photo" src={apiUrl(`/v1/profiles/${slug}/photo`)} alt={profile.displayName} />
-        ) : (
-          <div className="hero-photo-fallback">{initials || '?'}</div>
-        )}
-        <h1>{profile.displayName}</h1>
+        <div className="photo-wrap">
+          {profile.photoKey ? (
+            <img className="hero-photo" src={apiUrl(`/v1/profiles/${slug}/photo`)} alt={profile.displayName} />
+          ) : (
+            <div className="hero-photo-fallback">{initials || '?'}</div>
+          )}
+          {/* No mechanism in this system ties an uploaded profile photo to
+              any verified identity evidence — always shown as unverified,
+              never implied otherwise. */}
+          <span className="verify-tag unverified" title="This photo has not been independently verified">
+            ○ Unverified photo
+          </span>
+        </div>
+
+        <div className="name-row">
+          <h1>{profile.displayName}</h1>
+          {profile.realName && profile.realName !== profile.displayName ? (
+            <span className="verify-tag verified" title={`Independently verified as ${profile.realName}`}>
+              ✓ Verified name
+            </span>
+          ) : (
+            <span className="verify-tag unverified" title="This name is self-reported and has not been independently verified">
+              ○ Unverified name
+            </span>
+          )}
+        </div>
         {profile.realName && profile.realName !== profile.displayName && (
           <p className="real-name">Verified as {profile.realName}</p>
         )}
@@ -75,19 +95,49 @@ export default async function ProfilePage({ params }: PageProps) {
 
       <div className="actions-row">
         {profile.phone && (
-          <a className="action-btn primary" href={`tel:${profile.phone}`}>
-            Call
-          </a>
+          <div className="action-item">
+            <a className="action-btn primary" href={`tel:${profile.phone}`}>
+              Call
+            </a>
+            {profile.phoneVerified ? (
+              <span className="verify-tag verified" title="This number matches the phone the owner verified with an OTP code">
+                ✓ Verified
+              </span>
+            ) : (
+              <span className="verify-tag unverified" title="This number is self-reported and has not been independently verified">
+                ○ Unverified
+              </span>
+            )}
+          </div>
         )}
         {profile.whatsapp && (
-          <a className="action-btn whatsapp" href={waLink(profile.whatsapp)} target="_blank" rel="noreferrer">
-            WhatsApp
-          </a>
+          <div className="action-item">
+            <a className="action-btn whatsapp" href={waLink(profile.whatsapp)} target="_blank" rel="noreferrer">
+              WhatsApp
+            </a>
+            {profile.whatsappVerified ? (
+              <span className="verify-tag verified" title="This number matches the phone the owner verified with an OTP code">
+                ✓ Verified
+              </span>
+            ) : (
+              <span className="verify-tag unverified" title="This number is self-reported and has not been independently verified">
+                ○ Unverified
+              </span>
+            )}
+          </div>
         )}
         {profile.publicEmail && (
-          <a className="action-btn" href={`mailto:${profile.publicEmail}`}>
-            Email
-          </a>
+          <div className="action-item">
+            <a className="action-btn" href={`mailto:${profile.publicEmail}`}>
+              Email
+            </a>
+            {/* No email verification exists anywhere in this system (no
+                confirm-email flow) — always unverified, never implied
+                otherwise. */}
+            <span className="verify-tag unverified" title="This email address has not been independently verified">
+              ○ Unverified
+            </span>
+          </div>
         )}
         {map && (
           <a className="action-btn" href={map} target="_blank" rel="noreferrer">

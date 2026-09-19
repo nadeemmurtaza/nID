@@ -340,6 +340,81 @@ describeIfDb('ProfilesService — username creation/rename gates (live Postgres,
     });
   });
 
+  describe('getPublicBySlug() — phoneVerified/whatsappVerified are a specific, checkable claim, never a general trust signal', () => {
+    it('is true when the shown phone is exactly the number the Account completed OTP verification with', async () => {
+      const { account } = await makeVerifiedAccount('phoneverified', { givenName: 'Tara', familyName: 'Ono' });
+      const profile = await profiles.create(account, {
+        slug: 'tara-ono',
+        displayName: 'Tara Ono',
+        isPublished: true,
+        phone: account.phone,
+        whatsapp: account.phone,
+        showPhone: true,
+        showWhatsapp: true,
+      });
+      testProfileIds.push(profile.id);
+
+      const publicProfile = await profiles.getPublicBySlug('tara-ono');
+      expect(publicProfile.phoneVerified).toBe(true);
+      expect(publicProfile.whatsappVerified).toBe(true);
+    });
+
+    it('is false when the owner typed a different number than their own verified Account.phone — free text is not verification', async () => {
+      const { account } = await makeVerifiedAccount('phoneunverified', { givenName: 'Ben', familyName: 'Cole' });
+      const profile = await profiles.create(account, {
+        slug: 'ben-cole',
+        displayName: 'Ben Cole',
+        isPublished: true,
+        phone: '+19995550000',
+        showPhone: true,
+      });
+      testProfileIds.push(profile.id);
+
+      const publicProfile = await profiles.getPublicBySlug('ben-cole');
+      // Shown (proving this isn't just the "hidden" case below) but unverified.
+      expect(publicProfile.phone).toBe('+19995550000');
+      expect(publicProfile.phoneVerified).toBe(false);
+      expect(publicProfile.whatsappVerified).toBe(false);
+    });
+
+    it('is false when the field is not shown at all, even if it would otherwise match', async () => {
+      const { account } = await makeVerifiedAccount('phonehidden', { givenName: 'Dax', familyName: 'Reed' });
+      const profile = await profiles.create(account, {
+        slug: 'dax-reed',
+        displayName: 'Dax Reed',
+        isPublished: true,
+        phone: account.phone,
+        showPhone: false,
+      });
+      testProfileIds.push(profile.id);
+
+      const publicProfile = await profiles.getPublicBySlug('dax-reed');
+      expect(publicProfile.phone).toBeNull();
+      expect(publicProfile.phoneVerified).toBe(false);
+    });
+
+    it('is false for an organization-owned profile — no organization-level phone verification exists to honestly claim', async () => {
+      const { tenantId, apiKeyId } = await makeTenant('profiles-spec-org-phone');
+      const org = await organizations.create(tenantId, apiKeyId, { legalName: 'Org Phone Co' });
+      await migratorPrisma.verificationCase.create({
+        data: { tenantId, subjectId: org.subjectId, policyId: (await ensureAnyPolicy(tenantId)).id, status: 'APPROVED', claimType: 'IDENTITY', level: 'REGISTRY_VERIFIED', resolvedAt: new Date() },
+      });
+      const admin = await organizations.invite(tenantId, apiKeyId, org.id, { phone: uniquePhone('orgphone'), isAdmin: true });
+      await organizations.respondToInvite(admin.accountId!, admin.id, 'ACCEPTED');
+      const profile = await profiles.createForOrganization(admin.accountId!, org.id, {
+        slug: 'org-phone-co',
+        displayName: 'Org Phone Co',
+        isPublished: true,
+        phone: '+19995551111',
+        showPhone: true,
+      });
+      testProfileIds.push(profile.id);
+
+      const publicProfile = await profiles.getPublicBySlug('org-phone-co');
+      expect(publicProfile.phoneVerified).toBe(false);
+    });
+  });
+
   describe('field grants — "show only one specific info to only one person or organization"', () => {
     it('reveals a granted field only to the exact account it was granted to, never anonymous or a third party', async () => {
       const { account: owner } = await makeVerifiedAccount('grantowner1', { givenName: 'Kim', familyName: 'Ali' });
