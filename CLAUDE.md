@@ -13,6 +13,44 @@ If a request conflicts with a rule below, the rule wins. Say so and propose
 the compliant alternative — do not silently comply with a request that
 would violate one of these, and do not silently skip a rule to move faster.
 
+## Priority: flexibility, resilience, and innovation — inside a fixed floor
+
+The working priority for every decision in this codebase is flexibility,
+resilience, and innovation, ranked above raw feature velocity, above
+architectural purity for its own sake, and above "the way it's already
+done." That priority operates inside one fixed floor, not instead of it:
+sections 3 (security) and 4 (stability) below are not weighed against
+flexibility/innovation — they're the boundary flexibility/innovation get
+to move freely within. This is the same distinction Amazon calls one-way
+vs. two-way doors, and it's the actual mechanism that makes "innovate
+aggressively" and "zero tolerance on security" simultaneously true instead
+of contradictory:
+
+- **Two-way doors — optimize for flexibility and speed, by default, no
+  sign-off needed.** A new provider implementation behind an existing
+  interface. A UI redesign. A new internal module boundary. Trying two
+  approaches to a hard algorithmic problem (the OCR/liveness/forensics
+  packages already do this — synthetic-fixture-driven, swappable, easy to
+  rip out) and keeping the one that works. A dependency swap behind an
+  interface. Reverting any of the above costs one PR. Move fast here,
+  prototype, experiment, take the more innovative option even when it's
+  less proven — reversibility is the safety net.
+- **One-way doors — the section 3/4 floor still applies without
+  exception.** A schema change to a table holding PII/KYC/biometric data.
+  Anything that crosses a trust boundary (cross-tenant, cross-account, a
+  new grant primitive, a new no-RLS table). Deleting or irreversibly
+  transforming data. Removing an auth check. Changing what a shipped
+  contract means to an existing caller. These are expensive or impossible
+  to revert once real data or a real integration depends on them, which is
+  exactly why "move fast" doesn't apply to them — not because innovation
+  is unwelcome here, but because the cost of being wrong is measured in
+  leaked government ID data, not in a reverted PR.
+- **Telling the two apart is itself a required step, not a judgment call
+  to skip.** Before starting a change, name which kind of door it is. If
+  it's arguably both (a new feature that's flexible in its UI but touches
+  a PII table), the PII-table part is a one-way door and gates the whole
+  change, even if the rest is free to iterate on.
+
 ## 0. What "no compromise" means here, concretely
 
 Every rule below is enforced the same way: it either has a mechanical gate
@@ -153,29 +191,73 @@ or a trust boundary is not done until the hardening in section 3 is done.
   genuinely safe to ignore, say why in a comment; otherwise it's logged
   or rethrown.
 
-## 5. Resilience for future innovation
+## 5. Flexibility, resilience, and innovation — the primary lens
 
+This section is not "nice engineering hygiene" — per the priority
+statement above, it's the default orientation for how work gets done here,
+constrained only by sections 3 and 4.
+
+**Flexibility**
 - **Prefer boring, swappable primitives over hardwiring a vendor or a
   specific implementation.** The verification-provider pattern and
   `StorageDriver` are the existing examples — every future integration
   point (a real SMS vendor, S3-compatible storage, a payments processor,
-  a different OCR/liveness/forensics vendor) should be added the same
-  way: an interface, a config-driven allowlist, dev-mode mock alongside
-  the real implementation.
+  a different OCR/liveness/forensics vendor) is added the same way: an
+  interface, a config-driven allowlist, dev-mode mock alongside the real
+  implementation. This is what turns "we chose wrong" into a config
+  change instead of a migration project.
 - **Extensibility is designed in; the extension itself is built when
-  something concretely needs it, not speculatively.** This is the
-  practical reconciliation of "no compromise on architecture" with "don't
-  build things nobody needs yet": the shape that makes a future addition
-  cheap (clean module boundaries, provider interfaces, stateless
-  services, additive contracts) is mandatory now; the addition itself
-  (an actual load balancer, an actual second vendor integration) waits
-  for its actual trigger.
+  something concretely needs it, not speculatively.** The shape that
+  makes a future addition cheap (clean module boundaries, provider
+  interfaces, stateless services, additive contracts) is mandatory now;
+  the addition itself (an actual load balancer, an actual second vendor
+  integration) waits for its actual trigger — see section 2.
+- **Default to the reversible option when two designs solve the same
+  problem equally well.** Between an interface-behind-a-flag and a
+  hardcoded choice that's marginally simpler today, take the flag. The
+  marginal cost is small; the option value compounds.
+
+**Resilience**
 - **A build-vs-buy call, once made, is revisited explicitly, by name, not
   silently reversed inside an unrelated commit.** If a "buy" decision
   gets reversed to "build" (or vice versa), the commit/PR says so
   directly — what changed, why, and what the tradeoff is now — instead of
   the reversal being discoverable only by reading between two unrelated
   paragraphs in `docs/PHASES.md`.
+- **A dependency or vendor this system leans on gets a documented fallback
+  or exit path before it becomes load-bearing**, proportional to how hard
+  it'd be to leave: a free/self-hosted library (Tesseract, face-api) needs
+  none; a paid vendor behind a provider interface already has its exit
+  path (swap the provider); a vendor NOT yet behind an interface is itself
+  a flag this codebase is in a one-way-door-shaped spot and should be
+  fixed opportunistically, not left as accepted debt.
+- **Failure inside one provider/module degrades that capability, not the
+  system.** A `NEEDS_REVIEW` outcome instead of a crash, a single method
+  failing in a multi-method `VerificationPolicy` without failing case
+  creation itself, a vendor outage returning `verified: false` rather than
+  taking down the request — this codebase's existing honesty discipline
+  (never fabricate PASSED/FAILED) is also a resilience property: a
+  system that fails to an honest "unknown" is one that survives a
+  dependency going bad.
+
+**Innovation**
+- **New algorithmic/ML-adjacent approaches are welcome and expected to be
+  tried, inside a two-way door.** `packages/ocr-engine`,
+  `liveness-engine`, and `forensics-engine` are the precedent: real,
+  independently swappable implementations, each provable against real
+  fixtures, none requiring the others to change. The bar for trying a new
+  technique is "can I prove it against something real and rip it out
+  cleanly if it doesn't work" — not "is this the safe, obvious choice."
+- **A prototype/spike is explicitly allowed to skip the full section-4
+  bar temporarily, but is labeled as a prototype and never reaches
+  production data un-hardened.** Move fast to learn whether an idea
+  works; don't quietly let the fast version become the shipped version
+  once it touches a real Subject/Account/PII table — that's where it
+  becomes a one-way door and section 3/4 close back in.
+- **A "we've always done it this way" objection is not, on its own, a
+  reason to keep doing it that way.** It's a reason to ask what the
+  original constraint was and whether it still holds — see the
+  build-vs-buy point above for the concrete version of this.
 
 ## 6. Where this file and `docs/HOUSE-RULES.md` overlap
 
