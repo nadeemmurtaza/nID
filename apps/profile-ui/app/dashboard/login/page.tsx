@@ -70,7 +70,12 @@ export default function DashboardLoginPage() {
               disabled={submitting}
               autoFocus
             />
-            <button type="submit" disabled={submitting || phone.trim().length === 0}>
+            <button
+              type="submit"
+              className="btn btn-primary btn-block"
+              style={{ marginTop: 12 }}
+              disabled={submitting || phone.trim().length === 0}
+            >
               {submitting ? 'Sending…' : 'Continue with phone'}
             </button>
             {error && <p className="error-text">{error}</p>}
@@ -78,12 +83,18 @@ export default function DashboardLoginPage() {
         ) : (
           <form onSubmit={verify}>
             <OtpInput value={code} onChange={setCode} disabled={submitting} autoFocus />
-            <button type="submit" disabled={submitting || code.length === 0}>
+            <button
+              type="submit"
+              className="btn btn-primary btn-block"
+              style={{ marginTop: 12 }}
+              disabled={submitting || code.length === 0}
+            >
               {submitting ? 'Verifying…' : 'Verify code'}
             </button>
             <button
               type="button"
-              className="secondary"
+              className="btn btn-secondary btn-block"
+              style={{ marginTop: 8 }}
               onClick={() => {
                 setStep('phone');
                 setCode('');

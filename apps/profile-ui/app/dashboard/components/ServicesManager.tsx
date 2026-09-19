@@ -66,7 +66,7 @@ export function ServicesManager({ token }: { token: string }) {
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Services
       </h2>
-      {services?.length === 0 && <p style={{ color: 'var(--muted)', fontSize: 13 }}>No services yet.</p>}
+      {services?.length === 0 && <p className="empty-state">No services yet — add your first one below.</p>}
       {services?.map((service) => (
         <div className="data-row" key={service.id}>
           <div>
@@ -77,10 +77,10 @@ export function ServicesManager({ token }: { token: string }) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            <button type="button" className="small-btn" onClick={() => handleToggleActive(service)}>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleToggleActive(service)}>
               {service.isActive ? 'Deactivate' : 'Activate'}
             </button>
-            <button type="button" className="small-btn danger-btn" onClick={() => handleDelete(service.id)}>
+            <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDelete(service.id)}>
               Delete
             </button>
           </div>
@@ -114,7 +114,7 @@ export function ServicesManager({ token }: { token: string }) {
             <input id="svc-currency" type="text" maxLength={8} value={currency} onChange={(e) => setCurrency(e.target.value)} />
           </>
         )}
-        <button type="submit" style={{ marginTop: 12 }} disabled={submitting}>
+        <button type="submit" className="btn btn-primary" style={{ marginTop: 12 }} disabled={submitting}>
           {submitting ? 'Adding…' : 'Add service'}
         </button>
         {error && <p className="error-text">{error}</p>}

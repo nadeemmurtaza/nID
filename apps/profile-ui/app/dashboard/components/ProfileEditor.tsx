@@ -136,7 +136,7 @@ export function ProfileEditor({ token, profile, onSaved }: Props) {
             }}
           />
         )}
-        <label className="small-btn" style={{ cursor: 'pointer' }}>
+        <label className="btn btn-sm btn-secondary" style={{ cursor: 'pointer' }}>
           {uploadingPhoto ? 'Uploading…' : 'Change photo'}
           <input type="file" accept="image/*" onChange={handlePhoto} disabled={uploadingPhoto} style={{ display: 'none' }} />
         </label>
@@ -232,7 +232,7 @@ export function ProfileEditor({ token, profile, onSaved }: Props) {
           <input type="checkbox" {...toggle('isPublished')} />
         </div>
 
-        <button type="submit" style={{ marginTop: 16, width: '100%' }} disabled={saving}>
+        <button type="submit" className="btn btn-primary btn-block" style={{ marginTop: 16 }} disabled={saving}>
           {saving ? 'Saving…' : 'Save changes'}
         </button>
         {saved && <p className="success-text">Saved.</p>}

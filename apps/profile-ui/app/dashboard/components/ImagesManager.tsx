@@ -44,17 +44,18 @@ export function ImagesManager({ token, slug }: { token: string; slug: string }) 
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Banner
       </h2>
+      {banners.length === 0 && <p className="empty-state">No banner uploaded yet.</p>}
       <div className="thumb-grid">
         {banners.map((img) => (
           <div className="thumb" key={img.id}>
             <img src={apiUrl(`/v1/profiles/${slug}/images/${img.id}`)} alt="" />
-            <button type="button" onClick={() => handleDelete(img.id)}>
+            <button type="button" className="btn btn-icon btn-danger" aria-label="Delete banner image" onClick={() => handleDelete(img.id)}>
               ✕
             </button>
           </div>
         ))}
       </div>
-      <label className="small-btn" style={{ cursor: 'pointer', display: 'inline-block' }}>
+      <label className="btn btn-sm btn-secondary" style={{ cursor: 'pointer', display: 'inline-flex' }}>
         {uploading === 'BANNER' ? 'Uploading…' : 'Upload banner'}
         <input
           type="file"
@@ -66,17 +67,18 @@ export function ImagesManager({ token, slug }: { token: string; slug: string }) 
       </label>
 
       <h2 className="section-title">Gallery</h2>
+      {gallery.length === 0 && <p className="empty-state">No gallery photos yet.</p>}
       <div className="thumb-grid">
         {gallery.map((img) => (
           <div className="thumb" key={img.id}>
             <img src={apiUrl(`/v1/profiles/${slug}/images/${img.id}`)} alt="" />
-            <button type="button" onClick={() => handleDelete(img.id)}>
+            <button type="button" className="btn btn-icon btn-danger" aria-label="Delete gallery image" onClick={() => handleDelete(img.id)}>
               ✕
             </button>
           </div>
         ))}
       </div>
-      <label className="small-btn" style={{ cursor: 'pointer', display: 'inline-block' }}>
+      <label className="btn btn-sm btn-secondary" style={{ cursor: 'pointer', display: 'inline-flex' }}>
         {uploading === 'GALLERY' ? 'Uploading…' : 'Add gallery photo'}
         <input
           type="file"

@@ -53,7 +53,7 @@ export function ContactForm({ slug }: { slug: string }) {
       <label htmlFor="message">Message</label>
       <textarea id="message" required value={message} onChange={(e) => setMessage(e.target.value)} />
 
-      <button type="submit" style={{ marginTop: 12, width: '100%' }} disabled={submitting}>
+      <button type="submit" className="btn btn-primary btn-block" style={{ marginTop: 12 }} disabled={submitting}>
         {submitting ? 'Sending…' : 'Send message'}
       </button>
 

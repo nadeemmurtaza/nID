@@ -23,7 +23,7 @@ export function MessagesPanel({ token }: { token: string }) {
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Messages
       </h2>
-      {messages?.length === 0 && <p style={{ color: 'var(--muted)', fontSize: 13 }}>No messages yet.</p>}
+      {messages?.length === 0 && <p className="empty-state">No messages yet.</p>}
       {messages?.map((msg) => (
         <div className="section-card" key={msg.id} style={{ opacity: msg.readAt ? 0.7 : 1 }}>
           <h3>
@@ -37,7 +37,7 @@ export function MessagesPanel({ token }: { token: string }) {
             <span>{new Date(msg.createdAt).toLocaleString()}</span>
           </div>
           {!msg.readAt && (
-            <button type="button" className="small-btn" style={{ marginTop: 8 }} onClick={() => handleMarkRead(msg.id)}>
+            <button type="button" className="btn btn-sm btn-secondary" style={{ marginTop: 8 }} onClick={() => handleMarkRead(msg.id)}>
               Mark read
             </button>
           )}

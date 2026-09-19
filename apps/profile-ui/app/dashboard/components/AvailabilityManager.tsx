@@ -71,14 +71,14 @@ export function AvailabilityManager({ token }: { token: string }) {
       <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 10 }}>
         When visitors can actually book a service — separate from the display-only hours below.
       </p>
-      {rules?.length === 0 && <p style={{ color: 'var(--muted)', fontSize: 13 }}>No recurring windows yet.</p>}
+      {rules?.length === 0 && <p className="empty-state">No recurring windows yet — add one below.</p>}
       {rules?.map((rule) => (
         <div className="data-row" key={rule.id}>
           <span>
             {rule.day[0]}
             {rule.day.slice(1).toLowerCase()} · {minutesToTime(rule.startMinute)}–{minutesToTime(rule.endMinute)}
           </span>
-          <button type="button" className="small-btn danger-btn" onClick={() => handleDelete(rule.id)}>
+          <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDelete(rule.id)}>
             Remove
           </button>
         </div>
@@ -105,7 +105,7 @@ export function AvailabilityManager({ token }: { token: string }) {
             <input id="avail-end" type="text" placeholder="17:00" value={end} onChange={(e) => setEnd(e.target.value)} />
           </div>
         </div>
-        <button type="submit" style={{ marginTop: 12 }} disabled={submitting}>
+        <button type="submit" className="btn btn-primary" style={{ marginTop: 12 }} disabled={submitting}>
           {submitting ? 'Adding…' : 'Add window'}
         </button>
         {error && <p className="error-text">{error}</p>}

@@ -56,7 +56,7 @@ export function AppointmentsPanel({ token }: { token: string }) {
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Appointments
       </h2>
-      {appointments?.length === 0 && <p style={{ color: 'var(--muted)', fontSize: 13 }}>No appointments yet.</p>}
+      {appointments?.length === 0 && <p className="empty-state">No appointments yet.</p>}
       {appointments?.map((appt) => (
         <div className="data-row" key={appt.id} style={{ alignItems: 'flex-start' }}>
           <div>
@@ -74,11 +74,11 @@ export function AppointmentsPanel({ token }: { token: string }) {
           {(appt.status === 'PENDING' || appt.status === 'CONFIRMED') && (
             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
               {appt.status === 'PENDING' && (
-                <button type="button" className="small-btn" disabled={busyId === appt.id} onClick={() => handleConfirm(appt.id)}>
+                <button type="button" className="btn btn-sm btn-primary" disabled={busyId === appt.id} onClick={() => handleConfirm(appt.id)}>
                   Confirm
                 </button>
               )}
-              <button type="button" className="small-btn danger-btn" disabled={busyId === appt.id} onClick={() => handleCancel(appt.id)}>
+              <button type="button" className="btn btn-sm btn-danger" disabled={busyId === appt.id} onClick={() => handleCancel(appt.id)}>
                 Cancel
               </button>
             </div>
