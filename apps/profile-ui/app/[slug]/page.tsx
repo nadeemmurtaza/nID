@@ -54,6 +54,9 @@ export default async function ProfilePage({ params }: PageProps) {
           <div className="hero-photo-fallback">{initials || '?'}</div>
         )}
         <h1>{profile.displayName}</h1>
+        {profile.realName && profile.realName !== profile.displayName && (
+          <p className="real-name">Verified as {profile.realName}</p>
+        )}
         {profile.headline && <p className="headline">{profile.headline}</p>}
         <span className="category-chip">{profile.category}</span>
 

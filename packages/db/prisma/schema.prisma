@@ -783,6 +783,12 @@ model Profile {
   showBooking  Boolean @default(true)
   showOffers   Boolean @default(true)
   showHours    Boolean @default(true)
+  /// "Privacy 1st": the verified real name (PhoneNameEvidence, or
+  /// Organization.legalName) is NEVER shown publicly unless the owner
+  /// opts in — displayName (above), which the owner fully controls and
+  /// isn't required to match their legal name, is what's public by
+  /// default, exactly like a LinkedIn display name vs. a legal name.
+  showRealName Boolean @default(false)
 
   isPublished Boolean  @default(false)
   /// When the CURRENT slug was set — reconsideration/lock math (see

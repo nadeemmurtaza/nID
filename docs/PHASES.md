@@ -1366,6 +1366,46 @@ a slug that doesn't match the *new* name is still rejected
 blank check. Plus three `isUsernameLocked()` boundary tests in
 `username.spec.ts` (immediately after set, just under 7 days, just over).
 
+### Profile privacy: the verified real name, private by default like everything else here
+
+"User can manage what to make public and what to keep private, including
+name, just like in LinkedIn — privacy 1st." `displayName` was already the
+owner's own free choice, shown unconditionally (it's the page's own
+headline text, not evidence of anything) — the actual gap was the
+*verified* name behind it: `PhoneNameEvidence`/`Organization.legalName`
+back the username and the IDENTITY badge, but nothing surfaced the value
+itself anywhere a viewer could see it. Rather than "never", the right
+default for a verification product is "opt-in" — a doctor or a business
+may well want `Verified as Anna Maria Eriksson` next to a stage or brand
+`displayName` for the trust signal, someone else may not want their legal
+name anywhere near a public page at all. Same shape as every other
+contact-channel field on this table (`showPhone`, `showAddress`, ...):
+
+- **`Profile.showRealName`** (new column, `@default(false)`) — off unless
+  the owner turns it on, no exception, matching "privacy 1st" literally
+  rather than as a slogan.
+- **`ProfilesService.getRealName()`** — resolves the actual name value
+  (not the slugified form the username gate uses) the exact same way
+  `requireVerifiedRealName()` (personal) / `getVerified().legalName`
+  (brand) already do, so a viewer can never see anything the KYC evidence
+  doesn't actually say. Only ever queried when `showRealName` is true —
+  the default code path never touches `PhoneNameEvidence` at all.
+  `PublicProfile.realName` carries the result (or `null`).
+- **`apps/profile-ui`**: a "Show verified legal name (private by
+  default)" toggle alongside the existing show* checkboxes in
+  `ProfileEditor.tsx`; the public `/[slug]` page renders `Verified as
+  {realName}` under the display name only when present and only when it
+  actually differs from `displayName` (no redundant echo when an owner's
+  chosen name already matches their legal one).
+
+**Verified live**: full workspace `typecheck`/`lint`/`test`/`build`
+clean, including a `prisma migrate deploy` for the new column. Three new
+live-Postgres tests in `profiles.service.spec.ts`: `realName` is `null`
+through `getPublicBySlug()` by default despite real `PhoneNameEvidence`
+existing; it's exposed once `showRealName: true` is set at creation
+(personal); and the organization equivalent exposes `legalName` for an
+opted-in brand profile.
+
 - **Phase 2** — sanctions/PEP screening, one
   country's national-ID registry adapter, manual-review tooling, retention/audit
   maturity.

@@ -116,5 +116,9 @@ export class UpdateProfileDto {
 
   @IsOptional()
   @IsBoolean()
+  showRealName?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   isPublished?: boolean;
 }

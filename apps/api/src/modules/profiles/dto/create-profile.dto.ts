@@ -121,6 +121,11 @@ export class CreateProfileDto {
   @IsBoolean()
   showHours?: boolean;
 
+  /** "Privacy 1st" — the verified real name is private by default; the owner opts in explicitly. */
+  @IsOptional()
+  @IsBoolean()
+  showRealName?: boolean;
+
   @IsOptional()
   @IsBoolean()
   isPublished?: boolean;

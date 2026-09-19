@@ -133,6 +133,12 @@ p.lead {
   margin: 0 0 4px;
 }
 
+.hero .real-name {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 4px;
+}
+
 .hero .headline {
   color: var(--muted);
   font-size: 15px;

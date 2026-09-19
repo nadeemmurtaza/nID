@@ -294,6 +294,51 @@ describeIfDb('ProfilesService — username creation/rename gates (live Postgres,
     });
   });
 
+  describe('getPublicBySlug() — realName is private by default, opt-in only', () => {
+    it('omits realName when showRealName is left at its default (false)', async () => {
+      const { account } = await makeVerifiedAccount('privdefault', { givenName: 'Ivy', familyName: 'Chen' });
+      const profile = await profiles.create(account, { slug: 'ivy-chen', displayName: 'Ivy the Designer', isPublished: true });
+      testProfileIds.push(profile.id);
+
+      const publicProfile = await profiles.getPublicBySlug('ivy-chen');
+      expect(publicProfile.realName).toBeNull();
+    });
+
+    it('exposes the verified name once the owner opts in via showRealName', async () => {
+      const { account } = await makeVerifiedAccount('privoptin', { givenName: 'Jae', familyName: 'Park' });
+      const profile = await profiles.create(account, {
+        slug: 'jae-park',
+        displayName: 'Jae the Consultant',
+        isPublished: true,
+        showRealName: true,
+      });
+      testProfileIds.push(profile.id);
+
+      const publicProfile = await profiles.getPublicBySlug('jae-park');
+      expect(publicProfile.realName).toBe('Jae Park');
+    });
+
+    it('exposes the organization legalName for a brand profile that opts in', async () => {
+      const { tenantId, apiKeyId } = await makeTenant('profiles-spec-org-realname');
+      const org = await organizations.create(tenantId, apiKeyId, { legalName: 'Northwind Traders Co' });
+      await migratorPrisma.verificationCase.create({
+        data: { tenantId, subjectId: org.subjectId, policyId: (await ensureAnyPolicy(tenantId)).id, status: 'APPROVED', claimType: 'IDENTITY', level: 'REGISTRY_VERIFIED', resolvedAt: new Date() },
+      });
+      const admin = await organizations.invite(tenantId, apiKeyId, org.id, { phone: uniquePhone('orgrealname'), isAdmin: true });
+      await organizations.respondToInvite(admin.accountId!, admin.id, 'ACCEPTED');
+      const profile = await profiles.createForOrganization(admin.accountId!, org.id, {
+        slug: 'northwind-traders-co',
+        displayName: 'Northwind',
+        isPublished: true,
+        showRealName: true,
+      });
+      testProfileIds.push(profile.id);
+
+      const publicProfile = await profiles.getPublicBySlug('northwind-traders-co');
+      expect(publicProfile.realName).toBe('Northwind Traders Co');
+    });
+  });
+
   async function ensureAnyPolicy(tenantId: string) {
     return migratorPrisma.verificationPolicy.upsert({
       where: { tenantId_name: { tenantId, name: 'any-policy' } },

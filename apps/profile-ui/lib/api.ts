@@ -60,6 +60,7 @@ export interface PublicProfile {
   showOffers: boolean;
   showHours: boolean;
   badges: Badge[] | null;
+  realName: string | null;
 }
 
 export interface Service {

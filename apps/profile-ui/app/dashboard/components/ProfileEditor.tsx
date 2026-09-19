@@ -36,6 +36,7 @@ export function ProfileEditor({ token, profile, onSaved }: Props) {
     showBooking: profile.showBooking,
     showOffers: profile.showOffers,
     showHours: profile.showHours,
+    showRealName: profile.showRealName,
     isPublished: profile.isPublished,
   });
   const [saving, setSaving] = useState(false);
@@ -207,6 +208,10 @@ export function ProfileEditor({ token, profile, onSaved }: Props) {
         <div className="toggle-row">
           <span>Show verified badges</span>
           <input type="checkbox" {...toggle('showBadges')} />
+        </div>
+        <div className="toggle-row">
+          <span>Show verified legal name (private by default)</span>
+          <input type="checkbox" {...toggle('showRealName')} />
         </div>
         <div className="toggle-row">
           <span>Show booking</span>

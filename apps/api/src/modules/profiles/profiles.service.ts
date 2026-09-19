@@ -37,6 +37,8 @@ export interface PublicProfile {
   showOffers: boolean;
   showHours: boolean;
   badges: Badge[] | null;
+  /** The verified name behind the badges, never displayName's replacement — only present when the owner opts in via showRealName. */
+  realName: string | null;
 }
 
 /**
@@ -331,6 +333,7 @@ export class ProfilesService {
     organization: Organization | null,
   ): Promise<PublicProfile> {
     const badges = profile.showBadges ? await this.getBadges(account, organization) : null;
+    const realName = profile.showRealName ? await this.getRealName(account, organization) : null;
 
     return {
       id: profile.id,
@@ -355,7 +358,31 @@ export class ProfilesService {
       showOffers: profile.showOffers,
       showHours: profile.showHours,
       badges,
+      realName,
     };
+  }
+
+  /**
+   * The verified name value itself (not the slugified form the username
+   * gate uses) — resolved the exact same way requireVerifiedRealName()
+   * (personal) / getVerified().legalName (brand) do, so what a viewer
+   * sees here is never anything other than what the KYC evidence actually
+   * says. Only ever called when the owner has explicitly opted in via
+   * showRealName — "privacy 1st" means the default path never even
+   * queries this.
+   */
+  private async getRealName(account: Account | null, organization: Organization | null): Promise<string | null> {
+    if (organization) {
+      return organization.legalName;
+    }
+    if (!account) {
+      return null;
+    }
+    const name = await this.prisma.unscoped.phoneNameEvidence.findFirst({
+      where: { phone: account.phone },
+      orderBy: { verifiedAt: 'desc' },
+    });
+    return name ? `${name.givenName} ${name.familyName}` : null;
   }
 }
 
@@ -390,6 +417,7 @@ function toOptionalProfileFields(dto: Omit<UpdateProfileDto, 'slug' | 'displayNa
     showBooking: dto.showBooking,
     showOffers: dto.showOffers,
     showHours: dto.showHours,
+    showRealName: dto.showRealName,
     isPublished: dto.isPublished,
   };
 }

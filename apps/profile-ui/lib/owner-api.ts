@@ -77,6 +77,7 @@ export interface OwnerProfile {
   showBooking: boolean;
   showOffers: boolean;
   showHours: boolean;
+  showRealName: boolean;
   isPublished: boolean;
 }
 
