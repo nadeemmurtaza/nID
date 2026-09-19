@@ -20,17 +20,35 @@ then read only the file(s) that matched, and only the region that matched.
   `"content"` with `-C`/`-A`/`-B` for a few lines of surrounding context —
   not the whole file.
 - Use `Glob` to find files by name/path pattern instead of listing directories
-  and scanning by eye.
+  and scanning by eye. E.g. to find every controller: `Glob("apps/api/src/**/*.controller.ts")`,
+  not `Read`-ing `apps/api/src/modules` module by module.
 - Set `head_limit` on `Grep` calls that could match broadly (common tokens,
-  generic names) instead of eyeballing a huge hit list.
+  generic names) instead of eyeballing a huge hit list — e.g. searching for
+  `tenantId` or `VerificationSession` across the repo will hit dozens of
+  files; start with `head_limit: 20` and widen only if the answer isn't
+  there yet.
+- Never grep or read inside `node_modules`, `.next`, `dist`, or `pnpm-lock.yaml`
+  (8,200+ lines) to answer a code question — the answer is in `apps/*/src`
+  or `packages/*/src`. If you need a dependency's version, `Grep` the
+  top-level `package.json` files, not the lockfile.
 
 ## Read narrowly
 
-`Read` defaults to the whole file. For anything beyond a couple hundred
-lines, use `offset`/`limit` to pull the specific region a prior `Grep` hit
-pointed at, rather than the full file "to be safe." If you need to
-understand a large file's shape first, grep for its top-level
-symbols/headings rather than reading it end to end.
+`Read` defaults to the whole file. This repo has files where that's fine
+(most controllers/services are under 200 lines) and files where it's
+wasteful:
+
+- `packages/db/prisma/schema.prisma` is 1,000+ lines. To check one model's
+  fields, `Grep -n "^model VerificationCase"` first, then `Read` with
+  `offset`/`limit` around that line — don't read the whole schema to find
+  one model.
+- `docs/PHASES.md` (1,400+ lines) and `README.md` (370+ lines) are reference
+  docs organized by section. `Grep` for the heading or keyword you need
+  (e.g. `"## Badges"`, `"OAuthLoginRequest"`) and read the matched region,
+  not the whole file, unless you genuinely need the full roadmap context.
+- Any file a `Grep` hit pointed you at: read the hit's line ± ~40 lines
+  first (`offset`/`limit` around the match), not the entire file — widen
+  only if that region doesn't answer the question.
 
 Once you've read or edited a file in this session, its state is known —
 don't re-`Read` it to confirm an `Edit`/`Write` succeeded; the tool already
@@ -47,13 +65,20 @@ part that changed. Reserve `Write` for new files or genuine full rewrites.
 Don't run a command and then mentally (or literally) skim past noise —
 filter before it reaches the transcript:
 
-- Pipe through `grep`/`head`/`tail` instead of dumping full output
-  (`git log --oneline -20` beats `git log`, `npm test 2>&1 | tail -50` beats
-  a raw failing test run with a huge stack dump repeated per file).
+- Pipe through `grep`/`head`/`tail` instead of dumping full output —
+  `git log --oneline -20` beats `git log`; scope `pnpm test` to one
+  workspace (`pnpm --filter @nid/api test`) instead of running the whole
+  monorepo suite when only one package changed; pipe a failing run through
+  `| tail -60` instead of pasting the full Jest/Vitest output with every
+  passing suite listed.
 - For `Grep`, set `head_limit` rather than requesting unlimited results and
   discarding most of them yourself.
-- Avoid commands whose normal output is inherently huge (full recursive
-  `ls -la`, unfiltered `find /`) — scope them first.
+- Avoid commands whose normal output is inherently huge (`ls -laR`,
+  unfiltered `find .`, `pnpm install` with full dependency tree logging,
+  `prisma migrate dev` with verbose SQL echo) — scope or quiet them first.
+- Never `cat`/print an entire migration file under
+  `packages/db/prisma/migrations/` or the full `pnpm-lock.yaml` to check
+  one detail — `Grep` for the table/column/package name instead.
 
 ## Batch independent work
 
@@ -64,13 +89,27 @@ overhead of restating context between round trips.
 
 ## Delegate large exploration instead of absorbing it
 
-An open-ended search across the codebase ("where does X happen anywhere in
-the monorepo," "what are all the callers of Y") pulls a lot of raw material
-into context if done inline. Prefer the `Explore` agent (or `general-purpose`
-for multi-step research) for this: it returns a synthesized answer, and the
-raw grep/read traffic it took to get there never enters the main
-conversation's context at all. Reserve inline `Grep`/`Read` for targeted,
-few-file lookups where you already have a good idea what you're looking for.
+An open-ended search across the codebase pulls a lot of raw material into
+context if done inline. As a rule of thumb: if answering the question would
+take more than ~3 `Grep`/`Read` round trips, or touches more than one of
+`apps/*`/`packages/*` at once, delegate it instead of doing it inline.
+
+Examples specific to this repo's shape:
+- "How is tenant isolation enforced end to end?" spans
+  `packages/db/prisma/migrations/000_init`, `packages/db/src/index.ts`, and
+  `apps/api/src/core/db/prisma.service.ts` — a `general-purpose` or
+  `Explore` agent should trace it and report back, not three separate
+  inline reads stitched together in the main conversation.
+- "Which providers implement `VerificationMethodProvider`?" means grepping
+  every file under `packages/verification-providers/src` plus the registry
+  — delegate to `Explore` rather than opening each provider file in turn.
+- A single "where is `X` defined" lookup, or checking one known file,
+  stays inline — delegating a one-grep question just adds round-trip
+  overhead for no savings.
+
+Prefer `Explore` for locate-and-report tasks, `general-purpose` when the
+task also requires judgment across what's found (e.g. "does every
+tenant-owned table have an RLS policy?").
 
 ## Don't regenerate what's already known
 
