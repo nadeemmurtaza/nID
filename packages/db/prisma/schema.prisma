@@ -684,11 +684,7 @@ model PhoneBadgeEvidence {
 /// a locked username can ever be changed — see Profile's own comment)
 /// needs to compare successive verified values over time.
 ///
-/// Append-only, one row per PASSED document_ocr case whose MRZ had a
-/// checksum-valid name (see evaluate-document.ts) — never dob_document/
-/// education_document/employment_document, which use the same
-/// ImageClaimProvider mechanism but aren't a government-issued identity
-/// document. Written by resolveCaseActivity (apps/workflows), same
+/// Append-only. Written by resolveCaseActivity (apps/workflows), same
 /// trigger point and same no-RLS cross-tenant trust domain as
 /// PhoneBadgeEvidence above — a phone, not a tenantId-scoped Subject, is
 /// the join key a person's own Account needs to read this by, across
@@ -696,12 +692,28 @@ model PhoneBadgeEvidence {
 /// Reading "the current verified name" means the most recent row by
 /// verifiedAt; reading "did the name just change" means comparing the two
 /// most recent rows.
+///
+/// `method` records which PASSED VerificationMethodAttempt produced this
+/// row — document_ocr (a checksum-valid government-ID MRZ read, see
+/// evaluate-document.ts; never dob_document/education_document/
+/// employment_document, which reuse the same ImageClaimProvider mechanism
+/// for documents that aren't a government identity credential), or any
+/// method whose packages/verification-providers/src/method-attributes.ts
+/// mapping proves NATIONAL_ID_NUMBER and PHONE together in one check
+/// (today, only estamp_registry — a real third-party registry confirming
+/// THIS phone is linked to THIS CNIC, not just that a name was read off
+/// some document). This distinction is why the column exists: the
+/// username gate (profiles.service.ts's requireVerifiedRealName)
+/// specifically requires the second, stronger kind, not just "any row
+/// exists here" — a name alone was never enough to prove which phone a
+/// government ID actually belongs to.
 model PhoneNameEvidence {
   id         String   @id @default(cuid())
   phone      String
   tenantId   String
   subjectId  String
   caseId     String
+  method     String
   givenName  String
   familyName String
   verifiedAt DateTime

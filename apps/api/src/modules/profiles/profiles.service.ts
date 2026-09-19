@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@nid/db';
 import type { Account, Organization, Profile, ProfileFieldGrant, ProfileGrantField } from '@nid/db';
+import { METHOD_ATTRIBUTES } from '@nid/verification-providers';
 import { PrismaService } from '../../core/db/prisma.service';
 import { CrossTenantBadgesService } from '../badges/cross-tenant-badges.service';
 import { OrganizationsService } from '../organizations/organizations.service';
@@ -127,23 +128,33 @@ export class ProfilesService {
    * Real cross-tenant identity verification, required before a username
    * can exist at all — an IDENTITY badge alone isn't enough on its own
    * (org_membership-style inheritance, or a REGISTRY_VERIFIED check with
-   * no document, could produce one without ever recording a name), so
-   * this also requires the actual PhoneNameEvidence row a real
-   * document_ocr pass writes (see resolveCaseActivity's own comment).
-   * Returns the slugified name a chosen username must be built from.
+   * no document, could produce one without ever recording a name). Nor is
+   * just any PhoneNameEvidence row: a name read off a passport (document_ocr)
+   * proves a name and a national ID number exist, but never that this
+   * specific phone belongs to that specific national ID — only a method
+   * whose method-attributes.ts mapping proves NATIONAL_ID_NUMBER and
+   * PHONE together (today, estamp_registry — a real registry confirming
+   * this phone is linked to this CNIC) does that. This is the actual bar:
+   * name, national ID, AND a phone independently tied to that national ID,
+   * not any one or two of the three. Returns the slugified name a chosen
+   * username must be built from.
    */
   private async requireVerifiedRealName(phone: string): Promise<string> {
     const badges = await this.crossTenantBadges.getBadgesForPhone(phone);
     if (!badges.some((badge) => badge.claimType === 'IDENTITY')) {
       throw new ForbiddenException('Verify your identity before choosing a username.');
     }
+    const cnicPhoneLinkedMethods = Object.keys(METHOD_ATTRIBUTES).filter((method) => {
+      const attributes = METHOD_ATTRIBUTES[method]?.attributes ?? [];
+      return attributes.includes('NATIONAL_ID_NUMBER') && attributes.includes('PHONE');
+    });
     const name = await this.prisma.unscoped.phoneNameEvidence.findFirst({
-      where: { phone },
+      where: { phone, method: { in: cnicPhoneLinkedMethods } },
       orderBy: { verifiedAt: 'desc' },
     });
     if (!name) {
       throw new ForbiddenException(
-        'A verified government ID with your name on it is required before choosing a username.',
+        'A verified national ID with a phone number confirmed linked to it (e.g. e-stamp registry verification) is required before choosing a username.',
       );
     }
     return slugifyRealName(`${name.givenName} ${name.familyName}`);

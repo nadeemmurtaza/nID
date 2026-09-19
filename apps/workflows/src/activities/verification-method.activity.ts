@@ -2,6 +2,7 @@ import { createPrismaClient, withTenantContext, Prisma } from '@nid/db';
 import {
   buildVerificationProviderRegistry,
   attributesProvenBy,
+  METHOD_ATTRIBUTES,
   type VerificationResult,
   type PendingResult,
 } from '@nid/verification-providers';
@@ -317,6 +318,7 @@ export async function resolveCaseActivity(input: ResolveCaseActivityInput): Prom
               tenantId: input.tenantId,
               subjectId: input.subjectId,
               caseId: kase.id,
+              method: 'document_ocr',
               givenName: mrz.givenNames,
               familyName: mrz.surname,
               verifiedAt: resolvedAt,
@@ -333,6 +335,51 @@ export async function resolveCaseActivity(input: ResolveCaseActivityInput): Prom
             where: { id: input.subjectId },
             data: { givenName: mrz.givenNames, familyName: mrz.surname },
           });
+        }
+
+        // "This phone is genuinely linked to this CNIC" — the specific,
+        // stronger claim the username gate now requires (see
+        // PhoneNameEvidence's own schema comment). Any method whose
+        // method-attributes.ts mapping proves NATIONAL_ID_NUMBER and
+        // PHONE together (today, only estamp_registry) is real
+        // third-party evidence of that link — generalized through the
+        // attribute-mapping abstraction rather than a hardcoded method
+        // name, per docs/HOUSE-RULES.md rule 1. The name recorded is the
+        // Subject's current givenName/familyName: this method's own
+        // contract (RegistryCheckProvider) confirms a referenceId+phone
+        // pair against a third-party registry, it doesn't independently
+        // OCR a name, so the name-of-record it's corroborating is
+        // whatever the Subject already claims — re-read here in case the
+        // document_ocr branch just above updated it in this same
+        // transaction.
+        const cnicPhoneAttempt = await tx.verificationMethodAttempt.findFirst({
+          where: {
+            caseId: input.caseId,
+            status: 'PASSED',
+            method: {
+              in: Object.keys(METHOD_ATTRIBUTES).filter((method) => {
+                const attributes = METHOD_ATTRIBUTES[method]?.attributes ?? [];
+                return attributes.includes('NATIONAL_ID_NUMBER') && attributes.includes('PHONE');
+              }),
+            },
+          },
+        });
+        if (cnicPhoneAttempt) {
+          const current = await tx.subject.findUnique({ where: { id: input.subjectId } });
+          if (current?.givenName && current?.familyName) {
+            await tx.phoneNameEvidence.create({
+              data: {
+                phone: subject.phone,
+                tenantId: input.tenantId,
+                subjectId: input.subjectId,
+                caseId: kase.id,
+                method: cnicPhoneAttempt.method,
+                givenName: current.givenName,
+                familyName: current.familyName,
+                verifiedAt: resolvedAt,
+              },
+            });
+          }
         }
       }
     }

@@ -84,8 +84,12 @@ describeIfDb('ProfilesService — username creation/rename gates (live Postgres,
     await migratorPrisma.phoneBadgeEvidence.create({
       data: { phone, tenantId, subjectId: subject.id, claimType: 'IDENTITY', level: 'DOCUMENT_VERIFIED', verifiedAt: new Date() },
     });
+    // method: 'estamp_registry' — the username gate requires evidence that
+    // ties NATIONAL_ID_NUMBER and PHONE together, not just any name read
+    // off a document (see requireVerifiedRealName's own comment and the
+    // 'name alone is not enough' tests below).
     await migratorPrisma.phoneNameEvidence.create({
-      data: { phone, tenantId, subjectId: subject.id, caseId: 'test-case', ...name, verifiedAt: new Date() },
+      data: { phone, tenantId, subjectId: subject.id, caseId: 'test-case', method: 'estamp_registry', ...name, verifiedAt: new Date() },
     });
     return { account };
   }
@@ -112,6 +116,37 @@ describeIfDb('ProfilesService — username creation/rename gates (live Postgres,
       await expect(profiles.create(account, { slug: 'whatever', displayName: 'Whatever' })).rejects.toThrow(
         ForbiddenException,
       );
+    });
+
+    it('rejects a name verified only via document_ocr — a name and national ID read off a document is not proof THIS phone is linked to THAT national ID', async () => {
+      const phone = uniquePhone('dococronly');
+      const account = await migratorPrisma.account.create({ data: { phone, phoneVerifiedAt: new Date() } });
+      const { tenantId } = await makeTenant('profiles-spec-dococronly');
+      const subject = await migratorPrisma.subject.create({
+        data: { tenantId, type: 'PERSON', phone, accountId: account.id, givenName: 'Omar', familyName: 'Farid' },
+      });
+      await migratorPrisma.phoneBadgeEvidence.create({
+        data: { phone, tenantId, subjectId: subject.id, claimType: 'IDENTITY', level: 'DOCUMENT_VERIFIED', verifiedAt: new Date() },
+      });
+      // document_ocr proves a name + national ID number were read off a
+      // real document (evaluate-document.ts) — but never that this phone
+      // is the one linked to that national ID. That's the whole point of
+      // this test: this account has a real IDENTITY badge AND real
+      // PhoneNameEvidence, and username creation must still be refused.
+      await migratorPrisma.phoneNameEvidence.create({
+        data: { phone, tenantId, subjectId: subject.id, caseId: 'test-case', method: 'document_ocr', givenName: 'Omar', familyName: 'Farid', verifiedAt: new Date() },
+      });
+
+      await expect(profiles.create(account, { slug: 'omar-farid', displayName: 'Omar Farid' })).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('accepts a name verified via estamp_registry — the registry check that ties national ID and phone together', async () => {
+      const { account } = await makeVerifiedAccount('cnicphonelinked', { givenName: 'Sana', familyName: 'Yousaf' });
+      const profile = await profiles.create(account, { slug: 'sana-yousaf', displayName: 'Sana Yousaf' });
+      testProfileIds.push(profile.id);
+      expect(profile.slug).toBe('sana-yousaf');
     });
   });
 
@@ -223,6 +258,7 @@ describeIfDb('ProfilesService — username creation/rename gates (live Postgres,
           tenantId: subject.tenantId,
           subjectId: subject.id,
           caseId: 'test-case-rename',
+          method: 'estamp_registry',
           givenName: 'Grace',
           familyName: 'Lindqvist',
           verifiedAt: new Date(),
@@ -251,6 +287,7 @@ describeIfDb('ProfilesService — username creation/rename gates (live Postgres,
           tenantId: subject.tenantId,
           subjectId: subject.id,
           caseId: 'test-case-rename-mismatch',
+          method: 'estamp_registry',
           givenName: 'Hank',
           familyName: 'Boateng',
           verifiedAt: new Date(),
