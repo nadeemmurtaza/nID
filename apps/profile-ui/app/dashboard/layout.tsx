@@ -12,16 +12,25 @@ import { DashboardNav } from './components/DashboardNav';
  * the session check, the first-run "no profile yet" gate, and fetching the
  * profile once. Real children (the per-section pages) only mount once a
  * token and a profile both exist, and get both back out via
- * lib/dashboard-context so nothing has to re-fetch. The login route itself
- * lives outside this layout (app/dashboard/login), so it never hits this
- * gate. */
+ * lib/dashboard-context so nothing has to re-fetch.
+ *
+ * app/dashboard/login is a route NESTED under this same layout (Next.js
+ * applies a segment's layout.tsx to every route below it, including
+ * sibling-looking ones like /dashboard/login) — it is NOT excluded just by
+ * living in its own subfolder. Without the isLoginRoute bypass below, an
+ * unauthenticated visitor hits the "no token yet" branch, which used to
+ * render nothing but "Loading…" forever, permanently hiding the very login
+ * form that would let them get a token — the gate blocked its own escape
+ * hatch. */
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const isLoginRoute = pathname === '/dashboard/login';
   const [token, setToken] = useState<string | null>(null);
   const [profile, setProfile] = useState<OwnerProfile | null | undefined>(undefined);
 
   useEffect(() => {
+    if (isLoginRoute) return;
     const stored = getStoredAccountSession();
     if (!stored) {
       router.replace('/dashboard/login');
@@ -37,11 +46,15 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         clearStoredAccountSession();
         router.replace('/dashboard/login');
       });
-  }, [router]);
+  }, [router, isLoginRoute]);
 
   function handleSignOut(): void {
     clearStoredAccountSession();
     router.replace('/dashboard/login');
+  }
+
+  if (isLoginRoute) {
+    return <>{children}</>;
   }
 
   if (!token || profile === undefined) {
