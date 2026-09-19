@@ -4,6 +4,8 @@ import { CurrentAccount, CurrentSessionTokenHash } from '../../core/auth/current
 import type { Account } from '@nid/db';
 import { StartOtpDto } from './dto/start-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { StartEmailVerificationDto } from './dto/start-email-verification.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 import { AccountsService } from './accounts.service';
 
 @Controller('v1/accounts')
@@ -42,5 +44,21 @@ export class AccountsController {
   @HttpCode(204)
   async logoutAll(@CurrentAccount() account: Account): Promise<void> {
     await this.accounts.revokeAllSessions(account.id);
+  }
+
+  @UseGuards(AccountSessionGuard)
+  @Post('me/email/start')
+  async startEmailVerification(
+    @CurrentAccount() account: Account,
+    @Body() dto: StartEmailVerificationDto,
+  ): Promise<{ accepted: true }> {
+    await this.accounts.startEmailVerification(account.id, dto.email);
+    return { accepted: true };
+  }
+
+  @UseGuards(AccountSessionGuard)
+  @Post('me/email/verify')
+  verifyEmail(@CurrentAccount() account: Account, @Body() dto: VerifyEmailDto) {
+    return this.accounts.verifyEmail(account.id, dto.code);
   }
 }

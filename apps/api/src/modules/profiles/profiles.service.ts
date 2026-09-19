@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@nid/db';
 import type { Account, Organization, Profile, ProfileFieldGrant, ProfileGrantField } from '@nid/db';
-import { METHOD_ATTRIBUTES } from '@nid/verification-providers';
+import { cnicPhoneLinkedMethods } from '@nid/verification-providers';
 import { PrismaService } from '../../core/db/prisma.service';
 import { CrossTenantBadgesService } from '../badges/cross-tenant-badges.service';
 import { OrganizationsService } from '../organizations/organizations.service';
@@ -144,12 +144,8 @@ export class ProfilesService {
     if (!badges.some((badge) => badge.claimType === 'IDENTITY')) {
       throw new ForbiddenException('Verify your identity before choosing a username.');
     }
-    const cnicPhoneLinkedMethods = Object.keys(METHOD_ATTRIBUTES).filter((method) => {
-      const attributes = METHOD_ATTRIBUTES[method]?.attributes ?? [];
-      return attributes.includes('NATIONAL_ID_NUMBER') && attributes.includes('PHONE');
-    });
     const name = await this.prisma.unscoped.phoneNameEvidence.findFirst({
-      where: { phone, method: { in: cnicPhoneLinkedMethods } },
+      where: { phone, method: { in: cnicPhoneLinkedMethods() } },
       orderBy: { verifiedAt: 'desc' },
     });
     if (!name) {

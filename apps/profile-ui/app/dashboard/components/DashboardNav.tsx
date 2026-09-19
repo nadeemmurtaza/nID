@@ -10,13 +10,14 @@ import {
   LinksIcon,
   MessagesIcon,
   OffersIcon,
-  PrivacyIcon,
+  VerificationIcon,
   ProfileIcon,
   ServicesIcon,
 } from './icons';
 
 const NAV_ITEMS = [
   { href: '/dashboard/profile', label: 'Profile', Icon: ProfileIcon },
+  { href: '/dashboard/verification', label: 'Verification', Icon: VerificationIcon },
   { href: '/dashboard/services', label: 'Services', Icon: ServicesIcon },
   { href: '/dashboard/availability', label: 'Bookable hours', Icon: AvailabilityIcon },
   { href: '/dashboard/hours', label: 'Display hours', Icon: HoursIcon },
@@ -25,7 +26,6 @@ const NAV_ITEMS = [
   { href: '/dashboard/images', label: 'Photos', Icon: ImagesIcon },
   { href: '/dashboard/appointments', label: 'Appointments', Icon: AppointmentsIcon },
   { href: '/dashboard/messages', label: 'Messages', Icon: MessagesIcon },
-  { href: '/dashboard/privacy', label: 'Private shares', Icon: PrivacyIcon },
 ] as const;
 
 interface Props {
@@ -50,10 +50,10 @@ export function DashboardNav({ slug, pathname, onSignOut }: Props) {
 
       <div className="tabs">
         {NAV_ITEMS.map(({ href, label, Icon }) => {
-          // 'Profile' has its own sub-routes (basics/contact/address/
-          // visibility) — stays highlighted for all of them, not just an
-          // exact match.
-          const active = href === '/dashboard/profile' ? pathname?.startsWith(href) ?? false : pathname === href;
+          // 'Profile' and 'Verification' each have their own sub-routes —
+          // stay highlighted for all of them, not just an exact match.
+          const hasSubroutes = href === '/dashboard/profile' || href === '/dashboard/verification';
+          const active = hasSubroutes ? pathname?.startsWith(href) ?? false : pathname === href;
           return (
             <Link key={href} href={href} className={`tab-btn${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined}>
               <Icon />

@@ -26,6 +26,8 @@ export interface AppEnv {
   documentOcrDevMode: boolean;
   /** liveness provider (dev): mock a liveness result instead of calling a real vendor. */
   livenessDevMode: boolean;
+  /** Account email verification (dev): log the code instead of sending a real email. Never enable in prod. */
+  accountEmailDevMode: boolean;
 }
 
 function required(name: string): string {
@@ -47,5 +49,6 @@ export function loadEnv(): AppEnv {
     localStorageDir: required('LOCAL_STORAGE_DIR'),
     documentOcrDevMode: process.env['DOCUMENT_OCR_DEV_MODE'] === 'true',
     livenessDevMode: process.env['LIVENESS_DEV_MODE'] === 'true',
+    accountEmailDevMode: process.env['ACCOUNT_EMAIL_DEV_MODE'] === 'true',
   };
 }

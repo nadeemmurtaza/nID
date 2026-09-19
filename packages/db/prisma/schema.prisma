@@ -48,6 +48,12 @@ enum AuditActorType {
   SUBJECT
   SYSTEM
   API_KEY
+  /// An Account acting for itself — the self-service Verification Center
+  /// (accounts initiating their own VerificationCase against the platform
+  /// tenant), distinct from API_KEY (a tenant acting on a subject it
+  /// owns) and SUBJECT (apps/verify-ui's session-token-authenticated
+  /// callback submissions).
+  ACCOUNT
 }
 
 /// What a VerificationPolicy/Case is actually verifying about a Subject —
@@ -515,10 +521,17 @@ model Account {
   phone           String    @unique
   email           String?   @unique
   phoneVerifiedAt DateTime?
+  /// Set only by a real verifyEmail() success (accounts.service.ts) —
+  /// never backfilled or inferred. Null means exactly what it says:
+  /// nothing has confirmed control of this email address, even if the
+  /// `email` column itself is non-null (a change in progress, or a value
+  /// set some other way, is not the same claim as "verified").
+  emailVerifiedAt DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   sessions        AccountSession[]
+  emailOtpCodes   AccountEmailOtpCode[]
   loginRequests   OAuthLoginRequest[]
   profile         Profile?
   staffMemberships TenantStaffMembership[]
@@ -581,6 +594,35 @@ model AccountSession {
   tokenHash String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+}
+
+/// The email-verification counterpart to AccountOtpCode — same
+/// attempt-lockout + resend-cooldown mechanics (see accounts.service.ts's
+/// startEmailVerification/verifyEmail), deliberately not shared code with
+/// the phone flow despite the similarity: phone OTP bootstraps the Account
+/// itself (unauthenticated), email verification only ever runs against an
+/// already-authenticated Account (AccountSessionGuard) confirming a SECOND
+/// fact about it — different enough callers that forcing one shared
+/// implementation would cost more clarity than the duplication saves
+/// (same reasoning attribute-badges.ts's own header comment gives for a
+/// near-identical case). `email` is stored on the code row itself, not as
+/// a `pendingEmail` column on Account — the "what email is being
+/// verified" question is answered by the most recent unconsumed row for
+/// this accountId, the same append-only-evidence shape this schema
+/// already uses everywhere else.
+model AccountEmailOtpCode {
+  id         String    @id @default(cuid())
+  accountId  String
+  email      String
+  codeHash   String
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 

@@ -12,6 +12,11 @@ const SESSION_TTL_DAYS = 30;
 const MAX_OTP_ATTEMPTS = 5;
 /** Minimum gap between two startOtp() calls for the same phone — bounds how many live codes (and therefore how many total guesses) an attacker can accumulate. */
 const OTP_RESEND_COOLDOWN_SECONDS = 30;
+/** Same shape as the phone-OTP constants above, applied to AccountEmailOtpCode — see startEmailVerification/verifyEmail. */
+const EMAIL_CODE_LENGTH = 6;
+const EMAIL_CODE_TTL_MINUTES = 10;
+const MAX_EMAIL_ATTEMPTS = 5;
+const EMAIL_RESEND_COOLDOWN_SECONDS = 30;
 
 /**
  * nID's own account system — a portable identity a person creates once
@@ -140,5 +145,83 @@ export class AccountsService {
    */
   async revokeAllSessions(accountId: string): Promise<void> {
     await this.prisma.unscoped.accountSession.deleteMany({ where: { accountId } });
+  }
+
+  /**
+   * Real email verification — the gap the public profile's "Unverified"
+   * email tag called out. Same lockout/cooldown mechanics as phone OTP
+   * (see this file's own header comment on why the code isn't shared
+   * directly), on an already-authenticated Account rather than bootstrapping
+   * one. `email` lives on the code row, not a `pendingEmail` column —
+   * "what's being verified" is answered by the latest unconsumed row.
+   */
+  async startEmailVerification(accountId: string, email: string): Promise<void> {
+    const outstanding = await this.prisma.unscoped.accountEmailOtpCode.findFirst({
+      where: { accountId, consumedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (outstanding && Date.now() - outstanding.createdAt.getTime() < EMAIL_RESEND_COOLDOWN_SECONDS * 1000) {
+      throw new BadRequestException('Please wait before requesting another code.');
+    }
+
+    const code = randomInt(0, 10 ** EMAIL_CODE_LENGTH).toString().padStart(EMAIL_CODE_LENGTH, '0');
+    const codeHash = sha256Hex(code);
+
+    await this.prisma.unscoped.accountEmailOtpCode.create({
+      data: { accountId, email, codeHash, expiresAt: new Date(Date.now() + EMAIL_CODE_TTL_MINUTES * 60_000) },
+    });
+
+    const env = loadEnv();
+    if (!env.accountEmailDevMode) {
+      throw new Error(
+        'Account email verification has no production email vendor wired up yet — set ACCOUNT_EMAIL_DEV_MODE=true for local/dev use.',
+      );
+    }
+    this.logger.log(`[accounts:dev] would send email verification code ${code} to ${email}`);
+  }
+
+  async verifyEmail(accountId: string, code: string): Promise<Account> {
+    const challenge = await this.prisma.unscoped.accountEmailOtpCode.findFirst({
+      where: { accountId, consumedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!challenge) {
+      throw new UnauthorizedException('That code is incorrect or has expired.');
+    }
+
+    if (challenge.attempts >= MAX_EMAIL_ATTEMPTS) {
+      await this.prisma.unscoped.accountEmailOtpCode.update({
+        where: { id: challenge.id },
+        data: { consumedAt: new Date() },
+      });
+      throw new UnauthorizedException('Too many incorrect attempts. Request a new code.');
+    }
+
+    if (sha256Hex(code) !== challenge.codeHash) {
+      await this.prisma.unscoped.accountEmailOtpCode.update({
+        where: { id: challenge.id },
+        data: { attempts: { increment: 1 } },
+      });
+      throw new UnauthorizedException('That code is incorrect or has expired.');
+    }
+
+    await this.prisma.unscoped.accountEmailOtpCode.update({
+      where: { id: challenge.id },
+      data: { consumedAt: new Date() },
+    });
+
+    // Checked here, not at startEmailVerification() — never leak "this
+    // email is already registered" to someone who hasn't yet proven they
+    // control it by entering the real code sent to it.
+    const existing = await this.prisma.unscoped.account.findUnique({ where: { email: challenge.email } });
+    if (existing && existing.id !== accountId) {
+      throw new BadRequestException('This email is already verified on a different account.');
+    }
+
+    return this.prisma.unscoped.account.update({
+      where: { id: accountId },
+      data: { email: challenge.email, emailVerifiedAt: new Date() },
+    });
   }
 }

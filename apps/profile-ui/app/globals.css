@@ -395,6 +395,12 @@ p.lead {
   margin-bottom: 12px;
 }
 
+/* A card that needs the owner's attention (an unverified/required item) — tinted background + left accent stripe, same emphasis treatment apps/dashboard's resolve-card uses for its one actionable panel. */
+.section-card.attention {
+  background: var(--warn-soft);
+  border-left: 3px solid var(--warn);
+}
+
 .section-card h3 {
   font-size: 14px;
   margin: 0 0 4px;
@@ -1017,6 +1023,21 @@ button {
 .status-pill.COMPLETED {
   background: var(--bg-subtle);
   color: var(--muted);
+}
+
+.status-pill.APPROVED {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.status-pill.IN_REVIEW {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.status-pill.NEEDS_REVIEW {
+  background: var(--warn-soft);
+  color: var(--warn);
 }
 
 .section-title {

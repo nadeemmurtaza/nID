@@ -2,7 +2,7 @@ import { createPrismaClient, withTenantContext, Prisma } from '@nid/db';
 import {
   buildVerificationProviderRegistry,
   attributesProvenBy,
-  METHOD_ATTRIBUTES,
+  cnicPhoneLinkedMethods,
   type VerificationResult,
   type PendingResult,
 } from '@nid/verification-providers';
@@ -353,16 +353,7 @@ export async function resolveCaseActivity(input: ResolveCaseActivityInput): Prom
         // document_ocr branch just above updated it in this same
         // transaction.
         const cnicPhoneAttempt = await tx.verificationMethodAttempt.findFirst({
-          where: {
-            caseId: input.caseId,
-            status: 'PASSED',
-            method: {
-              in: Object.keys(METHOD_ATTRIBUTES).filter((method) => {
-                const attributes = METHOD_ATTRIBUTES[method]?.attributes ?? [];
-                return attributes.includes('NATIONAL_ID_NUMBER') && attributes.includes('PHONE');
-              }),
-            },
-          },
+          where: { caseId: input.caseId, status: 'PASSED', method: { in: cnicPhoneLinkedMethods() } },
         });
         if (cnicPhoneAttempt) {
           const current = await tx.subject.findUnique({ where: { id: input.subjectId } });

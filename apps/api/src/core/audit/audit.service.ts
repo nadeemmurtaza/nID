@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { TenantScopedClient } from '../db/prisma.service';
 
 export interface AuditEntryInput {
-  actorType: 'TENANT_STAFF' | 'SUBJECT' | 'SYSTEM' | 'API_KEY';
+  actorType: 'TENANT_STAFF' | 'SUBJECT' | 'SYSTEM' | 'API_KEY' | 'ACCOUNT';
   actorId?: string;
   action: string;
   subjectId?: string;

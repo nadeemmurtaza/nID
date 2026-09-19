@@ -324,9 +324,71 @@ async function main(): Promise<void> {
     }
   }
 
+  await seedPlatformTenant(prisma);
   await seedDemoProfile(prisma);
 
   await prisma.$disconnect();
+}
+
+/**
+ * The one tenant an Account's own self-service Verification Center
+ * (apps/profile-ui's /dashboard/verification) creates cases against —
+ * every other tenant in this schema represents an nID customer verifying
+ * ITS end-users; this one represents nID verifying its own Account
+ * holders directly, which is a genuinely different relationship, not a
+ * demo/test tenant like tenant-a/tenant-b above. No API key or staff
+ * login is seeded here: nothing calls ApiKeyGuard for this tenant today
+ * (self-service case creation is AccountSessionGuard-authenticated — see
+ * AccountVerificationController), and no dashboard review flow exists
+ * for it yet either. Add both the moment either need is real, not before.
+ */
+async function seedPlatformTenant(prisma: ReturnType<typeof createPrismaClient>): Promise<void> {
+  // Fixed id, not the usual cuid() default: Tenant itself carries RLS (the
+  // "tenant_self" policy, migrations/000_init) — nid_app can't SELECT a
+  // Tenant row without already knowing its id to set app.tenant_id to, the
+  // same chicken-and-egg problem TenantApiKey's own open-SELECT-for-
+  // bootstrap policy exists to solve. A fixed, well-known id sidesteps it
+  // entirely for this one tenant: AccountVerificationService references
+  // the literal 'nid-platform' directly, no runtime lookup needed. See
+  // that service's own header comment.
+  const tenant = await prisma.tenant.upsert({
+    where: { slug: 'nid-platform' },
+    update: {},
+    create: { id: 'nid-platform', name: 'nID Platform', slug: 'nid-platform' },
+  });
+
+  // document_ocr + liveness — the same real identity check any tenant's
+  // own "kyc" policy runs (see the tenant-a/tenant-b block above),
+  // available here for a person to run against themselves.
+  await prisma.verificationPolicy.upsert({
+    where: { tenantId_name: { tenantId: tenant.id, name: 'identity' } },
+    update: { claimType: 'IDENTITY', level: 'DOCUMENT_VERIFIED' },
+    create: {
+      tenantId: tenant.id,
+      name: 'identity',
+      methods: ['document_ocr', 'liveness'],
+      claimType: 'IDENTITY',
+      level: 'DOCUMENT_VERIFIED',
+    },
+  });
+
+  // estamp_registry alone — the specific, required-not-optional check
+  // profiles.service.ts's requireVerifiedRealName() now gates username
+  // creation on: proof that the phone completing this case is the one
+  // actually linked to the claimed CNIC, not just a name read off a
+  // document. Its own registry-check.provider.ts contract needs
+  // referenceId (the CNIC) + phone at case-creation time.
+  await prisma.verificationPolicy.upsert({
+    where: { tenantId_name: { tenantId: tenant.id, name: 'cnic-phone-link' } },
+    update: { claimType: 'IDENTITY', level: 'REGISTRY_VERIFIED' },
+    create: {
+      tenantId: tenant.id,
+      name: 'cnic-phone-link',
+      methods: ['estamp_registry'],
+      claimType: 'IDENTITY',
+      level: 'REGISTRY_VERIFIED',
+    },
+  });
 }
 
 /**
