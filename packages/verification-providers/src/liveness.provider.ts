@@ -6,7 +6,7 @@ import type {
 } from './types';
 import { parseLivenessCallback, type LivenessCallbackPayload } from './liveness-callback-payload';
 import { mockScoreFor } from './mock-outcome';
-import { evaluateLiveness, type LivenessEvaluation } from '@nid/liveness-engine';
+import type { LivenessEvaluation } from '@nid/liveness-engine';
 
 /**
  * Confirms the subject is a live person (not a photo, video replay, or
@@ -24,6 +24,13 @@ import { evaluateLiveness, type LivenessEvaluation } from '@nid/liveness-engine'
  * across the frame burst, and, when a reference image is supplied, a real
  * face-match distance. See mapEvaluationToResult()'s own comment for
  * exactly what each outcome means and why.
+ *
+ * @nid/liveness-engine is loaded with a dynamic import inside evaluate(),
+ * not a top-level one: it pulls in tfjs-node's native addon, which fails
+ * to load on some platform/Node-version combinations the native binary
+ * wasn't built for. A static import would crash the whole process at
+ * startup even when devMode is true and the real engine is never called --
+ * exactly the environments LIVENESS_DEV_MODE exists to let you run in.
  */
 export class LivenessProvider implements VerificationMethodProvider {
   readonly key = 'liveness';
@@ -59,6 +66,7 @@ export class LivenessProvider implements VerificationMethodProvider {
       };
     }
 
+    const { evaluateLiveness } = await import('@nid/liveness-engine');
     const evaluation = await evaluateLiveness(input.framesBytes, input.referenceImageBytes);
     return mapEvaluationToResult(evaluation);
   }
