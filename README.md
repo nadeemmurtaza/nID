@@ -6,6 +6,14 @@ parties as an external product (Persona/Sumsub/oneID.uz-shaped), not just an
 internal Newax tool. See `docs/HOUSE-RULES.md` for engineering conventions and
 `docs/PHASES.md` for the delivery roadmap this scaffold implements Phase 0 of.
 
+## Part of the NEWAX ecosystem
+
+This is one of several connected NEWAX repos, and **this one is the single
+identity provider for all of them** — login, 2FA, OAuth sessions, and the
+secrets vault. See [`ECOSYSTEM.md`](ECOSYSTEM.md) for the full picture.
+`newcom/esp`'s `esp/nid_auth.go` ("Login with nID") is the reference
+integration every other repo should copy.
+
 ## What's here (Phase 0)
 
 - `packages/db` — Prisma schema for the multi-tenant core (`Tenant`, `TenantApiKey`,
