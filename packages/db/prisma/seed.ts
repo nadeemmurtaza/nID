@@ -325,6 +325,7 @@ async function main(): Promise<void> {
   }
 
   await seedNmailClient(prisma);
+  await seedErpClient(prisma);
   await seedDemoProfile(prisma);
 
   await prisma.$disconnect();
@@ -374,6 +375,43 @@ async function seedNmailClient(prisma: ReturnType<typeof createPrismaClient>): P
   // eslint-disable-next-line no-console
   console.log(`nmail OAuth client: ${clientId} / ${secret.plaintext} (redirect: ${redirectUri})`);
 }
+
+/**
+ * The real "Login with nID" relying-party registration for erp-1 (Yaseen Business Platform)
+ * as specified in ECOSYSTEM.md ("nID is the single identity provider for the whole ecosystem").
+ * ERP_OAUTH_REDIRECT_URI lets this match the callback on erp-1 (defaults to http://localhost:3001/api/v1/auth/sso/nid/callback).
+ * Supports enterprise multi-tenancy — multiple organizations using erp-1 authenticate via nID accounts.
+ */
+async function seedErpClient(prisma: ReturnType<typeof createPrismaClient>): Promise<void> {
+  const tenant = await prisma.tenant.upsert({
+    where: { slug: 'erp-1' },
+    update: {},
+    create: { name: 'erp-1 (Yaseen Business Platform)', slug: 'erp-1' },
+  });
+
+  const existingClient = await prisma.oAuthClient.findFirst({ where: { tenantId: tenant.id } });
+  if (existingClient) {
+    // eslint-disable-next-line no-console
+    console.log(`erp-1 OAuth client already seeded: ${existingClient.clientId} (secret not re-printed; rotate by deleting the row if lost)`);
+    return;
+  }
+
+  const redirectUri = process.env.ERP_OAUTH_REDIRECT_URI ?? 'http://localhost:3001/api/v1/auth/sso/nid/callback';
+  const clientId = `client_erp_${randomBytes(8).toString('hex')}`;
+  const secret = generateSessionToken();
+  await prisma.oAuthClient.create({
+    data: {
+      tenantId: tenant.id,
+      name: 'erp-1 (Yaseen)',
+      clientId,
+      clientSecretHash: sha256Hex(secret.plaintext),
+      redirectUris: [redirectUri],
+    },
+  });
+  // eslint-disable-next-line no-console
+  console.log(`erp-1 OAuth client: ${clientId} / ${secret.plaintext} (redirect: ${redirectUri})`);
+}
+
 
 /**
  * A demo public profile (docs/PHASES.md's profiles section) — an Account,
