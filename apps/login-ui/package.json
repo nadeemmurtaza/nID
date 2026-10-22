@@ -8,9 +8,11 @@
     "start": "next start -p 3300",
     "typecheck": "tsc --noEmit",
     "lint": "eslint app --max-warnings=0",
-    "test": "echo \"no tests in @nid/login-ui yet\" && exit 0"
+    "test": "echo \"no tests in @nid/login-ui yet\" && exit 0",
+    "check-contrast": "node scripts/check-contrast.mjs"
   },
   "dependencies": {
+    "@nadeemmurtaza/design-system": "^0.1.0",
     "next": "^15.5.0",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",

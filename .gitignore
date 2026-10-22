@@ -17,3 +17,4 @@ storage-data/
 # per machine into whatever the worker's cwd was, never committed.
 *.traineddata
 *.traineddata.gz
+.npmrc

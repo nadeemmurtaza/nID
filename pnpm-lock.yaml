@@ -118,6 +118,9 @@ importers:
 
   apps/login-ui:
     dependencies:
+      '@nadeemmurtaza/design-system':
+        specifier: ^0.1.0
+        version: 0.1.0
       next:
         specifier: ^15.5.0
         version: 15.5.25(@types/node@22.20.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -1342,6 +1345,10 @@ packages:
   '@mapbox/node-pre-gyp@1.0.9':
     resolution: {integrity: sha512-aDF3S3rK9Q2gey/WAttUlISduDItz5BU3306M9Eyv6/oS40aMprnopshtlKTykxRNIBEZuRMaZAnbrQ4QtKGyw==}
     hasBin: true
+
+  '@nadeemmurtaza/design-system@0.1.0':
+    resolution: {integrity: sha512-LAgtK7E8uM4avb5jsqBMiAYkFIWG9X/ZFaFtUVlF3O156JMoIu3n0rnNyO0sW8lVWzqeIgu3WBzqMsFRXwxj0Q==, tarball: https://npm.pkg.github.com/download/@nadeemmurtaza/design-system/0.1.0/f75e36c1a5327b83d32d4233dac86fce9b838a65}
+    engines: {node: 24.18.0, pnpm: 11.11.0}
 
   '@nestjs/common@11.2.5':
     resolution: {integrity: sha512-x3LYEZnbGZMIeu9m60ws2+ZWzFAok9zGwjXZjcmdAeCLw6BYEjp9lreimuEpDIsLXK9bi6iYcJsYQGat9wq/rQ==}
@@ -5146,6 +5153,8 @@ snapshots:
     transitivePeerDependencies:
       - encoding
       - supports-color
+
+  '@nadeemmurtaza/design-system@0.1.0': {}
 
   '@nestjs/common@11.2.5(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)':
     dependencies:
