@@ -326,6 +326,7 @@ async function main(): Promise<void> {
 
   await seedNmailClient(prisma);
   await seedErpClient(prisma);
+  await seedCommunicatorClient(prisma);
   await seedDemoProfile(prisma);
 
   await prisma.$disconnect();
@@ -423,6 +424,42 @@ async function seedErpClient(prisma: ReturnType<typeof createPrismaClient>): Pro
  * PhoneBadgeEvidence's schema comment. Safe to run more than once: every
  * step upserts or checks-then-creates by its own natural key.
  */
+
+/**
+ * The real "Login with nID" relying-party registration for Communicator
+ * as specified in ECOSYSTEM.md ("nID is the single identity provider for the whole ecosystem").
+ * COMMUNICATOR_OAUTH_REDIRECT_URI defaults to http://localhost:8001/api/v1/auth/nid/callback.
+ */
+async function seedCommunicatorClient(prisma: ReturnType<typeof createPrismaClient>): Promise<void> {
+  const tenant = await prisma.tenant.upsert({
+    where: { slug: 'communicator' },
+    update: {},
+    create: { name: 'Communicator (Customer AI & Messaging)', slug: 'communicator' },
+  });
+
+  const existingClient = await prisma.oAuthClient.findFirst({ where: { tenantId: tenant.id } });
+  if (existingClient) {
+    // eslint-disable-next-line no-console
+    console.log(`Communicator OAuth client already seeded: ${existingClient.clientId}`);
+    return;
+  }
+
+  const redirectUri = process.env.COMMUNICATOR_OAUTH_REDIRECT_URI ?? 'http://localhost:8001/api/v1/auth/nid/callback';
+  const clientId = `client_comm_${randomBytes(8).toString('hex')}`;
+  const secret = generateSessionToken();
+  await prisma.oAuthClient.create({
+    data: {
+      tenantId: tenant.id,
+      name: 'Communicator',
+      clientId,
+      clientSecretHash: sha256Hex(secret.plaintext),
+      redirectUris: [redirectUri],
+    },
+  });
+  // eslint-disable-next-line no-console
+  console.log(`Communicator OAuth client: ${clientId} / ${secret.plaintext} (redirect: ${redirectUri})`);
+}
+
 async function seedDemoProfile(prisma: ReturnType<typeof createPrismaClient>): Promise<void> {
   const phone = '+15550100001';
 
