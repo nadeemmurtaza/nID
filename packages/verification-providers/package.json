@@ -11,6 +11,10 @@
     "lint": "eslint src --max-warnings=0"
   },
   "dependencies": {
+    "@nid/db": "workspace:*",
+    "@nid/forensics-engine": "workspace:*",
+    "@nid/liveness-engine": "workspace:*",
+    "@nid/ocr-engine": "workspace:*",
     "@nid/shared-types": "workspace:*"
   },
   "devDependencies": {

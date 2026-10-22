@@ -51,7 +51,7 @@ export class OtpSmsProvider implements VerificationMethodProvider {
 
   async handleCallback(payload: Record<string, unknown>): Promise<VerificationResult> {
     const submittedCode = payload['submittedCode'];
-    const expectedCodeHash = payload['expectedCodeHash'];
+    const expectedCodeHash = payload['codeHash'];
 
     if (typeof submittedCode !== 'string' || typeof expectedCodeHash !== 'string') {
       return { status: 'FAILED', raw: { reason: 'malformed_callback' }, verified: false };

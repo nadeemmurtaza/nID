@@ -23,11 +23,14 @@ export class PrismaService implements OnModuleDestroy {
   }
 
   /**
-   * Direct, unscoped access. Only valid against a table with an RLS policy
-   * that doesn't require tenant context — today, just TenantApiKey's
-   * open-SELECT auth-bootstrap policy (apps/api/src/core/auth/api-key.guard.ts).
-   * Every tenant-owned table's FORCE ROW LEVEL SECURITY policy will return
-   * zero rows here, by design.
+   * Direct, unscoped access. Valid against two kinds of table: one with an
+   * open-SELECT-for-bootstrap RLS policy — TenantApiKey, VerificationSession,
+   * OAuthClient, OAuthLoginRequest, all documented where their migration
+   * creates them — or one that carries no tenantId and has no tenant RLS
+   * policy at all, because it isn't tenant-owned data: Account,
+   * AccountOtpCode, AccountSession (see schema.prisma's comment on that
+   * section). Every tenant-owned table's FORCE ROW LEVEL SECURITY policy
+   * will return zero rows here for anything else, by design.
    */
   get unscoped(): PrismaClient {
     return this.client;

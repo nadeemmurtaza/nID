@@ -1,0 +1,380 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #111318;
+  --muted: #5b6270;
+  --border: #dfe2e8;
+  --accent: #2f6fed;
+  --danger: #c4392b;
+  --success: #1a8a5f;
+  --warn: #b3801a;
+  --info: #6a4fc4;
+  --card-bg: #f8f9fb;
+  --row-hover: #f0f2f6;
+  --shadow-sm: 0 1px 2px rgba(17, 19, 24, 0.05);
+  --shadow-md: 0 8px 24px rgba(17, 19, 24, 0.08), 0 1px 2px rgba(17, 19, 24, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1013;
+    --fg: #e8eaee;
+    --muted: #9aa1ad;
+    --border: #2a2e36;
+    --accent: #6ea1ff;
+    --danger: #ff7a68;
+    --success: #4fd39a;
+    --warn: #e2b04a;
+    --info: #a690ff;
+    --card-bg: #16181d;
+    --row-hover: #1c1f26;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+header.app-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.header-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tenant-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.logout-btn {
+  font-size: 13px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+main.shell {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.login-wrap {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 32px 28px;
+  box-shadow: var(--shadow-md);
+}
+
+.login-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+h1 {
+  font-size: 19px;
+  margin: 0 0 8px;
+}
+
+p.lead {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0 0 20px;
+  line-height: 1.5;
+}
+
+input[type='text'],
+input[type='password'] {
+  width: 100%;
+  font-size: 14px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  margin-bottom: 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.otp-input {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.otp-input input {
+  width: 44px;
+  height: 52px;
+  text-align: center;
+  font-size: 20px;
+  font-weight: 700;
+  font-family: inherit;
+  padding: 0;
+  margin: 0;
+}
+
+button {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.05s ease;
+}
+
+button.primary-block {
+  width: 100%;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+button.secondary {
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px;
+  margin-top: 4px;
+}
+
+button.secondary:not(:disabled):hover {
+  filter: none;
+  color: var(--fg);
+}
+
+.error-text {
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: 4px;
+  margin-bottom: 12px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th {
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+}
+
+td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+tbody tr:hover {
+  background: var(--row-hover);
+}
+
+.badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.badge.PENDING,
+.badge.IN_REVIEW {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
+}
+
+.badge.APPROVED {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+  color: var(--success);
+}
+
+.badge.REJECTED,
+.badge.EXPIRED {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: var(--danger);
+}
+
+.badge.NEEDS_REVIEW {
+  background: color-mix(in srgb, var(--info) 18%, transparent);
+  color: var(--info);
+}
+
+/* Badge strength, not case status — used on the per-ClaimType badges panel. */
+.badge.SELF_ATTESTED {
+  background: color-mix(in srgb, var(--muted) 20%, transparent);
+  color: var(--muted);
+}
+.badge.DOCUMENT_VERIFIED {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+.badge.REGISTRY_VERIFIED {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+  color: var(--success);
+}
+
+.badges-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 24px;
+}
+
+.claim-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.claim-badge .claim-name {
+  font-weight: 600;
+}
+
+.claim-badge.unverified {
+  color: var(--muted);
+  border-style: dashed;
+}
+
+.back-link {
+  display: inline-block;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 8px 16px;
+  font-size: 14px;
+  margin-bottom: 24px;
+}
+
+.detail-grid dt {
+  color: var(--muted);
+}
+
+.detail-grid dd {
+  margin: 0;
+}
+
+.resolve-panel {
+  max-width: 480px;
+  margin-bottom: 24px;
+}
+
+.resolve-panel textarea {
+  width: 100%;
+  font: inherit;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  resize: vertical;
+  margin-bottom: 10px;
+}
+
+.resolve-actions {
+  display: flex;
+  gap: 10px;
+}
+
+button.primary-block.approve {
+  background: var(--success);
+}
+
+button.primary-block.reject {
+  background: var(--danger);
+}
+
+.empty-state {
+  color: var(--muted);
+  font-size: 14px;
+  padding: 32px 0;
+  text-align: center;
+}

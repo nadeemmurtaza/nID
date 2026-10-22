@@ -1,6 +1,7 @@
 node_modules/
 dist/
 build/
+.next/
 *.tsbuildinfo
 .env
 .env.local
@@ -8,3 +9,11 @@ coverage/
 apps/api/generated/
 packages/db/generated/
 .DS_Store
+
+# Local-disk StorageDriver's uploads (@nid/storage) — document/selfie bytes, dev-only.
+storage-data/
+
+# tesseract.js's cached trained-language data (@nid/ocr-engine) — downloaded once
+# per machine into whatever the worker's cwd was, never committed.
+*.traineddata
+*.traineddata.gz

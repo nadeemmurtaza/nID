@@ -28,6 +28,12 @@ enum CaseStatus {
   APPROVED
   REJECTED
   EXPIRED
+  /// A method attempt (document_ocr or liveness — otp_sms never returns
+  /// this) came back ambiguous rather than a clean pass/fail. No
+  /// case-review queue exists yet to act on this (docs/PHASES.md Phase 1) —
+  /// the case simply stops here instead of being silently forced into
+  /// APPROVED or REJECTED.
+  NEEDS_REVIEW
 }
 
 enum AttemptStatus {
@@ -42,6 +48,35 @@ enum AuditActorType {
   SUBJECT
   SYSTEM
   API_KEY
+}
+
+/// What a VerificationPolicy/Case is actually verifying about a Subject —
+/// orthogonal to *how* (VerificationMethodProvider). A Subject can carry one
+/// badge per ClaimType, each computed independently: being IDENTITY-verified
+/// says nothing about whether EDUCATION or EMPLOYMENT has been checked.
+enum ClaimType {
+  IDENTITY
+  DATE_OF_BIRTH
+  EDUCATION
+  EMPLOYMENT
+}
+
+/// How strong the proof behind a claim is. Declared in ascending strength —
+/// Postgres orders enum values by declaration order, so `ORDER BY level DESC`
+/// reliably finds a Subject's strongest passed case for a ClaimType.
+enum VerificationLevel {
+  /// A possession/control factor only (e.g. otp_sms proves the subject
+  /// controls a phone number) or, when inferred rather than backed by a
+  /// case at all, a value the subject entered with no check performed —
+  /// see apps/api's badges endpoint for exactly when that inference is made.
+  SELF_ATTESTED
+  /// A submitted document was checked (document_ocr-style: real interface,
+  /// mocked result in dev mode until a real OCR vendor is wired up).
+  DOCUMENT_VERIFIED
+  /// Confirmed against an authoritative third-party source (a registry or
+  /// employer/institution API) — mocked in dev mode; no real vendor
+  /// integration exists yet for any ClaimType at this level.
+  REGISTRY_VERIFIED
 }
 
 model Tenant {
@@ -61,11 +96,14 @@ model Tenant {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  apiKeys    TenantApiKey[]
-  policies   VerificationPolicy[]
-  subjects   Subject[]
-  cases      VerificationCase[]
-  auditLogs  AuditLogEntry[]
+  apiKeys      TenantApiKey[]
+  staff        TenantStaffMembership[]
+  policies     VerificationPolicy[]
+  subjects     Subject[]
+  cases        VerificationCase[]
+  sessions     VerificationSession[]
+  auditLogs    AuditLogEntry[]
+  oauthClients OAuthClient[]
 }
 
 model TenantApiKey {
@@ -93,6 +131,15 @@ model VerificationPolicy {
   /// Validated against the VERIFICATION_METHODS allowlist at write time, not by a DB constraint.
   methods     String[]
   requireAll  Boolean  @default(true)
+  /// What this policy verifies. A tenant can have several policies for the
+  /// same ClaimType at different levels (e.g. "education-document" and
+  /// "education-registry") — the level a passed case earns is this field's
+  /// value, not something computed from which methods happened to run.
+  /// Defaults exist only so this migration can add a NOT NULL column to a
+  /// table with existing rows — every real policy sets both explicitly
+  /// (see prisma/seed.ts).
+  claimType ClaimType         @default(IDENTITY)
+  level     VerificationLevel @default(SELF_ATTESTED)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -101,6 +148,7 @@ model VerificationPolicy {
 
   @@unique([tenantId, name])
   @@index([tenantId])
+  @@index([tenantId, claimType])
 }
 
 model Subject {
@@ -119,15 +167,91 @@ model Subject {
   /// (docs/HOUSE-RULES.md / plan §Compliance) — stored as plain text only in
   /// this Phase 0 scaffold, which must not hold real PII.
   nationalIdNumber String?
+  /// The subject's claimed physical address — what address_gps_match compares
+  /// a reported current location against, and what address_utility_bill /
+  /// address_postal_otp confirm. Self-reported until one of those methods
+  /// actually verifies it (see VerifiedAttribute); distinct from Profile's own
+  /// address fields, which are a public-facing concept owned by an Account,
+  /// not a tenant's own KYC record of a Subject.
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  region       String?
+  countryCode  String?
+  latitude     Float?
+  longitude    Float?
+  /// The real portable Account (phone + OTP) this tenant-owned KYC record
+  /// belongs to, once known — set when an OrganizationMembership invite
+  /// resolves a phone to a real Account (see organizations.service.ts's
+  /// invite()). Null for a Subject a tenant KYC'd without the person ever
+  /// having (or needing) an Account of their own — that path stays valid;
+  /// this is an additive link, never a requirement. The join key from a
+  /// tenant's own KYC record back to the cross-tenant identity that
+  /// controls it — never the reverse: nothing on Account depends on this,
+  /// since one Account can have many Subjects (one per tenant that's KYC'd
+  /// them) but a Subject belongs to at most one Account.
+  accountId String?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
   tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  account      Account?           @relation(fields: [accountId], references: [id], onDelete: SetNull)
   organization Organization?
   cases        VerificationCase[]
+  verifiedAttributes VerifiedAttribute[]
 
   @@index([tenantId])
   @@index([tenantId, externalRef])
+  @@index([accountId])
+}
+
+/// The individual real-world facts a Subject can have proven, independent
+/// of and finer-grained than ClaimType/VerificationCase — one method can
+/// prove several at once (e-stamp proves NAME + CNIC + PHONE together; an
+/// ID scan proves NAME + CNIC + DATE_OF_BIRTH together), and a Subject can
+/// hold each at a different VerificationLevel depending on which method(s)
+/// actually ran. See packages/verification-providers/src/method-attributes.ts
+/// for the predefined, static "this method proves exactly these attributes,
+/// at this level" mapping this enum's values are drawn from.
+enum AttributeType {
+  NAME
+  /// Generic across countries — Pakistan's CNIC, Uzbekistan's PINFL, etc. all
+  /// map to this one attribute, the same way Subject.nationalIdNumber is
+  /// already one generic column rather than one per country.
+  NATIONAL_ID_NUMBER
+  PHONE
+  EMAIL
+  DATE_OF_BIRTH
+  ADDRESS
+}
+
+/// Append-only evidence that a specific real-world attribute of a Subject
+/// has been verified — same append-only + rank-strongest-first pattern
+/// already proven for PhoneBadgeEvidence, just scoped per (subject,
+/// attribute) instead of per (phone, claimType), and tenant-scoped (this
+/// table lives in the same trust domain as VerificationCase, not
+/// Account/PhoneBadgeEvidence's cross-tenant one). Written by
+/// apps/workflows' resolveCaseActivity for every PASSED method attempt in
+/// a case, one row per attribute that method's method-attributes.ts entry
+/// declares — independent of the case's own overall claimType/level badge,
+/// which is deliberately a coarser, separate concept this table does not
+/// replace.
+model VerifiedAttribute {
+  id         String            @id @default(cuid())
+  tenantId   String
+  subjectId  String
+  attribute  AttributeType
+  level      VerificationLevel
+  /// The VerificationMethodAttempt.method that produced this evidence, e.g. "otp_sms" or "estamp_registry".
+  method     String
+  caseId     String
+  verifiedAt DateTime          @default(now())
+
+  subject Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  case    VerificationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, subjectId, attribute])
 }
 
 model Organization {
@@ -143,8 +267,88 @@ model Organization {
 
   subject         Subject                      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   beneficialOwners OrganizationBeneficialOwner[]
+  memberships      OrganizationMembership[]
+  /// The one brand Profile this Organization owns, if any — see
+  /// Profile.organizationId's own comment.
+  profile          Profile?
+  /// Field grants OTHER profiles have made to this Organization.
+  fieldGrantsReceived ProfileFieldGrant[]
 
   @@index([tenantId])
+}
+
+/// A person (Subject, type = PERSON) an org admin has confirmed is a member
+/// (typically an employee) of this Organization — the attestation act
+/// itself, created via POST /v1/organizations/:id/members by whichever
+/// tenant API key is acting for that org. This is what org_membership
+/// (packages/verification-providers/src/organization-membership.provider.ts)
+/// checks for before it will let a member inherit a badge from the
+/// Organization's own verification — a person merely *claiming* to work
+/// somewhere (organizationId in VerificationCase input) is never enough on
+/// its own, exactly the same reasoning OrganizationBeneficialOwner already
+/// applies to KYB beneficial owners.
+/// PENDING: an org invited a phone that may not even have an Account yet
+/// (organizations.service.ts's invite()) — real evidence of nothing until
+/// the person themselves accepts. ACTIVE: the person explicitly accepted
+/// (POST /v1/accounts/me/organization-invites/:id/accept) — org_membership's
+/// provider only ever honors ACTIVE, never PENDING, the same "claimed, not
+/// proven" distinction this codebase applies everywhere else. DECLINED:
+/// explicitly refused — kept, not deleted, so an org can't just re-invite
+/// into silence. addMember()'s original direct-attestation path (an
+/// already-known Subject, immediately confirmed) still creates ACTIVE rows
+/// straight away — that flow predates invites and isn't a "did the person
+/// consent" question the same way a cold invite to an unclaimed phone is.
+enum MembershipStatus {
+  PENDING
+  ACTIVE
+  DECLINED
+}
+
+model OrganizationMembership {
+  id             String   @id @default(cuid())
+  tenantId       String
+  organizationId String
+  personSubjectId String
+  role           String?
+  status         MembershipStatus @default(ACTIVE)
+  /// Authorizes acting for the Organization itself — creating/managing its
+  /// brand Profile (see profiles.service.ts's createForOrganization()) and
+  /// inviting further employees. Only ever set true by a tenant's own
+  /// invite() call (organizations.service.ts) at invite time — an org has
+  /// no self-service admin-promotion path yet, deliberately: bootstrapping
+  /// who speaks for an Organization is still the tenant's call, the same
+  /// as everything else about how an Organization enters this system.
+  isAdmin        Boolean  @default(false)
+  /// Denormalized from personSubjectId's Subject.accountId at invite time
+  /// (organizations.service.ts's invite()) — deliberately, not just a
+  /// join: this is the ONE field an account's own "my pending invites"
+  /// query (GET /v1/accounts/me/organization-invites) reads across every
+  /// tenant, and it must never need Subject readable outside its tenant's
+  /// own RLS context — Subject carries real PII (nationalIdNumber, DOB,
+  /// address) that has no bootstrap-SELECT exception and must never get
+  /// one just to serve this. OrganizationMembership itself carries no PII,
+  /// so it can safely carry the one open-SELECT exception this needs
+  /// instead (see this table's migration). Null for addMember()'s
+  /// original direct-attestation path, where the Subject may have no
+  /// Account at all.
+  accountId      String?
+  /// The TenantApiKey.id that performed the attestation. Unlike
+  /// VerificationCase.reviewerId (which TenantStaffMembership now also lets
+  /// a real staff Account write — see its own schema comment), org
+  /// membership attestation has no dashboard UI at all yet — nothing calls
+  /// this except a tenant's own backend, so it's still deliberately
+  /// API-key-only rather than a speculative staff-facing field nothing uses.
+  addedByApiKeyId String
+  createdAt      DateTime @default(now())
+  respondedAt    DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  account      Account?     @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, personSubjectId])
+  @@index([tenantId])
+  @@index([personSubjectId])
+  @@index([accountId])
 }
 
 /// A person (Subject, type = PERSON) who is a beneficial owner of an Organization.
@@ -173,7 +377,18 @@ model VerificationCase {
   /// Correlates this case to its Temporal workflow execution (apps/workflows).
   temporalWorkflowId String?
   decision           String?
+  /// A TenantApiKey.id or a staff Account.id — whichever actually resolved
+  /// this case (TenantActorGuard/AuthenticatedActor in apps/api resolves
+  /// which, via TenantStaffMembership for a real human). Set only when a
+  /// NEEDS_REVIEW case gets manually resolved through
+  /// POST .../:id/resolve — never for an automated PASSED/FAILED outcome.
   reviewerId         String?
+  /// Copied from VerificationPolicy at creation time (immutable per case,
+  /// same denormalization pattern as VerificationMethodAttempt.providerKey)
+  /// so the badges endpoint can find a Subject's strongest passed case per
+  /// ClaimType without joining to VerificationPolicy.
+  claimType ClaimType         @default(IDENTITY)
+  level     VerificationLevel @default(SELF_ATTESTED)
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
   resolvedAt         DateTime?
@@ -182,9 +397,37 @@ model VerificationCase {
   subject  Subject                    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   policy   VerificationPolicy         @relation(fields: [policyId], references: [id], onDelete: Restrict)
   attempts VerificationMethodAttempt[]
+  sessions VerificationSession[]
+  verifiedAttributes VerifiedAttribute[]
 
   @@index([tenantId])
   @@index([tenantId, status])
+  /// Badge lookup: the strongest APPROVED case per (subject, claimType).
+  @@index([tenantId, subjectId, claimType, status, level])
+}
+
+/// A subject-facing credential for one VerificationCase — what the hosted
+/// verify UI (apps/verify-ui) authenticates with instead of the tenant's
+/// API key, which a subject's browser must never hold (it can create
+/// arbitrary Subjects/Cases for the whole tenant). Mirrors TenantApiKey's
+/// bootstrap shape: an open-SELECT RLS policy lets a session be resolved by
+/// tokenHash before tenantId is known, same reasoning as api_key_lookup in
+/// the migration — see apps/api/src/modules/sessions.
+model VerificationSession {
+  id        String   @id @default(cuid())
+  tenantId  String
+  caseId    String
+  /// SHA-256 hash of the token handed to the subject once, in the
+  /// verification-cases create response. The plaintext is never stored.
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  case   VerificationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([caseId])
 }
 
 model VerificationMethodAttempt {
@@ -196,6 +439,16 @@ model VerificationMethodAttempt {
   status      AttemptStatus @default(PENDING)
   providerKey String
   resultMeta  Json?
+  /// The provider's completion result detail (VerificationResult.raw) —
+  /// OCR/MRZ fields, forensics verdicts, registry response detail, etc.
+  /// Previously computed and then discarded once a method completed
+  /// (used only transiently for a FAILED/NEEDS_REVIEW resolve call or the
+  /// outbound webhook payload, never durably stored) — persisted here so
+  /// it stays queryable after the fact, the same real-evidence-over-
+  /// recomputation standard this codebase already holds every other
+  /// evidence table to. See resolveCaseActivity's own PhoneNameEvidence
+  /// write for the first real consumer.
+  raw         Json?
   score       Float?
   startedAt   DateTime      @default(now())
   completedAt DateTime?
@@ -240,4 +493,567 @@ model AuditLogEntry {
 
   @@index([tenantId])
   @@index([tenantId, subjectId])
+}
+
+// ── Accounts & "Login with nID" ─────────────────────────────────────────
+//
+// A different trust domain from everything above: Subject/VerificationCase
+// exist because a TENANT is verifying someone for that tenant's own
+// purposes. Account is nID's own namespace — a portable identity a person
+// creates once (phone + OTP, passwordless) and reuses to sign into any
+// relying-party app via "Login with nID", the same way a Google account
+// isn't owned by any one app that accepts it.
+//
+// Account/AccountOtpCode/AccountSession carry no tenantId and get no RLS
+// tenant policy — the multi-tenant isolation this migration builds doesn't
+// apply to them, the same way it doesn't apply to Tenant's own self-only
+// policy. Access control is the API layer requiring a valid OTP or session
+// token, not a Postgres policy keyed on a tenant nothing here belongs to.
+
+model Account {
+  id              String    @id @default(cuid())
+  phone           String    @unique
+  email           String?   @unique
+  phoneVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  sessions        AccountSession[]
+  loginRequests   OAuthLoginRequest[]
+  profile         Profile?
+  staffMemberships TenantStaffMembership[]
+  subjects        Subject[]
+  organizationMemberships OrganizationMembership[]
+  /// Field grants OTHER profiles have made to this Account — never this
+  /// Account's own Profile.fieldGrants (what it has granted out).
+  fieldGrantsReceived ProfileFieldGrant[]
+}
+
+/// The bridge between the two trust domains this file's own header comment
+/// describes: a real staff identity for a Tenant, backed by the same
+/// portable Account (phone + OTP) every other "a person signs into
+/// something" flow in this codebase already uses — apps/dashboard replaces
+/// its Phase 0 raw-API-key-paste login with this, and
+/// VerificationCase.reviewerId / OrganizationMembership.addedByApiKeyId's
+/// own "no separate staff-account system yet" caveat is exactly what this
+/// closes. Tenant-owned data (which humans can act for MY tenant is
+/// sensitive), but needs the same open-SELECT-for-bootstrap RLS exception
+/// TenantApiKey/OAuthClient/VerificationSession already carry — resolving
+/// "which tenant(s) does this now-authenticated Account staff" is how
+/// app.tenant_id gets determined for a staff session in the first place,
+/// so it can't itself require app.tenant_id to already be set.
+model TenantStaffMembership {
+  id        String   @id @default(cuid())
+  tenantId  String
+  accountId String
+  role      String   @default("STAFF")
+  createdAt DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, accountId])
+  @@index([accountId])
+}
+
+/// One OTP challenge for signing up or logging into an Account. Verifying
+/// the first OTP ever sent to a phone number creates the Account —
+/// "sign up" and "log in" are the same operation, not two flows.
+model AccountOtpCode {
+  id         String    @id @default(cuid())
+  phone      String
+  codeHash   String
+  consumedAt DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+
+  @@index([phone])
+}
+
+model AccountSession {
+  id        String   @id @default(cuid())
+  accountId String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+}
+
+/// A relying-party app registered to accept "Login with nID" — tenant-owned
+/// (the same Tenant that verifies identities via the API can let its own
+/// users log in with nID), analogous to TenantApiKey but for this flow
+/// instead of the verification API. clientSecretHash is presented only by
+/// the RP's own backend at POST /v1/oauth/token, never by a browser.
+model OAuthClient {
+  id               String   @id @default(cuid())
+  tenantId         String
+  name             String
+  clientId         String   @unique
+  clientSecretHash String
+  redirectUris     String[]
+  createdAt        DateTime @default(now())
+
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  loginRequests OAuthLoginRequest[]
+
+  @@index([tenantId])
+}
+
+enum LoginRequestStatus {
+  PENDING
+  APPROVED
+  EXPIRED
+}
+
+/// One "Login with nID" attempt. apps/login-ui delivers the SAME approval
+/// link two ways — a clickable URL for a same-device login, a QR code of
+/// that same URL for a cross-device one — so this table doesn't model "url"
+/// vs "qr" as different flows, only PENDING -> APPROVED -> code consumed.
+model OAuthLoginRequest {
+  id             String             @id @default(cuid())
+  tenantId       String
+  clientId       String
+  redirectUri    String
+  state          String?
+  status         LoginRequestStatus @default(PENDING)
+  accountId      String?
+  /// What the URL/QR encode and what GET .../:pollToken polls with.
+  pollTokenHash  String             @unique
+  /// One-time code minted on approval; POST /v1/oauth/token consumes it.
+  codeHash       String?            @unique
+  codeConsumedAt DateTime?
+  createdAt      DateTime           @default(now())
+  expiresAt      DateTime
+
+  client  OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  account Account?    @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([clientId])
+}
+
+// ---------------------------------------------------------------------------
+// Cross-tenant badge evidence. A Profile (below) is owned by an Account, not
+// any one Tenant, so computing its badges means checking every tenant's
+// approved VerificationCases for this Account's phone — something plain
+// nid_app RLS ("tenantId" = current_setting('app.tenant_id')) cannot do by
+// design, and must not be worked around by granting nid_app BYPASSRLS
+// wholesale (that would expose every tenant's full Subject PII, including
+// nationalIdNumber, not just badge-relevant fields).
+//
+// Instead, this table holds nothing a single tenant owns exclusively — only
+// the minimal fields getBadges()-style ranking needs — and carries no
+// tenantId-based RLS policy, the same trust domain as Account/AccountSession
+// above. One row is appended whenever a VerificationCase resolves to
+// APPROVED (apps/workflows' resolveCaseActivity) or a Subject is created
+// with a phone + dateOfBirth (SubjectsService.create) — see
+// apps/api/src/modules/badges/badge-ranking.ts, whose strongest-level-per-
+// claimType ranking runs unmodified against however many rows exist for a
+// phone, so an APPROVED row naturally outranks a SELF_ATTESTED one
+// regardless of write order (VerificationLevel's declared weakest-to-
+// strongest order, same as VerificationCase.level).
+model PhoneBadgeEvidence {
+  id         String            @id @default(cuid())
+  phone      String
+  tenantId   String
+  subjectId  String
+  caseId     String?
+  claimType  ClaimType
+  level      VerificationLevel
+  verifiedAt DateTime?
+  createdAt  DateTime          @default(now())
+
+  @@index([phone, claimType])
+}
+
+/// The real, verified name VALUE behind a phone — a genuinely different
+/// thing from both PhoneBadgeEvidence (proves a claimType/level, never the
+/// actual fact) and VerifiedAttribute (proves NAME was checked, at what
+/// level, never the string). Neither existed anywhere in this schema
+/// before this table: the username system (Profile.slug) needs to know
+/// not just "was this person's identity verified" but "verified as
+/// *what name*", and detecting a genuine legal name change (the only way
+/// a locked username can ever be changed — see Profile's own comment)
+/// needs to compare successive verified values over time.
+///
+/// Append-only, one row per PASSED document_ocr case whose MRZ had a
+/// checksum-valid name (see evaluate-document.ts) — never dob_document/
+/// education_document/employment_document, which use the same
+/// ImageClaimProvider mechanism but aren't a government-issued identity
+/// document. Written by resolveCaseActivity (apps/workflows), same
+/// trigger point and same no-RLS cross-tenant trust domain as
+/// PhoneBadgeEvidence above — a phone, not a tenantId-scoped Subject, is
+/// the join key a person's own Account needs to read this by, across
+/// every tenant that's ever run a real document check against them.
+/// Reading "the current verified name" means the most recent row by
+/// verifiedAt; reading "did the name just change" means comparing the two
+/// most recent rows.
+model PhoneNameEvidence {
+  id         String   @id @default(cuid())
+  phone      String
+  tenantId   String
+  subjectId  String
+  caseId     String
+  givenName  String
+  familyName String
+  verifiedAt DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([phone, verifiedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Public profiles — a person or business's public-facing page. One per
+// Account, not per Subject: a Subject is owned by one tenant for that
+// tenant's own KYC (docs/HOUSE-RULES.md), but a badge earned by passing that
+// tenant's KYC should show up on the person's own page regardless of which
+// tenant ran the check — the same cross-tenant portability principle
+// Account already embodies for "Login with nID". A Profile's badges are
+// computed the same way SubjectsService.getBadges computes a tenant's view
+// of one Subject, just fanned out across every Subject whose phone matches
+// this Account's — see profiles.service.ts's getBadges().
+//
+// No tenantId, no RLS policy — same trust domain as Account/AccountSession/
+// AccountOtpCode above: access control is the API layer (AccountSessionGuard)
+// requiring a valid Account session for anything but the public read paths,
+// not a Postgres tenant policy keyed on a tenant nothing here belongs to.
+// ---------------------------------------------------------------------------
+
+enum ProfileCategory {
+  DOCTOR
+  BUSINESS
+  PROFESSIONAL
+  OTHER
+}
+
+model Profile {
+  id          String          @id @default(cuid())
+  /// Exactly one of accountId/organizationId is ever set — a personal
+  /// profile an Account manages for themselves, or a brand profile an
+  /// Organization owns (managed by whichever of its admin-role
+  /// OrganizationMembership holders is currently editing it — the
+  /// authorization check, not a column here, since more than one admin
+  /// can manage the same brand profile). DB-enforced via a CHECK
+  /// constraint in this table's migration, not just app-layer discipline.
+  accountId      String?         @unique
+  /// Set only for a brand profile — the Organization it belongs to. Create
+  /// requires Organization.isVerified (real KYB, not a manual flag — see
+  /// organizations.service.ts's own derivation) and an ACTIVE + isAdmin
+  /// OrganizationMembership on the calling Account; see
+  /// createForOrganization() in profiles.service.ts.
+  organizationId String?         @unique
+  /// The public URL segment — apps/profile-ui serves this at /{slug}.
+  slug        String          @unique
+  displayName String
+  headline    String?
+  category    ProfileCategory @default(OTHER)
+  bio         String?
+  /// Object storage key (@nid/storage), not a URL — resolved through
+  /// apps/api the same way DocumentAsset/ProfileImage are, never a raw
+  /// public bucket URL baked into a stored value.
+  photoKey        String?
+  /// Set alongside photoKey whenever it's uploaded — needed to serve the
+  /// right Content-Type back out, the same reason ProfileImage.contentType
+  /// exists as its own column instead of being guessed from the key.
+  photoContentType String?
+
+  phone       String?
+  whatsapp    String?
+  publicEmail String?
+
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  region       String?
+  countryCode  String?
+  latitude     Float?
+  longitude    Float?
+
+  /// IANA timezone (e.g. "Asia/Karachi") — every AvailabilityRule/BusinessHour
+  /// minute-of-day value on this Profile is local to this, not UTC. Real
+  /// booking correctness depends on this being right, not assumed.
+  timezone String @default("UTC")
+
+  /// Per-section visibility — the owner's own choice of what's public, not
+  /// an all-or-nothing toggle. Contact channels default hidden until the
+  /// owner opts in; the sections a page needs to function default shown.
+  showPhone    Boolean @default(false)
+  showWhatsapp Boolean @default(false)
+  showEmail    Boolean @default(false)
+  showAddress  Boolean @default(false)
+  showBadges   Boolean @default(true)
+  showBooking  Boolean @default(true)
+  showOffers   Boolean @default(true)
+  showHours    Boolean @default(true)
+  /// "Privacy 1st": the verified real name (PhoneNameEvidence, or
+  /// Organization.legalName) is NEVER shown publicly unless the owner
+  /// opts in — displayName (above), which the owner fully controls and
+  /// isn't required to match their legal name, is what's public by
+  /// default, exactly like a LinkedIn display name vs. a legal name.
+  showRealName Boolean @default(false)
+
+  isPublished Boolean  @default(false)
+  /// When the CURRENT slug was set — reconsideration/lock math (see
+  /// ProfilesService's own comments) is computed live from this, never a
+  /// separately stored "isLocked" flag: freely changeable within 7 days
+  /// of this timestamp, permanently locked after, except when a genuine
+  /// legal name change (a new PhoneNameEvidence row differing from the
+  /// one the current slug was built from) unlocks exactly one more
+  /// change — which itself resets this to the new change's time.
+  usernameSetAt DateTime @default(now())
+  /// The slugified real name (PhoneNameEvidence givenName+familyName, or
+  /// Organization.legalName) the CURRENT slug was derived from — stored so
+  /// a later rename request can tell "the verified name changed since I
+  /// locked this slug in" apart from "the name is the same, the window
+  /// just hasn't closed yet". Comparing against a live re-derivation is
+  /// what actually detects a govt-record name change; nothing here is
+  /// trusted on its own.
+  usernameSourceName String @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  account           Account?           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  organization      Organization?      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  services          Service[]
+  offers            Offer[]
+  businessHours     BusinessHour[]
+  customLinks       CustomLink[]
+  socialLinks       SocialLink[]
+  images            ProfileImage[]
+  availabilityRules AvailabilityRule[]
+  appointments      Appointment[]
+  contactMessages   ContactMessage[]
+  fieldGrants       ProfileFieldGrant[]
+
+  @@index([accountId])
+  @@index([organizationId])
+}
+
+/// The fields a ProfileFieldGrant can target — deliberately the same set
+/// that already has a public show* flag (plus REAL_NAME), since a grant is
+/// a private, single-recipient EXCEPTION to that same default-off gate,
+/// never a new category of data.
+enum ProfileGrantField {
+  PHONE
+  WHATSAPP
+  EMAIL
+  ADDRESS
+  REAL_NAME
+}
+
+/// "User can show only one specific info to only one person or
+/// organization by his own will" — a private, targeted exception to the
+/// owner's public show* defaults, which stay exactly as they are for
+/// everyone else. Exactly one of granteeAccountId/granteeOrganizationId is
+/// ever set, DB-enforced the same way Profile's own owner column is (this
+/// table's migration). Revoked, never deleted: revokedAt null is what
+/// "active" means, derived live the same way this codebase treats every
+/// other status field, and keeps a real record of who was ever granted
+/// what instead of losing that the moment access is pulled.
+model ProfileFieldGrant {
+  id                    String            @id @default(cuid())
+  profileId             String
+  field                 ProfileGrantField
+  granteeAccountId      String?
+  granteeOrganizationId String?
+  createdAt             DateTime          @default(now())
+  revokedAt             DateTime?
+
+  profile             Profile       @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  granteeAccount      Account?      @relation(fields: [granteeAccountId], references: [id], onDelete: Cascade)
+  granteeOrganization Organization? @relation(fields: [granteeOrganizationId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@index([granteeAccountId])
+  @@index([granteeOrganizationId])
+}
+
+model Service {
+  id              String   @id @default(cuid())
+  profileId       String
+  name            String
+  description     String?
+  durationMinutes Int
+  price           Float?
+  currency        String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  profile      Profile       @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@index([profileId])
+}
+
+model Offer {
+  id          String    @id @default(cuid())
+  profileId   String
+  title       String
+  description String?
+  imageKey    String?
+  validUntil  DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+/// Fixed open/close hours shown on the page — distinct from
+/// AvailabilityRule, which drives real slot computation for booking. A
+/// profile can show "9am-5pm" without every one of those minutes being
+/// bookable (e.g. a walk-in-only business), so these are deliberately two
+/// different models, not one reused for both purposes.
+model BusinessHour {
+  id          String   @id @default(cuid())
+  profileId   String
+  day         Weekday
+  /// Minutes since midnight, local to Profile.timezone. Null when isClosed.
+  openMinute  Int?
+  closeMinute Int?
+  isClosed    Boolean  @default(false)
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, day])
+  @@index([profileId])
+}
+
+model CustomLink {
+  id        String   @id @default(cuid())
+  profileId String
+  label     String
+  url       String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+enum SocialPlatform {
+  FACEBOOK
+  INSTAGRAM
+  LINKEDIN
+  TWITTER
+  YOUTUBE
+  TIKTOK
+  OTHER
+}
+
+model SocialLink {
+  id        String         @id @default(cuid())
+  profileId String
+  platform  SocialPlatform
+  url       String
+  order     Int            @default(0)
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+enum ProfileImageKind {
+  BANNER
+  GALLERY
+}
+
+model ProfileImage {
+  id          String           @id @default(cuid())
+  profileId   String
+  kind        ProfileImageKind
+  /// Object storage key only (@nid/storage) — same convention as
+  /// DocumentAsset, content never touches this database.
+  storageKey  String
+  contentType String
+  order       Int              @default(0)
+  createdAt   DateTime         @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+/// A recurring weekly window a Service can actually be booked within — the
+/// input to real slot computation (apps/api/src/modules/profiles/booking.service.ts),
+/// not the appointments themselves.
+model AvailabilityRule {
+  id          String  @id @default(cuid())
+  profileId   String
+  day         Weekday
+  /// Minutes since midnight, local to Profile.timezone.
+  startMinute Int
+  endMinute   Int
+  isActive    Boolean @default(true)
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+model Appointment {
+  id           String            @id @default(cuid())
+  profileId    String
+  serviceId    String
+  status       AppointmentStatus @default(PENDING)
+  startsAt     DateTime
+  endsAt       DateTime
+  visitorName  String
+  visitorPhone String?
+  visitorEmail String?
+  notes        String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  /// Cheap defense-in-depth against the common case (a double click, a
+  /// retried request) — no two appointments on the same profile may share
+  /// an exact start instant. This alone cannot express "no overlap" between
+  /// appointments of different durations; the real guarantee is a
+  /// SERIALIZABLE transaction with an explicit overlap check in
+  /// booking.service.ts, which Postgres aborts on genuine concurrent
+  /// conflict rather than silently double-booking.
+  @@unique([profileId, startsAt])
+  @@index([profileId, startsAt])
+  @@index([serviceId])
+}
+
+model ContactMessage {
+  id          String    @id @default(cuid())
+  profileId   String
+  senderName  String
+  senderPhone String?
+  senderEmail String?
+  message     String
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
 }

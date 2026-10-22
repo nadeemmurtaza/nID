@@ -18,5 +18,8 @@
     "@eslint/js": "^10.0.1",
     "eslint": "^10.10.0",
     "typescript-eslint": "^8.70.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["@tensorflow/tfjs-node", "core-js"]
   }
 }

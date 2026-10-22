@@ -1,26 +1,73 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  UploadedFile,
+  UploadedFiles,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { ApiKeyGuard } from '../../core/auth/api-key.guard';
+import { TenantActorGuard } from '../../core/auth/tenant-actor.guard';
 import { CurrentTenant } from '../../core/auth/current-tenant.decorator';
-import type { AuthenticatedTenant } from '../../core/auth/types';
+import { CurrentActor } from '../../core/auth/current-actor.decorator';
+import type { AuthenticatedTenant, AuthenticatedActor } from '../../core/auth/types';
 import { CreateVerificationCaseDto } from './dto/create-verification-case.dto';
 import { SubmitOtpDto } from './dto/submit-otp.dto';
+import { ResolveCaseDto } from './dto/resolve-case.dto';
+import { SubmitSelfReportDto } from './dto/submit-self-report.dto';
+import { SubmitAgentAttestationDto } from './dto/submit-agent-attestation.dto';
+import { SubmitCodeDto } from './dto/submit-code.dto';
+import { SubmitLocationDto } from './dto/submit-location.dto';
 import { VerificationCasesService } from './verification-cases.service';
 
-@UseGuards(ApiKeyGuard)
+const uploadInterceptor = FileInterceptor('file', {
+  storage: memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
+
+/** Liveness needs a short burst of frames, not one file — see VerificationCasesService.submitLiveness(). */
+const framesUploadInterceptor = FilesInterceptor('frames', 12, {
+  storage: memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
+
 @Controller('v1/verification-cases')
 export class VerificationCasesController {
   constructor(private readonly cases: VerificationCasesService) {}
 
+  @UseGuards(ApiKeyGuard)
   @Post()
   create(@CurrentTenant() tenant: AuthenticatedTenant, @Body() dto: CreateVerificationCaseDto) {
     return this.cases.create(tenant.tenantId, tenant.apiKeyId, dto);
   }
 
-  @Get(':id')
-  getById(@CurrentTenant() tenant: AuthenticatedTenant, @Param('id') id: string) {
-    return this.cases.getById(tenant.tenantId, tenant.apiKeyId, id);
+  /** apps/dashboard's case list — reachable by a tenant API key or a real staff Account session (see TenantActorGuard). */
+  @UseGuards(TenantActorGuard)
+  @Get()
+  list(@CurrentActor() actor: AuthenticatedActor) {
+    return this.cases.list(actor.tenantId, actor.actorType, actor.actorId);
   }
 
+  @UseGuards(TenantActorGuard)
+  @Get(':id')
+  getById(@CurrentActor() actor: AuthenticatedActor, @Param('id') id: string) {
+    return this.cases.getById(actor.tenantId, actor.actorType, actor.actorId, id);
+  }
+
+  /** The manual-review queue's one action — always a human, so this is where TenantActorGuard's staff identity matters most. */
+  @UseGuards(TenantActorGuard)
+  @Post(':id/resolve')
+  resolve(@CurrentActor() actor: AuthenticatedActor, @Param('id') id: string, @Body() dto: ResolveCaseDto) {
+    return this.cases.resolveCase(actor.tenantId, actor.actorType, actor.actorId, id, dto.decision, dto.reason);
+  }
+
+  @UseGuards(ApiKeyGuard)
   @Post(':id/otp/submit')
   submitOtp(
     @CurrentTenant() tenant: AuthenticatedTenant,
@@ -28,5 +75,105 @@ export class VerificationCasesController {
     @Body() dto: SubmitOtpDto,
   ) {
     return this.cases.submitOtpCode(tenant.tenantId, tenant.apiKeyId, id, dto.code);
+  }
+
+  @UseGuards(ApiKeyGuard)
+  @Post(':id/document/submit')
+  @UseInterceptors(uploadInterceptor)
+  submitDocument(
+    @CurrentTenant() tenant: AuthenticatedTenant,
+    @Param('id') id: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded — expected multipart field "file".');
+    }
+    return this.cases.submitDocument(tenant.tenantId, tenant.apiKeyId, id, {
+      buffer: file.buffer,
+      contentType: file.mimetype,
+      filename: file.originalname,
+    });
+  }
+
+  @UseGuards(ApiKeyGuard)
+  @Post(':id/liveness/submit')
+  @UseInterceptors(framesUploadInterceptor)
+  submitLiveness(
+    @CurrentTenant() tenant: AuthenticatedTenant,
+    @Param('id') id: string,
+    @UploadedFiles() files?: Express.Multer.File[],
+  ) {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('No frames uploaded — expected multipart field "frames" (one or more files).');
+    }
+    return this.cases.submitLiveness(
+      tenant.tenantId,
+      tenant.apiKeyId,
+      id,
+      files.map((file) => ({ buffer: file.buffer, contentType: file.mimetype, filename: file.originalname })),
+    );
+  }
+
+  @UseGuards(ApiKeyGuard)
+  @Post(':id/claims/:method/submit')
+  @UseInterceptors(uploadInterceptor)
+  submitClaimDocument(
+    @CurrentTenant() tenant: AuthenticatedTenant,
+    @Param('id') id: string,
+    @Param('method') method: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded — expected multipart field "file".');
+    }
+    return this.cases.submitClaimDocument(tenant.tenantId, tenant.apiKeyId, id, method, {
+      buffer: file.buffer,
+      contentType: file.mimetype,
+      filename: file.originalname,
+    });
+  }
+
+  @UseGuards(ApiKeyGuard)
+  @Post(':id/claims/:method/report')
+  submitSelfReport(
+    @CurrentTenant() tenant: AuthenticatedTenant,
+    @Param('id') id: string,
+    @Param('method') method: string,
+    @Body() dto: SubmitSelfReportDto,
+  ) {
+    return this.cases.submitSelfReport(tenant.tenantId, tenant.apiKeyId, id, method, dto.reportedValue);
+  }
+
+  @UseGuards(ApiKeyGuard)
+  @Post(':id/claims/:method/agent-attest')
+  submitAgentAttestation(
+    @CurrentTenant() tenant: AuthenticatedTenant,
+    @Param('id') id: string,
+    @Param('method') method: string,
+    @Body() dto: SubmitAgentAttestationDto,
+  ) {
+    return this.cases.submitAgentAttestation(tenant.tenantId, tenant.apiKeyId, id, method, dto.decision, dto.notes);
+  }
+
+  @UseGuards(ApiKeyGuard)
+  @Post(':id/claims/:method/code')
+  submitCode(
+    @CurrentTenant() tenant: AuthenticatedTenant,
+    @Param('id') id: string,
+    @Param('method') method: string,
+    @Body() dto: SubmitCodeDto,
+  ) {
+    return this.cases.submitCode(tenant.tenantId, tenant.apiKeyId, id, method, dto.code);
+  }
+
+  @UseGuards(ApiKeyGuard)
+  @Post(':id/claims/:method/location')
+  submitLocation(
+    @CurrentTenant() tenant: AuthenticatedTenant,
+    @Param('id') id: string,
+    @Param('method') method: string,
+    @Body() dto: SubmitLocationDto,
+  ) {
+    return this.cases.submitLocation(tenant.tenantId, tenant.apiKeyId, id, method, dto.latitude, dto.longitude);
   }
 }
