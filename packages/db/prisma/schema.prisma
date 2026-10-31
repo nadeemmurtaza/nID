@@ -48,6 +48,10 @@ enum AuditActorType {
   SUBJECT
   SYSTEM
   API_KEY
+  /// An ecosystem service acting with its own BillingServiceCredential.
+  SERVICE
+  /// A person on BILLING_ADMIN_ACCOUNT_IDS — merchant-of-record staff, not tenant staff.
+  PLATFORM_ADMIN
 }
 
 /// What a VerificationPolicy/Case is actually verifying about a Subject —
@@ -93,6 +97,12 @@ model Tenant {
   /// known, called-out Phase 0 gap, not an oversight — do not treat this
   /// column as safe to seed with a real secret before that lands.
   webhookSecretPlaintext String?
+  /// Billing outbound events sign with this secret, never webhookUrl's —
+  /// an existing tenant's verification webhooks keep working untouched
+  /// (spec §15). Same at-rest treatment, and same tracked gap, as
+  /// webhookSecretPlaintext: not hashed because signing needs the real value.
+  billingWebhookUrl             String?
+  billingWebhookSecretPlaintext String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -104,6 +114,21 @@ model Tenant {
   sessions     VerificationSession[]
   auditLogs    AuditLogEntry[]
   oauthClients OAuthClient[]
+  billingAccount     BillingAccount?
+  billingSubscriptions Subscription[]
+  billingInvoices    Invoice[]
+  invoiceLines       InvoiceLine[]
+  paymentIntents     PaymentIntent[]
+  payments           Payment[]
+  refunds            Refund[]
+  checkoutSessions   CheckoutSession[]
+  usageRecords       UsageRecord[]
+  creditEntries      CreditLedgerEntry[]
+  ledgerAccounts     LedgerAccount[]
+  ledgerTransactions LedgerTransaction[]
+  ledgerEntries      LedgerEntry[]
+  webhookEvents      WebhookEvent[]
+  outboundEvents     OutboundEvent[]
 }
 
 model TenantApiKey {
@@ -487,12 +512,19 @@ model AuditLogEntry {
   subjectId String?
   caseId    String?
   ipAddress String?
+  /// What row this action touched, for financial records — invoice, payment,
+  /// payment_intent, refund, subscription, account, plan, service. House rule 3
+  /// audits reads of these too, and a bare `action` string cannot be queried
+  /// back to a specific record.
+  entityType String?
+  entityId   String?
   createdAt DateTime       @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([tenantId, subjectId])
+  @@index([tenantId, entityType, entityId])
 }
 
 // ── Accounts & "Login with nID" ─────────────────────────────────────────
@@ -1056,4 +1088,534 @@ model ContactMessage {
   profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   @@index([profileId])
+}
+
+// ── Billing ──────────────────────────────────────────────────────────────
+//
+// nID is merchant of record for the whole NEWAX ecosystem: one Rapid Gateway
+// merchant account, revenue attributed per service inside the ledger. This is
+// the deliberate exception to ECOSYSTEM.md's "nID must never own business
+// data" line — see docs/superpowers/specs/2026-10-31-nid-billing-platform-design.md §17.
+//
+// Catalog tables (BillingService, Plan, BillingServiceCredential) are global:
+// readable by anyone authenticated, writable only under app.billing_admin.
+// Everything else carries tenantId and is RLS-isolated like the rest of the
+// schema — including the ledger, so one tenant can never read another's
+// revenue accounts. Money is always BigInt minor units (paisa).
+
+enum BillingServiceStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PlanMode {
+  CREDIT_PACK
+  SUBSCRIPTION
+  ONE_OFF
+}
+
+enum PlanInterval {
+  MONTH
+  YEAR
+}
+
+enum PlanStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum BillingAccountStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum SubscriptionStatus {
+  INCOMPLETE
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+  UNCOLLECTIBLE
+}
+
+enum PaymentIntentPurpose {
+  CREDIT_TOPUP
+  SUBSCRIPTION
+  INVOICE
+  ONE_OFF
+}
+
+enum PaymentIntentStatus {
+  REQUIRES_CHECKOUT
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  EXPIRED
+  CANCELED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+enum RefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+enum CheckoutSessionStatus {
+  PENDING
+  COMPLETED
+  EXPIRED
+  CANCELED
+}
+
+enum CreditEntryReason {
+  TOPUP
+  USAGE
+  REFUND
+  ADJUSTMENT
+}
+
+enum LedgerAccountKind {
+  PSP_CLEARING
+  PSP_FEES
+  REVENUE
+  TAX_PAYABLE
+  DEFERRED_REVENUE
+  CUSTOMER_CREDITS
+  REFUNDS
+  ADJUSTMENTS
+}
+
+enum LedgerTransactionType {
+  PAYMENT
+  CREDIT_TOPUP
+  CREDIT_USAGE
+  FEE
+  REFUND
+  RECOGNITION
+  ADJUSTMENT
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
+enum SettlementStatus {
+  MATCHED
+  DISCREPANCY
+}
+
+enum OutboundEventStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+model BillingService {
+  id        String               @id @default(cuid())
+  /// Stable ecosystem key, e.g. "nid", "erp-1", "communicator".
+  key       String               @unique
+  name      String
+  ownerRepo String
+  status    BillingServiceStatus @default(ACTIVE)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  credentials    BillingServiceCredential[]
+  plans          Plan[]
+  invoiceLines   InvoiceLine[]
+  usageRecords   UsageRecord[]
+  ledgerAccounts LedgerAccount[]
+  outboundEvents OutboundEvent[]
+}
+
+model Plan {
+  id          String       @id @default(cuid())
+  serviceId   String
+  key         String
+  /// Price changes create a new version row; nothing here is ever rewritten,
+  /// because a live Subscription pins planId (spec D11).
+  version     Int          @default(1)
+  name        String
+  description String?
+  mode        PlanMode
+  currency    String       @default("PKR")
+  unitAmountMinor BigInt
+  interval    PlanInterval?
+  creditsIncluded Int      @default(0)
+  overageUnitAmountMinor BigInt?
+  features    Json         @default("{}")
+  status      PlanStatus   @default(ACTIVE)
+  supersedesPlanId String?
+  createdAt   DateTime     @default(now())
+
+  service       BillingService @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  subscriptions Subscription[]
+
+  @@unique([serviceId, key, version])
+  @@index([serviceId, status])
+}
+
+model BillingServiceCredential {
+  id        String    @id @default(cuid())
+  serviceId String
+  label     String
+  keyPrefix String
+  keyHash   String    @unique
+  scopes    String[]  @default([])
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime @default(now())
+
+  service BillingService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+}
+
+model BillingAccount {
+  id        String               @id @default(cuid())
+  tenantId  String               @unique
+  currency  String               @default("PKR")
+  status    BillingAccountStatus @default(ACTIVE)
+  /// Derived cache of the sum of CreditLedgerEntry.deltaMinor. Never assigned
+  /// directly — only credits.ts's atomic UPDATE touches it (spec §7.3).
+  creditBalanceMinor BigInt      @default(0)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptions   Subscription[]
+  invoices        Invoice[]
+  paymentIntents  PaymentIntent[]
+  creditEntries   CreditLedgerEntry[]
+}
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  tenantId           String
+  billingAccountId   String
+  planId             String
+  status             SubscriptionStatus @default(INCOMPLETE)
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean            @default(false)
+  startedAt          DateTime?
+  canceledAt         DateTime?
+  /// Only set when the provider hands back a reusable mandate token.
+  providerTokenId    String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  billingAccount BillingAccount  @relation(fields: [billingAccountId], references: [id], onDelete: Cascade)
+  plan           Plan            @relation(fields: [planId], references: [id], onDelete: Restrict)
+  invoiceLines   InvoiceLine[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, currentPeriodEnd])
+}
+
+model Invoice {
+  id               String        @id @default(cuid())
+  tenantId         String
+  billingAccountId String
+  number           String        @unique
+  status           InvoiceStatus @default(DRAFT)
+  currency         String
+  subtotalMinor    BigInt
+  taxMinor         BigInt        @default(0)
+  totalMinor       BigInt
+  amountPaidMinor  BigInt        @default(0)
+  periodStart      DateTime?
+  periodEnd        DateTime?
+  dueAt            DateTime?
+  issuedAt         DateTime?
+  paidAt           DateTime?
+  voidedAt         DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  billingAccount BillingAccount @relation(fields: [billingAccountId], references: [id], onDelete: Cascade)
+  lines          InvoiceLine[]
+
+  @@index([tenantId, status])
+}
+
+model InvoiceLine {
+  id               String   @id @default(cuid())
+  tenantId         String
+  invoiceId        String
+  serviceId        String
+  subscriptionId   String?
+  description      String
+  quantity         Int      @default(1)
+  unitAmountMinor  BigInt
+  amountMinor      BigInt
+  taxMinor         BigInt   @default(0)
+  createdAt        DateTime @default(now())
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice      Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  service      BillingService @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  subscription Subscription?  @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@index([tenantId, serviceId])
+}
+
+model PaymentIntent {
+  id               String               @id @default(cuid())
+  tenantId         String
+  billingAccountId String
+  purpose          PaymentIntentPurpose
+  amountMinor      BigInt
+  currency         String
+  status           PaymentIntentStatus  @default(REQUIRES_CHECKOUT)
+  provider         String
+  providerRef      String?
+  checkoutUrl      String?
+  idempotencyKey   String
+  metadata         Json?
+  expiresAt        DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  tenant          Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  billingAccount  BillingAccount     @relation(fields: [billingAccountId], references: [id], onDelete: Cascade)
+  payments        Payment[]
+  checkoutSession CheckoutSession?
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([provider, providerRef])
+  @@index([tenantId, status])
+}
+
+model Payment {
+  id                    String        @id @default(cuid())
+  tenantId              String
+  paymentIntentId       String
+  provider              String
+  providerTransactionId String
+  amountMinor           BigInt
+  currency              String
+  status                PaymentStatus @default(PENDING)
+  methodType            String?
+  paidAt                DateTime?
+  createdAt             DateTime      @default(now())
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  paymentIntent PaymentIntent @relation(fields: [paymentIntentId], references: [id], onDelete: Cascade)
+  refunds       Refund[]
+
+  @@unique([provider, providerTransactionId])
+  @@index([tenantId, paidAt])
+}
+
+model Refund {
+  id           String       @id @default(cuid())
+  tenantId     String
+  paymentId    String
+  amountMinor  BigInt
+  status       RefundStatus @default(PENDING)
+  reason       String?
+  providerRef  String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, status])
+}
+
+model CheckoutSession {
+  id              String                @id @default(cuid())
+  tenantId        String
+  /// @unique is what makes this the 1:1 side of PaymentIntent.checkoutSession.
+  paymentIntentId String                @unique
+  tokenHash       String
+  status          CheckoutSessionStatus @default(PENDING)
+  /// Caller app's "back to the app" link, already origin-allowlisted. The
+  /// provider's redirect target is always nID's own /return/<token>, built
+  /// server-side — a client never chooses where the browser lands.
+  returnUrl       String?
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  createdAt       DateTime              @default(now())
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  paymentIntent PaymentIntent @relation(fields: [paymentIntentId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, tokenHash])
+}
+
+model UsageRecord {
+  id             String   @id @default(cuid())
+  tenantId       String
+  serviceId      String
+  metricKey      String
+  quantity       BigInt
+  occurredAt     DateTime
+  idempotencyKey String
+  invoiceLineId  String?
+  createdAt      DateTime @default(now())
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  service BillingService @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@unique([serviceId, idempotencyKey])
+  @@index([tenantId, serviceId, occurredAt])
+}
+
+model CreditLedgerEntry {
+  id                String            @id @default(cuid())
+  tenantId          String
+  billingAccountId  String
+  deltaMinor        BigInt
+  reason            CreditEntryReason
+  refType           String
+  refId             String
+  balanceAfterMinor BigInt
+  createdAt         DateTime          @default(now())
+
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  billingAccount BillingAccount @relation(fields: [billingAccountId], references: [id], onDelete: Cascade)
+
+  /// The idempotency anchor: a retried debit for the same case/intent is a
+  /// no-op rather than a second movement (spec §7.3).
+  @@unique([tenantId, refType, refId, reason])
+  @@index([tenantId, createdAt])
+}
+
+model LedgerAccount {
+  id        String            @id @default(cuid())
+  tenantId  String
+  serviceId String?
+  kind      LedgerAccountKind
+  currency  String
+  /// t:<tenantId>[:s:<serviceId>]:<kind>:<currency> — uniqueness without a
+  /// partial index, and it encodes tenant so RLS and the key can't disagree.
+  scopeKey  String            @unique
+  createdAt DateTime          @default(now())
+
+  tenant  Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  service BillingService? @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  entries LedgerEntry[]
+
+  @@index([tenantId, kind])
+}
+
+model LedgerTransaction {
+  id          String                @id @default(cuid())
+  tenantId    String
+  type        LedgerTransactionType
+  refType     String
+  refId       String
+  currency    String
+  occurredAt  DateTime
+  createdAt   DateTime              @default(now())
+
+  tenant  Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  entries LedgerEntry[]
+
+  @@index([tenantId, occurredAt])
+  @@index([refType, refId])
+}
+
+model LedgerEntry {
+  id            String          @id @default(cuid())
+  tenantId      String
+  transactionId String
+  accountId     String
+  direction     LedgerDirection
+  amountMinor   BigInt
+
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  transaction LedgerTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  account     LedgerAccount     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([transactionId])
+  @@index([accountId])
+}
+
+model WebhookEvent {
+  id                String             @id @default(cuid())
+  tenantId          String
+  provider          String
+  providerEventId   String
+  type              String
+  payload           Json
+  signatureValid    Boolean
+  status            WebhookEventStatus @default(RECEIVED)
+  error             String?
+  receivedAt        DateTime           @default(now())
+  processedAt       DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerEventId])
+  @@index([tenantId, status])
+}
+
+/// Platform-level, deliberately NOT tenant-scoped: a settlement file belongs
+/// to the merchant account, and only covers rows it can match once it knows
+/// the tenant. Admin/reconciliation reads it under app.billing_admin.
+model SettlementRecord {
+  id                    String           @id @default(cuid())
+  provider              String
+  providerSettlementId  String
+  amountMinor           BigInt
+  feeMinor              BigInt
+  netMinor              BigInt
+  currency              String
+  settledAt             DateTime
+  matchedPaymentId      String?
+  matchedTenantId       String?
+  status                SettlementStatus @default(DISCREPANCY)
+  createdAt             DateTime         @default(now())
+
+  @@unique([provider, providerSettlementId])
+  @@index([status])
+}
+
+model OutboundEvent {
+  id            String               @id @default(cuid())
+  tenantId      String
+  serviceId     String?
+  eventType     String
+  payload       Json
+  targetUrl     String
+  status        OutboundEventStatus  @default(PENDING)
+  attempts      Int                  @default(0)
+  nextAttemptAt DateTime?
+  lastError     String?
+  createdAt     DateTime             @default(now())
+  deliveredAt   DateTime?
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  service BillingService? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([status, nextAttemptAt])
 }
