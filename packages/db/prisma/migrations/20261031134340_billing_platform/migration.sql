@@ -634,6 +634,11 @@ ALTER TABLE "OutboundEvent" ADD CONSTRAINT "OutboundEvent_serviceId_fkey" FOREIG
 -- public number is NID-<year>-<seq> and must be unique across tenants.
 CREATE SEQUENCE "billing_invoice_number_seq" START 1 INCREMENT 1;
 
+-- 000_init's ALTER DEFAULT PRIVILEGES grant to nid_app covers ON TABLES only,
+-- so this sequence would otherwise stay invisible to the least-privilege
+-- runtime role and Task 5's invoice-number nextval would fail with 42501.
+GRANT USAGE, SELECT ON SEQUENCE "billing_invoice_number_seq" TO nid_app;
+
 -- ── RLS: ordinary tenant-owned tables ───────────────────────────────────
 -- Same shape as 000_init's loop. FORCE matters because nid_app is not
 -- exempt; a query that forgets its tenant context sees zero rows, not
