@@ -1,0 +1,10 @@
+{
+  "id": "rg_chk_9f2c81",
+  "reference": "intent_abc123",
+  "transaction_id": "rg_txn_77aa31",
+  "status": "paid",
+  "amount": 11800,
+  "currency": "PKR",
+  "method": "visa",
+  "paid_at": "2026-10-31T12:04:11Z"
+}

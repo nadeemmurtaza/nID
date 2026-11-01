@@ -1,0 +1,7 @@
+{
+  "id": "rg_chk_9f2c81",
+  "reference": "intent_abc123",
+  "checkout_url": "https://sandbox.rapidgateway.pk/checkout/rg_chk_9f2c81",
+  "status": "created",
+  "expires_at": "2026-10-31T12:30:00Z"
+}

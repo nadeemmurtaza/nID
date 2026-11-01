@@ -1,5 +1,7 @@
+import { PaymentProviderConfigError } from './errors';
 import { MockPaymentProvider } from './mock.provider';
-import { ProviderRegistry, UnknownProviderError } from './registry';
+import { mapProviderStatus, ProviderRegistry, UnknownProviderError } from './registry';
+import type { CanonicalPaymentStatus } from './types';
 
 describe('ProviderRegistry', () => {
   const registry = new ProviderRegistry([new MockPaymentProvider({ checkoutUiUrl: 'http://x' })]);
@@ -19,6 +21,30 @@ describe('ProviderRegistry', () => {
           new MockPaymentProvider({ checkoutUiUrl: 'http://a' }),
           new MockPaymentProvider({ checkoutUiUrl: 'http://b' }),
         ]),
-    ).toThrow(/duplicate/);
+    ).toThrow(PaymentProviderConfigError);
+  });
+});
+
+describe('mapProviderStatus', () => {
+  const cases: Array<[string | null | undefined, CanonicalPaymentStatus]> = [
+    [null, 'PENDING'],
+    [undefined, 'PENDING'],
+    ['', 'PENDING'],
+    ['awaiting_bank_confirmation', 'PENDING'],
+    ['paid', 'SUCCEEDED'],
+    ['captured', 'SUCCEEDED'],
+    ['succeeded', 'SUCCEEDED'],
+    ['failed', 'FAILED'],
+    ['declined', 'FAILED'],
+    ['canceled', 'CANCELED'],
+    ['cancelled', 'CANCELED'],
+    // Real payloads carry padding; an untrimmed value must not stall forever.
+    ['captured ', 'SUCCEEDED'],
+    ['\nSUCCESS', 'SUCCEEDED'],
+    [' CANCELED\t', 'CANCELED'],
+  ];
+
+  it.each(cases)('maps %p to %s', (raw, expected) => {
+    expect(mapProviderStatus(raw)).toBe(expected);
   });
 });

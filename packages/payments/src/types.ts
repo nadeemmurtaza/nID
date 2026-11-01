@@ -49,6 +49,11 @@ export interface RefundInput {
 }
 
 export interface RefundResult {
+  /**
+   * The provider's refund id — not the original payment's ref, which stays on
+   * `RefundInput.providerRef`. Task 10 stores this on the Refund row, so the two
+   * must never be confused for one another.
+   */
   providerRef: string;
   status: 'PENDING' | 'SUCCEEDED' | 'FAILED';
 }

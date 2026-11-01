@@ -37,6 +37,12 @@ export class MockPaymentProvider implements PaymentProvider {
     };
   }
 
+  /**
+   * The amounts here are placeholders — `0n`/`PKR` regardless of what
+   * createCheckout was given, because the mock never talks to a gateway. Only
+   * `status` carries meaning. Never treat this response as settlement evidence:
+   * settlement is the dev mock-payment endpoint, which writes the ledger.
+   */
   async fetchPayment(providerRef: string): Promise<ProviderPayment> {
     return {
       providerRef,
