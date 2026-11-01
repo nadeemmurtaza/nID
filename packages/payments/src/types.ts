@@ -20,6 +20,13 @@ export interface CreateCheckoutResult {
 
 export interface ProviderPayment {
   providerRef: string;
+  /**
+   * The provider's own transaction id — the handle a refund must be sent with
+   * (see `RefundInput.providerTransactionId`) and the one reconciliation keys
+   * on. It is not `providerRef`: on a hosted checkout that is the session id.
+   * Null/undefined until the provider has actually moved the money.
+   */
+  providerTransactionId?: string | null;
   status: CanonicalPaymentStatus;
   amountMinor: bigint;
   currency: string;
@@ -32,6 +39,8 @@ export interface ParsedWebhook {
   providerEventId: string;
   type: string;
   providerRef: string;
+  /** Same meaning as on `ProviderPayment`: the provider's transaction id. */
+  providerTransactionId?: string | null;
   status: CanonicalPaymentStatus;
   paidAmountMinor: bigint | null;
   currency: string | null;
