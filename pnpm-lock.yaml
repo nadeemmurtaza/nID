@@ -255,6 +255,34 @@ importers:
         specifier: ^5.6.0
         version: 5.9.3
 
+  packages/billing:
+    dependencies:
+      '@nid/db':
+        specifier: workspace:*
+        version: link:../db
+      '@nid/payments':
+        specifier: workspace:*
+        version: link:../payments
+      '@nid/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+    devDependencies:
+      '@types/jest':
+        specifier: ^29.5.13
+        version: 29.5.14
+      '@types/node':
+        specifier: ^22.7.0
+        version: 22.20.3
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@22.20.3)(ts-node@10.9.2(@swc/core@1.16.2)(@types/node@22.20.3)(typescript@5.9.3))
+      ts-jest:
+        specifier: ^29.2.5
+        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
   packages/db:
     dependencies:
       '@prisma/client':
