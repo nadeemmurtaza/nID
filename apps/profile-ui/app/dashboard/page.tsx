@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ArrowRightIcon } from 'lucide-animated';
 import { getMe, getMyProfile, type OwnerProfile } from '../../lib/owner-api';
 import { clearStoredAccountSession, getStoredAccountSession } from '../../lib/session';
 import { CreateProfileForm } from './components/CreateProfileForm';
@@ -83,7 +84,7 @@ export default function DashboardPage() {
         <span className="brand">nID Profiles</span>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <a href={`/${profile.slug}`} target="_blank" rel="noreferrer" style={{ fontSize: 13 }}>
-            View page →
+            View page <ArrowRightIcon size={16} className="nid-icon" style={{ verticalAlign: -2 }} />
           </a>
           <button
             type="button"

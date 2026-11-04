@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { ArrowLeftIcon } from 'lucide-animated';
 import { apiFetch, resolveCase, type SubjectBadges, type VerificationCaseDetail } from '../../../lib/api-client';
 import { useDashboardSession } from '../../../lib/use-dashboard-session';
 import { Header } from '../../components/header';
@@ -67,7 +68,7 @@ function CaseDetail({ credential, caseId }: { credential: string; caseId: string
   return (
     <>
       <Link className="back-link" href="/">
-        ← All cases
+        <ArrowLeftIcon size={16} className="nid-icon" style={{ verticalAlign: -2 }} /> All cases
       </Link>
 
       {error && <p className="error-text">{error}</p>}

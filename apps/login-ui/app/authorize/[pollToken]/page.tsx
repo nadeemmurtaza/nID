@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import QRCode from 'qrcode';
+import { BadgeAlertIcon, CircleCheckIcon } from 'lucide-animated';
 import {
   apiFetch,
   ApiError,
@@ -161,7 +162,9 @@ export default function AuthorizePage() {
 
         {phase.kind === 'error' && (
           <>
-            <div className="result-icon">⚠️</div>
+            <div className="result-icon">
+              <BadgeAlertIcon size={56} className="nid-icon" />
+            </div>
             <h1>Can&apos;t continue</h1>
             <p className="lead">{phase.message}</p>
           </>
@@ -169,7 +172,9 @@ export default function AuthorizePage() {
 
         {phase.kind === 'redirecting' && (
           <>
-            <div className="result-icon">✅</div>
+            <div className="result-icon">
+              <CircleCheckIcon size={56} className="nid-icon" />
+            </div>
             <h1>Signed in</h1>
             <p className="lead">Taking you back to {clientName || 'the app'}…</p>
           </>
@@ -177,7 +182,9 @@ export default function AuthorizePage() {
 
         {phase.kind === 'approved-elsewhere' && (
           <>
-            <div className="result-icon">✅</div>
+            <div className="result-icon">
+              <CircleCheckIcon size={56} className="nid-icon" />
+            </div>
             <h1>You&apos;re approved</h1>
             <p className="lead">Go back to the device where you started signing in to {clientName || 'the app'} — it will continue automatically.</p>
           </>

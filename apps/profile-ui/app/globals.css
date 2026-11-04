@@ -665,3 +665,9 @@ button.secondary:not(:disabled):hover {
   border-radius: 999px;
   background: var(--danger);
 }
+
+/* Lucide strokes stay crisp when the browser rasterises at 2x: geometric
+   precision avoids the snap-to-pixel hinting that softens 1px strokes. */
+.nid-icon svg {
+  shape-rendering: geometricPrecision;
+}

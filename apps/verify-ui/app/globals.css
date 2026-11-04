@@ -200,3 +200,9 @@ input[type='file'] {
   background: var(--bg);
   margin-bottom: 12px;
 }
+
+/* Lucide strokes stay crisp when the browser rasterises at 2x: geometric
+   precision avoids the snap-to-pixel hinting that softens 1px strokes. */
+.nid-icon svg {
+  shape-rendering: geometricPrecision;
+}

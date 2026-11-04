@@ -378,3 +378,9 @@ button.primary-block.reject {
   padding: 32px 0;
   text-align: center;
 }
+
+/* Lucide strokes stay crisp when the browser rasterises at 2x: geometric
+   precision avoids the snap-to-pixel hinting that softens 1px strokes. */
+.nid-icon svg {
+  shape-rendering: geometricPrecision;
+}
