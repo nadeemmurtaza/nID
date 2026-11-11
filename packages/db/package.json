@@ -13,7 +13,7 @@
     "seed": "tsx prisma/seed.ts",
     "test": "jest",
     "lint": "eslint src prisma/seed.ts --max-warnings=0"
-  },
+  },  "prisma": {"seed": "tsx prisma/seed.ts"},
   "dependencies": {
     "@prisma/client": "^5.20.0"
   },

@@ -129,6 +129,12 @@ model Tenant {
   ledgerEntries      LedgerEntry[]
   webhookEvents      WebhookEvent[]
   outboundEvents     OutboundEvent[]
+  departments        Department[]
+  accessGrants       AccessGrant[]
+  roleDefinitions    RoleDefinition[]
+  invitations        Invitation[]
+  deptAssignments    DepartmentAssignment[] @relation("DeptAssignTenant")
+  roleAssignments    RoleAssignment[] @relation("RoleAssignTenant")
 }
 
 model TenantApiKey {
@@ -298,6 +304,11 @@ model Organization {
   profile          Profile?
   /// Field grants OTHER profiles have made to this Organization.
   fieldGrantsReceived ProfileFieldGrant[]
+  brands             Brand[]
+  accessGrants       AccessGrant[]
+  roleAssignments    RoleAssignment[]
+  departmentAssignments DepartmentAssignment[]
+  invitations        Invitation[]
 
   @@index([tenantId])
 }
@@ -559,6 +570,10 @@ model Account {
   /// Field grants OTHER profiles have made to this Account — never this
   /// Account's own Profile.fieldGrants (what it has granted out).
   fieldGrantsReceived ProfileFieldGrant[]
+  accessGrants        AccessGrant[]
+  roleAssignments     RoleAssignment[]
+  departmentAssignments DepartmentAssignment[]
+  invitationsSent     Invitation[]
 }
 
 /// The bridge between the two trust domains this file's own header comment
@@ -1618,4 +1633,231 @@ model OutboundEvent {
 
   @@index([tenantId, status])
   @@index([status, nextAttemptAt])
+}
+
+// ============================================================
+// Three-Layer Access Control System
+// ============================================================
+
+/// Access types for entity-level grants
+enum AccessType {
+  OWNER
+  PARTNER
+  ADMIN
+  MEMBER
+}
+
+/// Status of an access grant
+enum AccessGrantStatus {
+  ACTIVE
+  REVOKED
+  PENDING
+}
+
+/// Status of an invitation
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  REVOKED
+}
+
+/// Scope of access (tenant, organization, or brand level)
+enum AccessScope {
+  TENANT
+  ORGANIZATION
+  BRAND
+}
+
+/// Brand model - under organizations, represents a commercial brand
+model Brand {
+  id              String   @id @default(cuid())
+  organizationId  String
+  name            String
+  slug            String
+  description     String?
+  bio             String?
+  website         String?
+  email           String?
+  phone           String?
+  colors          Json?
+  socialLinks     Json?
+  products        Json?
+  services        Json?
+  prices          Json?
+  policies        Json?
+  rules           Json?
+  toneGuidelines  Json?
+  keywords        Json?
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  accessGrants    AccessGrant[]
+  roleAssignments RoleAssignment[]
+  departmentAssignments DepartmentAssignment[]
+  invitations     Invitation[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+}
+
+/// Department definitions at tenant level - inherited by orgs and brands
+model Department {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  name                String
+  slug                String
+  defaultPermissions  Json?
+  icon                String?
+  color               String?
+  inheritedFromTenant Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant              Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignments         DepartmentAssignment[]
+  invitations         Invitation[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+}
+
+/// Links accounts to departments at tenant/org/brand level
+model DepartmentAssignment {
+  id             String      @id @default(cuid())
+  accountId      String
+  departmentId   String
+  tenantId       String
+  organizationId String?
+  brandId        String?
+  scope          AccessScope @default(TENANT)
+  createdAt      DateTime    @default(now())
+
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  department   Department   @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  tenant       Tenant       @relation("DeptAssignTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  brand        Brand?       @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, departmentId, scope, organizationId, brandId])
+  @@index([accountId])
+  @@index([departmentId])
+  @@index([tenantId])
+}
+
+/// Entity-level access grants linking accounts to tenants/orgs/brands
+model AccessGrant {
+  id                      String            @id @default(cuid())
+  accountId               String
+  tenantId                String
+  organizationId          String?
+  brandId                 String?
+  accessType              AccessType
+  partnershipPercentage   Float?
+  grantedBy               String
+  status                  AccessGrantStatus @default(ACTIVE)
+  grantedAt               DateTime          @default(now())
+
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  brand        Brand?       @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, tenantId, organizationId, brandId])
+  @@index([accountId])
+  @@index([tenantId])
+  @@index([status])
+}
+
+/// Role definitions with permissions (mirrors Communicator)
+model RoleDefinition {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  slug        String
+  permissions Json
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignments RoleAssignment[]
+  invitations Invitation[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+}
+
+/// Links accounts to roles at specific entity levels
+model RoleAssignment {
+  id             String      @id @default(cuid())
+  accountId      String
+  roleDefinitionId String
+  tenantId       String
+  organizationId String?
+  brandId        String?
+  scope          AccessScope @default(TENANT)
+  createdAt      DateTime    @default(now())
+
+  account      Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  role         RoleDefinition @relation(fields: [roleDefinitionId], references: [id], onDelete: Cascade)
+  tenant       Tenant       @relation("RoleAssignTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+  organization Organization?  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  brand        Brand?         @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, roleDefinitionId, scope, organizationId, brandId])
+  @@index([accountId])
+  @@index([roleDefinitionId])
+  @@index([tenantId])
+}
+
+/// Invite records for email and username invites
+model Invitation {
+  id                 String           @id @default(cuid())
+  tenantId           String
+  email              String?
+  username           String?
+  invitedBy          String
+  organizationId     String?
+  brandId            String?
+  scope              AccessScope
+  roleDefinitionId   String?
+  departmentId       String?
+  status             InvitationStatus @default(PENDING)
+  expiresAt          DateTime
+  acceptedAt         DateTime?
+  acceptedBy         String?
+  createdAt          DateTime         @default(now())
+
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  organization Organization?  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  brand        Brand?         @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  role         RoleDefinition? @relation(fields: [roleDefinitionId], references: [id], onDelete: SetNull)
+  department   Department?    @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  invitedByAccount Account    @relation(fields: [invitedBy], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([username])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+/// Permission catalog: service groups, services, and permissions hierarchy
+model PermissionCatalog {
+  id            String   @id @default(cuid())
+  groupName     String
+  serviceName   String
+  permissionKey String
+  label         String
+  description   String?
+  createdAt     DateTime @default(now())
+
+  @@unique([groupName, serviceName, permissionKey])
+  @@index([groupName])
+  @@index([serviceName])
+  @@index([permissionKey])
 }

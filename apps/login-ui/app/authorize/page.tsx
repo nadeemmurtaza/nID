@@ -25,7 +25,7 @@ function Loading() {
   return (
     <main>
       <div className="card">
-        <p className="brand">nID</p>
+        <p className="brand">NEWAX</p>
         <h1>Starting sign-in…</h1>
         <div className="status-line">
           <span className="dot" />
@@ -74,7 +74,7 @@ function AuthorizeEntry() {
   return (
     <main>
       <div className="card">
-        <p className="brand">nID</p>
+        <p className="brand">NEWAX</p>
         <div className="result-icon">
           <BadgeAlertIcon size={56} className="nid-icon" />
         </div>

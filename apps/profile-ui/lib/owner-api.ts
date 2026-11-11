@@ -353,3 +353,47 @@ export function listMyContactMessages(token: string): Promise<OwnerContactMessag
 export function markContactMessageRead(token: string, id: string): Promise<OwnerContactMessage> {
   return authedFetch(`/v1/profiles/me/contact-messages/${id}/read`, token, { method: 'POST' });
 }
+
+// ---- tenant memberships (Work Profile) ----
+
+export interface TenantMembership {
+  tenantId: string;
+  tenantName: string;
+  tenantSlug: string;
+  role: string;
+}
+
+export function getMyTenantMemberships(token: string): Promise<TenantMembership[]> {
+  return authedFetch('/v1/tenants/my-memberships', token);
+}
+
+// ---- organization memberships (Work Profile) ----
+
+export interface OrganizationMembership {
+  organizationId: string;
+  organizationName: string;
+  countryCode: string | null;
+  role: string;
+  isAdmin: boolean;
+}
+
+export function getMyOrganizationMemberships(token: string): Promise<OrganizationMembership[]> {
+  return authedFetch('/v1/organizations/my-memberships', token);
+}
+
+// ---- brand memberships (Work Profile) ----
+
+export interface BrandMembership {
+  brandId: string;
+  brandName: string;
+  brandSlug: string;
+  organizationId: string;
+  organizationName: string;
+  tenantId: string;
+  tenantName: string;
+  role: string;
+}
+
+export function getMyBrandMemberships(token: string): Promise<BrandMembership[]> {
+  return authedFetch('/v1/brands/my-memberships', token);
+}

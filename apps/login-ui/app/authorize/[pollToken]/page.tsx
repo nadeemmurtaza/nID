@@ -146,9 +146,11 @@ export default function AuthorizePage() {
     <main>
       <div className="card">
         <div className="login-logo">
-          <Logomark size={44} />
+          <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Logomark size={24} />
+          </div>
         </div>
-        <p className="brand">nID</p>
+        <p className="brand">NEWAX</p>
 
         {phase.kind === 'loading' && (
           <>
@@ -193,7 +195,7 @@ export default function AuthorizePage() {
         {phase.kind === 'pending' && (
           <>
             <h1>Sign in to {clientName || 'this app'}</h1>
-            <p className="lead">With your nID account.</p>
+            <p className="lead">With your NEWAX ID.</p>
 
             {account ? (
               <ExistingAccount

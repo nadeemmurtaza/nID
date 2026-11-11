@@ -6,8 +6,9 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
-  title: 'Sign in with nID',
-  description: 'Sign in to a relying-party app with your nID account.',
+  title: 'NEWAX ID — One identity, every app',
+  description:
+    'NEWAX ID is the identity provider for the NEWAX ecosystem. One verified identity for people and organizations, reused across every connected app including Communicator.',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

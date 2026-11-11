@@ -68,7 +68,7 @@ function CaseDetail({ credential, caseId }: { credential: string; caseId: string
   return (
     <>
       <Link className="back-link" href="/">
-        <ArrowLeftIcon size={16} className="nid-icon" style={{ verticalAlign: -2 }} /> All cases
+        <ArrowLeftIcon size={16} className="nid-icon" /> All cases
       </Link>
 
       {error && <p className="error-text">{error}</p>}
