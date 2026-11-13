@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { apiUrl, getPublicProfileBundle } from '../../lib/api';
 import { BookingWidget } from '../components/BookingWidget';
 import { ContactForm } from '../components/ContactForm';
+import { VerifiedBadgeChip } from '../components/VerifiedBadgeChip';
 import { badgeLabel, formatPrice, mapUrl, minuteOfDayLabel, sortByWeekday, waLink, weekdayLabel } from './format';
 
 interface PageProps {
@@ -63,9 +64,7 @@ export default async function ProfilePage({ params }: PageProps) {
         {profile.badges && profile.badges.length > 0 && (
           <div className="badges-row">
             {profile.badges.map((badge) => (
-              <span className="badge-chip" key={badge.claimType}>
-                ✓ {badgeLabel(badge.claimType, badge.level)}
-              </span>
+              <VerifiedBadgeChip key={badge.claimType} label={badgeLabel(badge.claimType, badge.level)} />
             ))}
           </div>
         )}

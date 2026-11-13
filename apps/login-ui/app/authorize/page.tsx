@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
+import { BadgeAlertIcon } from 'lucide-animated';
 
 /**
  * What an RP's "Continue with nID" button links to:
@@ -24,7 +25,7 @@ function Loading() {
   return (
     <main>
       <div className="card">
-        <p className="brand">nID</p>
+        <p className="brand">NEWAX</p>
         <h1>Starting sign-in…</h1>
         <div className="status-line">
           <span className="dot" />
@@ -73,8 +74,10 @@ function AuthorizeEntry() {
   return (
     <main>
       <div className="card">
-        <p className="brand">nID</p>
-        <div className="result-icon">⚠️</div>
+        <p className="brand">NEWAX</p>
+        <div className="result-icon">
+          <BadgeAlertIcon size={56} className="nid-icon" />
+        </div>
         <h1>Can&apos;t continue</h1>
         <p className="lead">{error}</p>
       </div>

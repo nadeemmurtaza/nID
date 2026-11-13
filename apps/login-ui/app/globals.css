@@ -1,29 +1,33 @@
 :root {
   color-scheme: light dark;
-  --bg: #ffffff;
-  --fg: #111318;
-  --muted: #5b6270;
-  --border: #dfe2e8;
-  --accent: #2f6fed;
-  --danger: #c4392b;
-  --success: #1a8a5f;
-  --card-bg: #f8f9fb;
-  --shadow-sm: 0 1px 2px rgba(17, 19, 24, 0.05);
-  --shadow-md: 0 8px 24px rgba(17, 19, 24, 0.08), 0 1px 2px rgba(17, 19, 24, 0.06);
+  --bg: #faf9f6;
+  --fg: #111111;
+  --muted: #6b6560;
+  --border: #dedbd6;
+  --accent: #ff5600;
+  --accent-hover: #e64e00;
+  --on-accent: #ffffff;
+  --danger: #dc2626;
+  --success: #16a34a;
+  --card-bg: #ffffff;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0e1013;
-    --fg: #e8eaee;
-    --muted: #9aa1ad;
-    --border: #2a2e36;
-    --accent: #6ea1ff;
+    --bg: #111111;
+    --fg: #e8e4df;
+    --muted: #9a9590;
+    --border: #2a2a2a;
+    --accent: #ff5600;
+    --accent-hover: #ff7a42;
+    --on-accent: #111111;
     --danger: #ff7a68;
     --success: #4fd39a;
-    --card-bg: #16181d;
+    --card-bg: #1a1a1a;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
   }
 }
 
@@ -58,7 +62,7 @@ main {
   max-width: 400px;
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 8px;
   padding: 32px 28px;
   text-align: center;
   box-shadow: var(--shadow-md);
@@ -91,12 +95,21 @@ p.lead {
   line-height: 1.5;
 }
 
+.field-label {
+  display: block;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 6px;
+}
+
 input[type='text'] {
   width: 100%;
   font-size: 16px;
   text-align: center;
   padding: 12px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--fg);
@@ -124,7 +137,7 @@ input[type='text']:focus {
   font-weight: 700;
   text-align: center;
   padding: 0;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--fg);
@@ -143,10 +156,10 @@ button {
   font-size: 15px;
   font-weight: 600;
   padding: 12px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: none;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   cursor: pointer;
   transition: filter 0.1s, transform 0.05s;
 }
@@ -204,7 +217,7 @@ button:disabled {
 
 .qr-wrap {
   background: #fff;
-  border-radius: 10px;
+  border-radius: 4px;
   padding: 12px;
   display: inline-block;
   margin-bottom: 8px;
@@ -246,10 +259,228 @@ button:disabled {
   flex: none;
 }
 
+.entry-card {
+  max-width: 440px;
+  text-align: left;
+}
+
+.entry-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+
+.entry-brand {
+  margin: 0;
+}
+
+.entry-help {
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.entry-help:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+.entry-headline {
+  font-size: 26px;
+  line-height: 1.25;
+  margin: 0 0 8px;
+}
+
+.entry-sub {
+  margin: 18px 0 0;
+}
+
+.entry-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.entry-legal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 28px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.entry-legal a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.entry-legal a:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+.btn-link {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 12px;
+  border-radius: 4px;
+  border: none;
+  background: var(--accent);
+  color: var(--on-accent);
+  text-decoration: none;
+  transition: filter 0.1s;
+}
+
+.btn-link:hover {
+  filter: brightness(1.08);
+}
+
+.btn-link.secondary {
+  background: none;
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+
+.btn-link.secondary:hover {
+  filter: none;
+  background: var(--bg);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+.tab {
+  flex: 1;
+  width: auto;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.tab:not(:disabled):hover {
+  filter: none;
+  color: var(--fg);
+}
+
+.tab-active,
+.tab-active:not(:disabled):hover {
+  background: var(--card-bg);
+  color: var(--fg);
+  box-shadow: var(--shadow-sm);
+}
+
+.feature-list {
+  text-align: left;
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.feature-list li {
+  font-size: 14px;
+  color: var(--fg);
+  padding-left: 22px;
+  position: relative;
+}
+
+.feature-list li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--success);
+  font-weight: 700;
+}
+
+.account-section {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.account-section:last-of-type {
+  border-bottom: none;
+}
+
+.account-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  padding: 6px 0;
+}
+
+.account-row button {
+  width: auto;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.badge.verified {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+}
+
+.badge.unverified {
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+}
+
 .account-chip {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 12px;
   font-size: 14px;
   margin-bottom: 12px;
+}
+
+/* The library gives its wrapper div no layout of its own — it renders
+   only the class it is passed — so the app supplies it. An inline-flex wrapper
+   drops its svg onto the text baseline, which is what the negative offset
+   compensates for, and geometric precision keeps a 1px stroke intact when the
+   browser rasterises at 2x. */
+.nid-icon {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: -0.15em;
+}
+
+.nid-icon svg {
+  shape-rendering: geometricPrecision;
 }

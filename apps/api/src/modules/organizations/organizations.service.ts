@@ -132,6 +132,20 @@ export class OrganizationsService {
   }
 
   /**
+   * Authorizes a person's own Account to act as a member (not necessarily admin)
+   * of an Organization. Used by BrandsService for read access to brands.
+   */
+  async requireActiveMember(organizationId: string, accountId: string): Promise<OrganizationMembership> {
+    const membership = await this.prisma.unscoped.organizationMembership.findFirst({
+      where: { organizationId, accountId, status: 'ACTIVE' },
+    });
+    if (!membership) {
+      throw new ForbiddenException('This account is not a member of this organization.');
+    }
+    return membership;
+  }
+
+  /**
    * Which Organizations this Account is an ACTIVE member of — used by
    * ProfilesService to resolve organization-targeted ProfileFieldGrants
    * for a viewer (any ACTIVE member sees what was shared with their org,
@@ -275,6 +289,27 @@ export class OrganizationsService {
     });
   }
 
+  /**
+   * List all organizations belonging to this tenant — used by the dashboard
+   * organization management UI to show the full list of organizations within
+   * a tenant context.
+   */
+  async list(tenantId: string, apiKeyId: string) {
+    return this.prisma.forTenant(tenantId, async (tx) => {
+      const organizations = await tx.organization.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
+
+      await this.audit.record(tx, tenantId, {
+        actorType: 'API_KEY',
+        actorId: apiKeyId,
+        action: 'organization.list',
+      });
+
+      return organizations;
+    });
+  }
+
   async listMembers(tenantId: string, apiKeyId: string, organizationId: string) {
     return this.prisma.forTenant(tenantId, async (tx) => {
       const organization = await tx.organization.findUnique({ where: { id: organizationId } });
@@ -294,6 +329,35 @@ export class OrganizationsService {
 
       return members;
     });
+  }
+
+  /**
+   * An account's own view of which organizations they are an ACTIVE member
+   * of — used by the profile-ui Work Profile tab to show organization
+   * memberships alongside tenant memberships.
+   */
+  async listMyMemberships(accountId: string) {
+    const memberships = await this.prisma.unscoped.organizationMembership.findMany({
+      where: { accountId, status: 'ACTIVE' },
+      include: {
+        organization: {
+          select: {
+            id: true,
+            legalName: true,
+            countryCode: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return memberships.map((m) => ({
+      organizationId: m.organization.id,
+      organizationName: m.organization.legalName,
+      countryCode: m.organization.countryCode,
+      role: m.role,
+      isAdmin: m.isAdmin,
+    }));
   }
 
   /**

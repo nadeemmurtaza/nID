@@ -47,3 +47,32 @@ export interface LoginRequestStatus {
   status: 'PENDING' | 'APPROVED' | 'EXPIRED';
   clientName: string;
 }
+
+/** Starts (or re-sends) a one-time sign-in/registration code for a phone number. */
+export function startAccountOtp(phone: string): Promise<{ accepted: true }> {
+  return apiFetch('/v1/accounts/otp/start', {
+    method: 'POST',
+    body: JSON.stringify({ phone }),
+  });
+}
+
+/**
+ * Verifying the first-ever code for a phone number both creates the
+ * Account and signs it in -- there is no separate "register" endpoint
+ * (see apps/api's AccountsService doc comment).
+ */
+export function verifyAccountOtp(
+  phone: string,
+  code: string,
+): Promise<{ sessionToken: string; account: Account }> {
+  return apiFetch('/v1/accounts/otp/verify', {
+    method: 'POST',
+    body: JSON.stringify({ phone, code }),
+  });
+}
+
+export function getCurrentAccount(sessionToken: string): Promise<Account> {
+  return apiFetch('/v1/accounts/me', {
+    headers: { authorization: `Bearer ${sessionToken}` },
+  });
+}

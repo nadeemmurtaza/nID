@@ -1,12 +1,8 @@
 /**
- * nID login-ui's own brand VALUES, typed against @nadeemmurtaza/design-system's
- * BrandTheme contract. The engine (radius/space/motion math, contrast
- * checking, the Tailwind builder) lives in the shared package; this file is
- * the one place that owns nID's actual colours/radii/spacing. See
- * packages/design-system/README.md in core-newax for the split.
- *
- * Values below are unchanged from the previous hand-written globals.css --
- * this file documents and types them, it does not restyle the product.
+ * nID login-ui brand tokens — now mirroring Communicator's Intercom-style
+ * design system so the identity provider shares the same visual language
+ * as the rest of the platform.  Fin Orange accent, warm cream canvas,
+ * sharp 4 px geometry, solid white cards with warm borders.
  */
 import type { BrandTheme } from '@nadeemmurtaza/design-system';
 
@@ -14,45 +10,45 @@ export const THEME: BrandTheme = {
   colors: {
     neutral: {
       50: '#ffffff',
-      100: '#f8f9fb',
-      200: '#dfe2e8',
-      300: '#9aa1ad',
-      400: '#5b6270',
-      500: '#111318',
+      100: '#faf9f6',
+      200: '#dedbd6',
+      300: '#9a9590',
+      400: '#6b6560',
+      500: '#111111',
     },
-    accent: { DEFAULT: '#2f6fed', hover: '#2a63d6' },
+    accent: { DEFAULT: '#ff5600', hover: '#e64e00' },
     white: '#ffffff',
-    surface: '#f8f9fb',
+    surface: '#faf9f6',
     overlay: '#ffffff',
-    inverse: '#111318',
+    inverse: '#111111',
     onInverse: '#ffffff',
-    scrim: '#111318',
+    scrim: '#111111',
     star: '#d9a441',
-    feedback: { positive: '#1a8a5f', negative: '#c4392b' },
-    chart: ['#2f6fed'],
+    feedback: { positive: '#16a34a', negative: '#dc2626' },
+    chart: ['#ff5600', '#3b82f6', '#16a34a', '#ec4899', '#84cc16'],
   },
   colorsDark: {
     neutral: {
-      50: '#0e1013',
-      100: '#16181d',
-      200: '#2a2e36',
-      300: '#9aa1ad',
-      400: '#9aa1ad',
-      500: '#e8eaee',
+      50: '#111111',
+      100: '#1a1a1a',
+      200: '#2a2a2a',
+      300: '#8b8580',
+      400: '#9a9590',
+      500: '#e8e4df',
     },
-    accent: { DEFAULT: '#2f6fed', hover: '#2a63d6' },
-    accentInk: { DEFAULT: '#6ea1ff', hover: '#8fb6ff' },
+    accent: { DEFAULT: '#ff5600', hover: '#ff7a42' },
+    accentInk: { DEFAULT: '#ff7a42', hover: '#ff9a6e' },
     white: '#ffffff',
-    surface: '#16181d',
-    overlay: '#16181d',
-    inverse: '#e8eaee',
-    onInverse: '#0e1013',
+    surface: '#1a1a1a',
+    overlay: '#1a1a1a',
+    inverse: '#e8e4df',
+    onInverse: '#111111',
     scrim: '#000000',
     star: '#d9a441',
     feedback: { positive: '#4fd39a', negative: '#ff7a68' },
-    chart: ['#6ea1ff'],
+    chart: ['#ff7a42'],
   },
-  radii: { sharp: 8, lg: 14, pill: 9999 },
+  radii: { sharp: 4, lg: 8, pill: 9999 },
   type: {
     micro: { size: 11, line: 16 },
     tiny: { size: 12, line: 16 },
@@ -78,15 +74,15 @@ export const THEME: BrandTheme = {
   elevation: {
     light: {
       flat: 'none',
-      raised: '0 1px 2px rgba(17, 19, 24, 0.05)',
-      overlay: '0 8px 24px rgba(17, 19, 24, 0.08), 0 1px 2px rgba(17, 19, 24, 0.06)',
-      modal: '0 8px 24px rgba(17, 19, 24, 0.08), 0 1px 2px rgba(17, 19, 24, 0.06)',
+      raised: '0 1px 2px rgba(0, 0, 0, 0.05)',
+      overlay: '0 4px 12px rgba(0, 0, 0, 0.08)',
+      modal: '0 12px 48px rgba(0, 0, 0, 0.12)',
     },
     dark: {
       flat: 'none',
       raised: '0 1px 2px rgba(0, 0, 0, 0.3)',
-      overlay: '0 8px 24px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3)',
-      modal: '0 8px 24px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3)',
+      overlay: '0 4px 12px rgba(0, 0, 0, 0.45)',
+      modal: '0 12px 48px rgba(0, 0, 0, 0.5)',
     },
   },
   layers: { base: 0, sticky: 10, dropdown: 20, overlay: 30, modal: 40, toast: 50 },

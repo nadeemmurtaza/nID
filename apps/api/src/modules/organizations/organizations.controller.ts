@@ -37,6 +37,12 @@ export class OrganizationsController {
   }
 
   @UseGuards(ApiKeyGuard)
+  @Get()
+  list(@CurrentTenant() tenant: AuthenticatedTenant) {
+    return this.organizations.list(tenant.tenantId, tenant.apiKeyId);
+  }
+
+  @UseGuards(ApiKeyGuard)
   @Post(':id/members')
   addMember(@CurrentTenant() tenant: AuthenticatedTenant, @Param('id') id: string, @Body() dto: AddMemberDto) {
     return this.organizations.addMember(tenant.tenantId, tenant.apiKeyId, id, dto);
@@ -52,6 +58,17 @@ export class OrganizationsController {
   @Post(':id/invite')
   invite(@CurrentTenant() tenant: AuthenticatedTenant, @Param('id') id: string, @Body() dto: InviteEmployeeDto) {
     return this.organizations.invite(tenant.tenantId, tenant.apiKeyId, id, dto);
+  }
+
+  /**
+   * A person's own view of which organizations they are an ACTIVE member
+   * of — used by the profile-ui Work Profile tab to show organization
+   * memberships alongside tenant memberships.
+   */
+  @UseGuards(AccountSessionGuard)
+  @Get('my-memberships')
+  listMyMemberships(@CurrentAccount() account: Account) {
+    return this.organizations.listMyMemberships(account.id);
   }
 
   /**

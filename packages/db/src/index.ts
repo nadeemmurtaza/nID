@@ -12,6 +12,8 @@ export function createPrismaClient(datasourceUrl?: string): PrismaClient {
   return new PrismaClient(datasourceUrl ? { datasourceUrl } : undefined);
 }
 
+export type TransactionClient = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0];
+
 /**
  * Runs `fn` inside a transaction with the Postgres session variable
  * `app.tenant_id` set for that transaction only (`set_config(..., true)` is
@@ -27,10 +29,29 @@ export function createPrismaClient(datasourceUrl?: string): PrismaClient {
 export async function withTenantContext<T>(
   prisma: PrismaClient,
   tenantId: string,
-  fn: (tx: Parameters<Parameters<PrismaClient['$transaction']>[0]>[0]) => Promise<T>,
+  fn: (tx: TransactionClient) => Promise<T>,
 ): Promise<T> {
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+    return fn(tx);
+  });
+}
+
+/**
+ * Runs `fn` with `app.billing_admin` set, which is the only way the catalog
+ * policies' write branch opens. This is deliberately not a general-purpose
+ * escape hatch: `catalog_write` grants INSERT/UPDATE/DELETE on BillingService,
+ * Plan and BillingServiceCredential and nothing else, so holding it cannot
+ * reach a tenant's money. `apps/api`'s admin path is the only caller —
+ * `withTenantContext` still has to be nested inside it for anything
+ * tenant-scoped, because this sets no tenant.
+ */
+export async function withBillingAdminContext<T>(
+  prisma: PrismaClient,
+  fn: (tx: TransactionClient) => Promise<T>,
+): Promise<T> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.billing_admin', 'on', true)`;
     return fn(tx);
   });
 }

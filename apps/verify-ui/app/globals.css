@@ -200,3 +200,18 @@ input[type='file'] {
   background: var(--bg);
   margin-bottom: 12px;
 }
+
+/* The library gives its wrapper div no layout of its own — it renders
+   only the class it is passed — so the app supplies it. An inline-flex wrapper
+   drops its svg onto the text baseline, which is what the negative offset
+   compensates for, and geometric precision keeps a 1px stroke intact when the
+   browser rasterises at 2x. */
+.nid-icon {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: -0.15em;
+}
+
+.nid-icon svg {
+  shape-rendering: geometricPrecision;
+}

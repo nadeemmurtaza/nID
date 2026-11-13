@@ -1,0 +1,83 @@
+export type CanonicalPaymentStatus = 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'EXPIRED' | 'CANCELED';
+
+export interface CreateCheckoutInput {
+  /** Minor units. The provider never sees a card number — this is a redirect. */
+  amountMinor: bigint;
+  currency: string;
+  /** Shown to the payer on the provider's hosted page. */
+  description: string;
+  /** nID's own reference (the PaymentIntent id) — echoed back by webhook. */
+  reference: string;
+  returnUrl: string;
+  webhookUrl: string;
+}
+
+export interface CreateCheckoutResult {
+  providerRef: string;
+  checkoutUrl: string;
+  expiresAt: Date;
+}
+
+export interface ProviderPayment {
+  providerRef: string;
+  /**
+   * The provider's own transaction id — the handle a refund must be sent with
+   * (see `RefundInput.providerTransactionId`) and the one reconciliation keys
+   * on. It is not `providerRef`: on a hosted checkout that is the session id.
+   * Null/undefined until the provider has actually moved the money.
+   */
+  providerTransactionId?: string | null;
+  status: CanonicalPaymentStatus;
+  amountMinor: bigint;
+  currency: string;
+  methodType: string | null;
+  paidAt: Date | null;
+  raw: unknown;
+}
+
+export interface ParsedWebhook {
+  providerEventId: string;
+  type: string;
+  providerRef: string;
+  /** Same meaning as on `ProviderPayment`: the provider's transaction id. */
+  providerTransactionId?: string | null;
+  status: CanonicalPaymentStatus;
+  paidAmountMinor: bigint | null;
+  currency: string | null;
+  methodType: string | null;
+  occurredAt: Date | null;
+  raw: unknown;
+}
+
+export interface RefundInput {
+  providerRef: string;
+  providerTransactionId: string;
+  amountMinor: bigint;
+  currency: string;
+  reason?: string;
+}
+
+export interface RefundResult {
+  /**
+   * The provider's refund id — not the original payment's ref, which stays on
+   * `RefundInput.providerRef`. Task 10 stores this on the Refund row, so the two
+   * must never be confused for one another.
+   */
+  providerRef: string;
+  status: 'PENDING' | 'SUCCEEDED' | 'FAILED';
+}
+
+/**
+ * One hosted-checkout payment provider. `createCheckout` never receives card
+ * data — that is the whole point of D5/SAQ A, and the type makes it
+ * unrepresentable rather than merely discouraged. Nothing here knows about
+ * tenants, invoices or ledger accounts.
+ */
+export interface PaymentProvider {
+  readonly name: string;
+  createCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutResult>;
+  fetchPayment(providerRef: string): Promise<ProviderPayment>;
+  verifyWebhook(rawBody: Buffer, headers: Record<string, string | string[] | undefined>): boolean;
+  parseWebhook(rawBody: Buffer): ParsedWebhook;
+  refund(input: RefundInput): Promise<RefundResult>;
+}

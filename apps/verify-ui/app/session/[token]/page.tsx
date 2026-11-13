@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { BadgeAlertIcon, CircleCheckIcon, ClockIcon, EyeIcon, XIcon } from 'lucide-animated';
 
 const API_URL = process.env.NEXT_PUBLIC_NID_API_URL ?? 'http://localhost:4000';
 
@@ -200,7 +201,9 @@ function Loading() {
 function ErrorView({ message }: { message: string }) {
   return (
     <>
-      <div className="result-icon">⚠️</div>
+      <div className="result-icon">
+        <BadgeAlertIcon size={56} className="nid-icon" />
+      </div>
       <h1>Can&apos;t continue</h1>
       <p className="lead">{message}</p>
     </>
@@ -233,7 +236,9 @@ function ResultView({
   if (data.status === 'APPROVED') {
     return (
       <>
-        <div className="result-icon">✅</div>
+        <div className="result-icon">
+          <CircleCheckIcon size={56} className="nid-icon" />
+        </div>
         <h1>You&apos;re verified</h1>
         <p className="lead">Your identity has been confirmed. You can close this page.</p>
       </>
@@ -243,7 +248,9 @@ function ResultView({
   if (data.status === 'REJECTED') {
     return (
       <>
-        <div className="result-icon">❌</div>
+        <div className="result-icon">
+          <XIcon size={56} className="nid-icon" />
+        </div>
         <h1>Verification failed</h1>
         <p className="lead">We couldn&apos;t confirm your identity. Ask whoever sent you here for a new link.</p>
       </>
@@ -253,7 +260,9 @@ function ResultView({
   if (data.status === 'NEEDS_REVIEW') {
     return (
       <>
-        <div className="result-icon">🕵️</div>
+        <div className="result-icon">
+          <EyeIcon size={56} className="nid-icon" />
+        </div>
         <h1>We need to take a closer look</h1>
         <p className="lead">Your submission needs manual review before we can confirm it. We&apos;ll follow up.</p>
       </>
@@ -263,7 +272,9 @@ function ResultView({
   if (data.status === 'EXPIRED') {
     return (
       <>
-        <div className="result-icon">⏱️</div>
+        <div className="result-icon">
+          <ClockIcon size={56} className="nid-icon" />
+        </div>
         <h1>This link expired</h1>
         <p className="lead">The window closed before verification finished. Ask for a new link to try again.</p>
       </>
