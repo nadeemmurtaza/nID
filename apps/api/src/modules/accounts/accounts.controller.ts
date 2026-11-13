@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { AccountSessionGuard } from '../../core/auth/account-session.guard';
-import { CurrentAccount } from '../../core/auth/current-account.decorator';
+import { CurrentAccount, CurrentSessionTokenHash } from '../../core/auth/current-account.decorator';
 import type { Account } from '@nid/db';
 import { StartOtpDto } from './dto/start-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { StartEmailVerificationDto } from './dto/start-email-verification.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 import { AccountsService } from './accounts.service';
 
 @Controller('v1/accounts')
@@ -26,5 +28,37 @@ export class AccountsController {
   @Get('me')
   me(@CurrentAccount() account: Account) {
     return account;
+  }
+
+  /** Logs out the current device/session only. */
+  @UseGuards(AccountSessionGuard)
+  @Post('me/logout')
+  @HttpCode(204)
+  async logout(@CurrentSessionTokenHash() tokenHash: string): Promise<void> {
+    await this.accounts.revokeSession(tokenHash);
+  }
+
+  /** Logs out every session on this Account — the recovery action if a session may have leaked. */
+  @UseGuards(AccountSessionGuard)
+  @Post('me/logout-all')
+  @HttpCode(204)
+  async logoutAll(@CurrentAccount() account: Account): Promise<void> {
+    await this.accounts.revokeAllSessions(account.id);
+  }
+
+  @UseGuards(AccountSessionGuard)
+  @Post('me/email/start')
+  async startEmailVerification(
+    @CurrentAccount() account: Account,
+    @Body() dto: StartEmailVerificationDto,
+  ): Promise<{ accepted: true }> {
+    await this.accounts.startEmailVerification(account.id, dto.email);
+    return { accepted: true };
+  }
+
+  @UseGuards(AccountSessionGuard)
+  @Post('me/email/verify')
+  verifyEmail(@CurrentAccount() account: Account, @Body() dto: VerifyEmailDto) {
+    return this.accounts.verifyEmail(account.id, dto.code);
   }
 }

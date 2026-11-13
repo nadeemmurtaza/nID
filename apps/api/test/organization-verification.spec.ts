@@ -113,7 +113,7 @@ describeIfDb('organization (KYB) verification (live Postgres, no Temporal)', () 
         tx.subject.create({ data: { tenantId, type: 'PERSON', phone: '+15559990001' } }),
       );
 
-      const attempt = casesService.create(tenantId, apiKeyId, {
+      const attempt = casesService.create(tenantId, { type: 'API_KEY', id: apiKeyId }, {
         subjectId: person.id,
         policyName: 'org-kyb-registry',
         referenceId: 'REG-1',
@@ -126,7 +126,7 @@ describeIfDb('organization (KYB) verification (live Postgres, no Temporal)', () 
       const org = await organizationsService.create(tenantId, apiKeyId, { legalName: 'Org Not A Person' });
 
       await expect(
-        casesService.create(tenantId, apiKeyId, {
+        casesService.create(tenantId, { type: 'API_KEY', id: apiKeyId }, {
           subjectId: org.subjectId,
           policyName: 'test-otp',
           phone: '+15551230000',
@@ -138,7 +138,7 @@ describeIfDb('organization (KYB) verification (live Postgres, no Temporal)', () 
       const org = await organizationsService.create(tenantId, apiKeyId, { legalName: 'Org Membership Misuse' });
 
       await expect(
-        casesService.create(tenantId, apiKeyId, {
+        casesService.create(tenantId, { type: 'API_KEY', id: apiKeyId }, {
           subjectId: org.subjectId,
           policyName: 'test-org-membership',
           organizationId: org.id,

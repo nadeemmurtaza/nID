@@ -11,5 +11,8 @@ import { VerificationCasesService } from './verification-cases.service';
   imports: [AuthModule, AccountsModule],
   controllers: [VerificationCasesController],
   providers: [VerificationCasesService],
+  // AccountVerificationModule reuses this service for self-service case
+  // creation (see its own header comment) rather than forking the logic.
+  exports: [VerificationCasesService],
 })
 export class VerificationCasesModule {}

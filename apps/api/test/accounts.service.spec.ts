@@ -10,7 +10,7 @@
  *
  *   RUN_DB_TESTS=true pnpm --filter @nid/api test
  */
-import { UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { createPrismaClient, type PrismaClient } from '@nid/db';
 import { sha256Hex } from '@nid/shared-types';
 import { AccountsService } from '../src/modules/accounts/accounts.service';
@@ -57,6 +57,25 @@ describeIfDb('AccountsService (live Postgres)', () => {
       where: { phone },
       data: { codeHash: sha256Hex(knownCode) },
     });
+  }
+
+  async function overwriteEmailCode(accountId: string, knownCode: string): Promise<void> {
+    await migratorPrisma.accountEmailOtpCode.updateMany({
+      where: { accountId },
+      data: { codeHash: sha256Hex(knownCode) },
+    });
+  }
+
+  async function makeAccount(phoneLabel: string): Promise<{ id: string; phone: string }> {
+    const phone = uniquePhone(phoneLabel);
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '987654');
+    const { account } = await accounts.verifyOtp(phone, '987654');
+    return account;
+  }
+
+  function uniqueEmail(label: string): string {
+    return `${label}${Date.now()}${Math.floor(Math.random() * 1000)}@example.com`;
   }
 
   it('startOtp writes a real, hashed, unconsumed challenge for the phone', async () => {
@@ -174,5 +193,106 @@ describeIfDb('AccountsService (live Postgres)', () => {
     });
 
     await expect(accounts.resolveSession(sessionToken)).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('locks a code out after 5 wrong guesses, closing the unthrottled brute-force path', async () => {
+    const phone = uniquePhone('b1');
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '424242');
+
+    for (let i = 0; i < 5; i++) {
+      await expect(accounts.verifyOtp(phone, '000000')).rejects.toThrow(UnauthorizedException);
+    }
+    // The 6th call is the real code, but the code is already locked — even the correct code is now rejected.
+    await expect(accounts.verifyOtp(phone, '424242')).rejects.toThrow(/Too many incorrect attempts/);
+
+    const locked = await migratorPrisma.accountOtpCode.findFirst({ where: { phone } });
+    expect(locked?.consumedAt).not.toBeNull();
+  });
+
+  it('enforces a resend cooldown while a code is outstanding, but not after a successful login', async () => {
+    const phone = uniquePhone('b2');
+    await accounts.startOtp(phone);
+    await expect(accounts.startOtp(phone)).rejects.toThrow(/wait before requesting/);
+
+    await overwriteOtpCode(phone, '424242');
+    await accounts.verifyOtp(phone, '424242');
+    await expect(accounts.startOtp(phone)).resolves.toBeUndefined();
+  });
+
+  it('logout revokes only the session presented', async () => {
+    const phone = uniquePhone('b3');
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '111111');
+    const first = await accounts.verifyOtp(phone, '111111');
+
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '222222');
+    const second = await accounts.verifyOtp(phone, '222222');
+
+    await accounts.revokeSession(sha256Hex(first.sessionToken));
+
+    await expect(accounts.resolveSession(first.sessionToken)).rejects.toThrow(UnauthorizedException);
+    await expect(accounts.resolveSession(second.sessionToken)).resolves.toMatchObject({ id: second.account.id });
+  });
+
+  it('logout-all revokes every session for the account — the only recovery path for a leaked/guessed token', async () => {
+    const phone = uniquePhone('b4');
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '333333');
+    const first = await accounts.verifyOtp(phone, '333333');
+
+    await accounts.startOtp(phone);
+    await overwriteOtpCode(phone, '444444');
+    const second = await accounts.verifyOtp(phone, '444444');
+
+    await accounts.revokeAllSessions(first.account.id);
+
+    await expect(accounts.resolveSession(first.sessionToken)).rejects.toThrow(UnauthorizedException);
+    await expect(accounts.resolveSession(second.sessionToken)).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('verifies an email address with the correct code and sets emailVerifiedAt', async () => {
+    const account = await makeAccount('c1');
+    const email = uniqueEmail('c1');
+
+    await accounts.startEmailVerification(account.id, email);
+    await overwriteEmailCode(account.id, '135790');
+    const updated = await accounts.verifyEmail(account.id, '135790');
+
+    expect(updated.email).toBe(email);
+    expect(updated.emailVerifiedAt).not.toBeNull();
+  });
+
+  it('locks an email code out after 5 wrong guesses, same brute-force protection as phone OTP', async () => {
+    const account = await makeAccount('c2');
+    await accounts.startEmailVerification(account.id, uniqueEmail('c2'));
+    await overwriteEmailCode(account.id, '424242');
+
+    for (let i = 0; i < 5; i++) {
+      await expect(accounts.verifyEmail(account.id, '000000')).rejects.toThrow(UnauthorizedException);
+    }
+    await expect(accounts.verifyEmail(account.id, '424242')).rejects.toThrow(/Too many incorrect attempts/);
+  });
+
+  it('enforces a resend cooldown while an email code is outstanding', async () => {
+    const account = await makeAccount('c3');
+    await accounts.startEmailVerification(account.id, uniqueEmail('c3'));
+    await expect(accounts.startEmailVerification(account.id, uniqueEmail('c3b'))).rejects.toThrow(/wait before requesting/);
+  });
+
+  it('rejects verifying an email already verified on a different account — checked at verify time, never at start time', async () => {
+    const claimed = uniqueEmail('c4-claimed');
+    const ownerAccount = await makeAccount('c4owner');
+    await accounts.startEmailVerification(ownerAccount.id, claimed);
+    await overwriteEmailCode(ownerAccount.id, '111222');
+    await accounts.verifyEmail(ownerAccount.id, '111222');
+
+    const otherAccount = await makeAccount('c4other');
+    // start() never checks uniqueness — it must not leak whether an email
+    // is already registered to someone who hasn't proven they control it.
+    await expect(accounts.startEmailVerification(otherAccount.id, claimed)).resolves.toBeUndefined();
+    await overwriteEmailCode(otherAccount.id, '333444');
+    await expect(accounts.verifyEmail(otherAccount.id, '333444')).rejects.toThrow(BadRequestException);
   });
 });

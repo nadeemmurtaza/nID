@@ -50,7 +50,7 @@ export function CreateProfileForm({ token, onCreated }: { token: string; onCreat
             <option value="PROFESSIONAL">Professional</option>
             <option value="OTHER">Other</option>
           </select>
-          <button type="submit" style={{ marginTop: 14, width: '100%' }} disabled={submitting}>
+          <button type="submit" className="btn btn-primary btn-block" style={{ marginTop: 16 }} disabled={submitting}>
             {submitting ? 'Creating…' : 'Create page'}
           </button>
           {error && <p className="error-text">{error}</p>}

@@ -7,7 +7,7 @@ import { TemporalClientService } from '../../core/temporal/temporal-client.servi
 import { StorageService } from '../../core/storage/storage.service';
 import { loadEnv } from '../../core/config/env';
 import type { CreateVerificationCaseDto } from './dto/create-verification-case.dto';
-import type { ActorType } from '../../core/auth/types';
+import type { ActorType, CaseCreationActor } from '../../core/auth/types';
 
 export interface UploadedMethodFile {
   buffer: Buffer;
@@ -51,7 +51,7 @@ export class VerificationCasesService {
     private readonly storage: StorageService,
   ) {}
 
-  async create(tenantId: string, apiKeyId: string, dto: CreateVerificationCaseDto) {
+  async create(tenantId: string, actor: CaseCreationActor, dto: CreateVerificationCaseDto) {
     const created = await this.prisma.forTenant(tenantId, async (tx) => {
       const policy = await tx.verificationPolicy.findUnique({
         where: { tenantId_name: { tenantId, name: dto.policyName } },
@@ -120,8 +120,8 @@ export class VerificationCasesService {
       });
 
       await this.audit.record(tx, tenantId, {
-        actorType: 'API_KEY',
-        actorId: apiKeyId,
+        actorType: actor.type,
+        actorId: actor.id,
         action: 'verification_case.create',
         subjectId: subject.id,
         caseId: kase.id,

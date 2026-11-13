@@ -84,8 +84,12 @@ describeIfDb('ProfilesService — username creation/rename gates (live Postgres,
     await migratorPrisma.phoneBadgeEvidence.create({
       data: { phone, tenantId, subjectId: subject.id, claimType: 'IDENTITY', level: 'DOCUMENT_VERIFIED', verifiedAt: new Date() },
     });
+    // method: 'estamp_registry' — the username gate requires evidence that
+    // ties NATIONAL_ID_NUMBER and PHONE together, not just any name read
+    // off a document (see requireVerifiedRealName's own comment and the
+    // 'name alone is not enough' tests below).
     await migratorPrisma.phoneNameEvidence.create({
-      data: { phone, tenantId, subjectId: subject.id, caseId: 'test-case', ...name, verifiedAt: new Date() },
+      data: { phone, tenantId, subjectId: subject.id, caseId: 'test-case', method: 'estamp_registry', ...name, verifiedAt: new Date() },
     });
     return { account };
   }
@@ -112,6 +116,37 @@ describeIfDb('ProfilesService — username creation/rename gates (live Postgres,
       await expect(profiles.create(account, { slug: 'whatever', displayName: 'Whatever' })).rejects.toThrow(
         ForbiddenException,
       );
+    });
+
+    it('rejects a name verified only via document_ocr — a name and national ID read off a document is not proof THIS phone is linked to THAT national ID', async () => {
+      const phone = uniquePhone('dococronly');
+      const account = await migratorPrisma.account.create({ data: { phone, phoneVerifiedAt: new Date() } });
+      const { tenantId } = await makeTenant('profiles-spec-dococronly');
+      const subject = await migratorPrisma.subject.create({
+        data: { tenantId, type: 'PERSON', phone, accountId: account.id, givenName: 'Omar', familyName: 'Farid' },
+      });
+      await migratorPrisma.phoneBadgeEvidence.create({
+        data: { phone, tenantId, subjectId: subject.id, claimType: 'IDENTITY', level: 'DOCUMENT_VERIFIED', verifiedAt: new Date() },
+      });
+      // document_ocr proves a name + national ID number were read off a
+      // real document (evaluate-document.ts) — but never that this phone
+      // is the one linked to that national ID. That's the whole point of
+      // this test: this account has a real IDENTITY badge AND real
+      // PhoneNameEvidence, and username creation must still be refused.
+      await migratorPrisma.phoneNameEvidence.create({
+        data: { phone, tenantId, subjectId: subject.id, caseId: 'test-case', method: 'document_ocr', givenName: 'Omar', familyName: 'Farid', verifiedAt: new Date() },
+      });
+
+      await expect(profiles.create(account, { slug: 'omar-farid', displayName: 'Omar Farid' })).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('accepts a name verified via estamp_registry — the registry check that ties national ID and phone together', async () => {
+      const { account } = await makeVerifiedAccount('cnicphonelinked', { givenName: 'Sana', familyName: 'Yousaf' });
+      const profile = await profiles.create(account, { slug: 'sana-yousaf', displayName: 'Sana Yousaf' });
+      testProfileIds.push(profile.id);
+      expect(profile.slug).toBe('sana-yousaf');
     });
   });
 
@@ -223,6 +258,7 @@ describeIfDb('ProfilesService — username creation/rename gates (live Postgres,
           tenantId: subject.tenantId,
           subjectId: subject.id,
           caseId: 'test-case-rename',
+          method: 'estamp_registry',
           givenName: 'Grace',
           familyName: 'Lindqvist',
           verifiedAt: new Date(),
@@ -251,6 +287,7 @@ describeIfDb('ProfilesService — username creation/rename gates (live Postgres,
           tenantId: subject.tenantId,
           subjectId: subject.id,
           caseId: 'test-case-rename-mismatch',
+          method: 'estamp_registry',
           givenName: 'Hank',
           familyName: 'Boateng',
           verifiedAt: new Date(),
@@ -337,6 +374,81 @@ describeIfDb('ProfilesService — username creation/rename gates (live Postgres,
 
       const publicProfile = await profiles.getPublicBySlug('northwind-traders-co');
       expect(publicProfile.realName).toBe('Northwind Traders Co');
+    });
+  });
+
+  describe('getPublicBySlug() — phoneVerified/whatsappVerified are a specific, checkable claim, never a general trust signal', () => {
+    it('is true when the shown phone is exactly the number the Account completed OTP verification with', async () => {
+      const { account } = await makeVerifiedAccount('phoneverified', { givenName: 'Tara', familyName: 'Ono' });
+      const profile = await profiles.create(account, {
+        slug: 'tara-ono',
+        displayName: 'Tara Ono',
+        isPublished: true,
+        phone: account.phone,
+        whatsapp: account.phone,
+        showPhone: true,
+        showWhatsapp: true,
+      });
+      testProfileIds.push(profile.id);
+
+      const publicProfile = await profiles.getPublicBySlug('tara-ono');
+      expect(publicProfile.phoneVerified).toBe(true);
+      expect(publicProfile.whatsappVerified).toBe(true);
+    });
+
+    it('is false when the owner typed a different number than their own verified Account.phone — free text is not verification', async () => {
+      const { account } = await makeVerifiedAccount('phoneunverified', { givenName: 'Ben', familyName: 'Cole' });
+      const profile = await profiles.create(account, {
+        slug: 'ben-cole',
+        displayName: 'Ben Cole',
+        isPublished: true,
+        phone: '+19995550000',
+        showPhone: true,
+      });
+      testProfileIds.push(profile.id);
+
+      const publicProfile = await profiles.getPublicBySlug('ben-cole');
+      // Shown (proving this isn't just the "hidden" case below) but unverified.
+      expect(publicProfile.phone).toBe('+19995550000');
+      expect(publicProfile.phoneVerified).toBe(false);
+      expect(publicProfile.whatsappVerified).toBe(false);
+    });
+
+    it('is false when the field is not shown at all, even if it would otherwise match', async () => {
+      const { account } = await makeVerifiedAccount('phonehidden', { givenName: 'Dax', familyName: 'Reed' });
+      const profile = await profiles.create(account, {
+        slug: 'dax-reed',
+        displayName: 'Dax Reed',
+        isPublished: true,
+        phone: account.phone,
+        showPhone: false,
+      });
+      testProfileIds.push(profile.id);
+
+      const publicProfile = await profiles.getPublicBySlug('dax-reed');
+      expect(publicProfile.phone).toBeNull();
+      expect(publicProfile.phoneVerified).toBe(false);
+    });
+
+    it('is false for an organization-owned profile — no organization-level phone verification exists to honestly claim', async () => {
+      const { tenantId, apiKeyId } = await makeTenant('profiles-spec-org-phone');
+      const org = await organizations.create(tenantId, apiKeyId, { legalName: 'Org Phone Co' });
+      await migratorPrisma.verificationCase.create({
+        data: { tenantId, subjectId: org.subjectId, policyId: (await ensureAnyPolicy(tenantId)).id, status: 'APPROVED', claimType: 'IDENTITY', level: 'REGISTRY_VERIFIED', resolvedAt: new Date() },
+      });
+      const admin = await organizations.invite(tenantId, apiKeyId, org.id, { phone: uniquePhone('orgphone'), isAdmin: true });
+      await organizations.respondToInvite(admin.accountId!, admin.id, 'ACCEPTED');
+      const profile = await profiles.createForOrganization(admin.accountId!, org.id, {
+        slug: 'org-phone-co',
+        displayName: 'Org Phone Co',
+        isPublished: true,
+        phone: '+19995551111',
+        showPhone: true,
+      });
+      testProfileIds.push(profile.id);
+
+      const publicProfile = await profiles.getPublicBySlug('org-phone-co');
+      expect(publicProfile.phoneVerified).toBe(false);
     });
   });
 

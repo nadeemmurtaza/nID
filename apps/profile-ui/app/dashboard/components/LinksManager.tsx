@@ -81,12 +81,13 @@ export function LinksManager({ token }: { token: string }) {
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Custom links
       </h2>
+      {customLinks?.length === 0 && <p className="empty-state">No custom links yet — add one below.</p>}
       {customLinks?.map((link) => (
         <div className="data-row" key={link.id}>
           <span>
             {link.label} — <span className="meta">{link.url}</span>
           </span>
-          <button type="button" className="small-btn danger-btn" onClick={() => handleDeleteCustom(link.id)}>
+          <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDeleteCustom(link.id)}>
             Delete
           </button>
         </div>
@@ -96,18 +97,19 @@ export function LinksManager({ token }: { token: string }) {
         <input id="link-label" type="text" required value={label} onChange={(e) => setLabel(e.target.value)} />
         <label htmlFor="link-url">URL</label>
         <input id="link-url" type="text" required placeholder="https://…" value={url} onChange={(e) => setUrl(e.target.value)} />
-        <button type="submit" style={{ marginTop: 12 }} disabled={submitting}>
+        <button type="submit" className="btn btn-primary" style={{ marginTop: 12 }} disabled={submitting}>
           Add link
         </button>
       </form>
 
       <h2 className="section-title">Social links</h2>
+      {socialLinks?.length === 0 && <p className="empty-state">No social links yet — add one below.</p>}
       {socialLinks?.map((link) => (
         <div className="data-row" key={link.id}>
           <span>
             {link.platform} — <span className="meta">{link.url}</span>
           </span>
-          <button type="button" className="small-btn danger-btn" onClick={() => handleDeleteSocial(link.id)}>
+          <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDeleteSocial(link.id)}>
             Delete
           </button>
         </div>
@@ -130,7 +132,7 @@ export function LinksManager({ token }: { token: string }) {
           value={socialUrl}
           onChange={(e) => setSocialUrl(e.target.value)}
         />
-        <button type="submit" style={{ marginTop: 12 }} disabled={submitting}>
+        <button type="submit" className="btn btn-primary" style={{ marginTop: 12 }} disabled={submitting}>
           Add social link
         </button>
         {error && <p className="error-text">{error}</p>}

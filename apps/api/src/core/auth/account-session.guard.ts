@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
 import type { Account } from '@nid/db';
+import { sha256Hex } from '@nid/shared-types';
 import { AccountsService } from '../../modules/accounts/accounts.service';
 
 /**
@@ -14,7 +15,7 @@ export class AccountSessionGuard implements CanActivate {
   constructor(private readonly accounts: AccountsService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request & { account?: Account }>();
+    const request = context.switchToHttp().getRequest<Request & { account?: Account; sessionTokenHash?: string }>();
     const header = request.headers['authorization'];
 
     if (!header || Array.isArray(header) || !header.startsWith('Bearer ')) {
@@ -27,6 +28,9 @@ export class AccountSessionGuard implements CanActivate {
     }
 
     request.account = await this.accounts.resolveSession(token);
+    // Same hash resolveSession() looked the session up by — exposed so a
+    // logout route can revoke exactly this session without re-deriving it.
+    request.sessionTokenHash = sha256Hex(token);
     return true;
   }
 }

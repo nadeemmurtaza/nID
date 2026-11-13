@@ -44,7 +44,7 @@ export class VerificationCasesController {
   @UseGuards(ApiKeyGuard)
   @Post()
   create(@CurrentTenant() tenant: AuthenticatedTenant, @Body() dto: CreateVerificationCaseDto) {
-    return this.cases.create(tenant.tenantId, tenant.apiKeyId, dto);
+    return this.cases.create(tenant.tenantId, { type: 'API_KEY', id: tenant.apiKeyId }, dto);
   }
 
   /** apps/dashboard's case list — reachable by a tenant API key or a real staff Account session (see TenantActorGuard). */

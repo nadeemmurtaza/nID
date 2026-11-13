@@ -26,12 +26,6 @@ export interface AppEnv {
   documentOcrDevMode: boolean;
   /** liveness provider (dev): mock a liveness result instead of calling a real vendor. */
   livenessDevMode: boolean;
-  /**
-   * Shared secret for platform-admin operations (tenant creation, tenant
-   * management). Must be a random 32+ character string. Used by
-   * PlatformAdminGuard to protect POST /v1/tenants and related endpoints.
-   */
-  platformAdminSecret: string;
 }
 
 function required(name: string): string {
@@ -53,6 +47,5 @@ export function loadEnv(): AppEnv {
     localStorageDir: required('LOCAL_STORAGE_DIR'),
     documentOcrDevMode: process.env['DOCUMENT_OCR_DEV_MODE'] === 'true',
     livenessDevMode: process.env['LIVENESS_DEV_MODE'] === 'true',
-    platformAdminSecret: process.env['PLATFORM_ADMIN_SECRET'] ?? '',
   };
 }

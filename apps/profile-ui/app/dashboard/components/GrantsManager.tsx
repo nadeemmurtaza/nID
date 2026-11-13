@@ -60,11 +60,11 @@ export function GrantsManager({ token }: { token: string }) {
         everyone on your page.
       </p>
 
-      {grants?.length === 0 && <p style={{ color: 'var(--muted)', fontSize: 13 }}>No active shares.</p>}
+      {grants?.length === 0 && <p className="empty-state">No active shares.</p>}
       {grants?.map((g) => (
         <div className="data-row" key={g.id}>
           <span>{FIELDS.find((f) => f.id === g.field)?.label ?? g.field}</span>
-          <button type="button" className="small-btn danger-btn" onClick={() => handleRevoke(g.id)}>
+          <button type="button" className="btn btn-sm btn-danger" onClick={() => handleRevoke(g.id)}>
             Revoke
           </button>
         </div>
@@ -88,7 +88,7 @@ export function GrantsManager({ token }: { token: string }) {
           value={granteeSlug}
           onChange={(e) => setGranteeSlug(e.target.value)}
         />
-        <button type="submit" style={{ marginTop: 12 }} disabled={submitting}>
+        <button type="submit" className="btn btn-primary" style={{ marginTop: 12 }} disabled={submitting}>
           Share
         </button>
         {error && <p className="error-text">{error}</p>}

@@ -57,7 +57,7 @@ export function OffersManager({ token }: { token: string }) {
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Offers
       </h2>
-      {offers?.length === 0 && <p style={{ color: 'var(--muted)', fontSize: 13 }}>No offers yet.</p>}
+      {offers?.length === 0 && <p className="empty-state">No offers yet — add your first one below.</p>}
       {offers?.map((offer) => (
         <div className="data-row" key={offer.id}>
           <div>
@@ -66,10 +66,10 @@ export function OffersManager({ token }: { token: string }) {
             {!offer.isActive && <div className="meta">Inactive</div>}
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            <button type="button" className="small-btn" onClick={() => handleToggleActive(offer)}>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleToggleActive(offer)}>
               {offer.isActive ? 'Deactivate' : 'Activate'}
             </button>
-            <button type="button" className="small-btn danger-btn" onClick={() => handleDelete(offer.id)}>
+            <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDelete(offer.id)}>
               Delete
             </button>
           </div>
@@ -84,7 +84,7 @@ export function OffersManager({ token }: { token: string }) {
         <textarea id="offer-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
         <label htmlFor="offer-until">Valid until (optional)</label>
         <input id="offer-until" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
-        <button type="submit" style={{ marginTop: 12 }} disabled={submitting}>
+        <button type="submit" className="btn btn-primary" style={{ marginTop: 12 }} disabled={submitting}>
           {submitting ? 'Adding…' : 'Add offer'}
         </button>
         {error && <p className="error-text">{error}</p>}

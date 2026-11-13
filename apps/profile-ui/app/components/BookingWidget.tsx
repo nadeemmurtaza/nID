@@ -110,16 +110,14 @@ export function BookingWidget({ slug, services }: { slug: string; services: Serv
       </select>
 
       {!slots && !loadingSlots && (
-        <button type="button" style={{ marginTop: 10 }} onClick={() => loadSlots(serviceId)}>
+        <button type="button" className="btn btn-primary" style={{ marginTop: 8 }} onClick={() => loadSlots(serviceId)}>
           Check availability
         </button>
       )}
 
-      {loadingSlots && <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 10 }}>Loading times…</p>}
+      {loadingSlots && <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 8 }}>Loading times…</p>}
 
-      {slots && slots.length === 0 && (
-        <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 10 }}>No open times in the next two weeks.</p>
-      )}
+      {slots && slots.length === 0 && <p className="empty-state" style={{ marginTop: 8 }}>No open times in the next two weeks.</p>}
 
       {slots && slots.length > 0 && (
         <div className="slots-grid">
@@ -150,7 +148,7 @@ export function BookingWidget({ slug, services }: { slug: string; services: Serv
           <label htmlFor="notes">Notes (optional)</label>
           <textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
 
-          <button type="submit" style={{ marginTop: 12, width: '100%' }} disabled={submitting}>
+          <button type="submit" className="btn btn-primary btn-block" style={{ marginTop: 12 }} disabled={submitting}>
             {submitting ? 'Booking…' : `Confirm ${formatSlot(selectedSlot.startsAt)}`}
           </button>
         </form>

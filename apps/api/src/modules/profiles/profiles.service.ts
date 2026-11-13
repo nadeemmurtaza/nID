@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@nid/db';
 import type { Account, Organization, Profile, ProfileFieldGrant, ProfileGrantField } from '@nid/db';
+import { cnicPhoneLinkedMethods } from '@nid/verification-providers';
 import { PrismaService } from '../../core/db/prisma.service';
 import { CrossTenantBadgesService } from '../badges/cross-tenant-badges.service';
 import { OrganizationsService } from '../organizations/organizations.service';
@@ -52,6 +53,19 @@ export interface PublicProfile {
   badges: Badge[] | null;
   /** The verified name behind the badges, never displayName's replacement — only present when the owner opts in via showRealName. */
   realName: string | null;
+  /**
+   * Whether the displayed phone/whatsapp number is the SAME number the
+   * owner's Account actually completed OTP verification with — never a
+   * general "this profile is legitimate" claim. Profile.phone/whatsapp
+   * are free-text fields (UpdateProfileDto has no format tie to
+   * Account.phone), so an owner can put any number here; this tells a
+   * viewer whether that specific number is the one this system actually
+   * confirmed control of. Always false for an organization-owned profile
+   * — there is no organization-level phone verification in this
+   * codebase to honestly claim here.
+   */
+  phoneVerified: boolean;
+  whatsappVerified: boolean;
 }
 
 /**
@@ -114,10 +128,16 @@ export class ProfilesService {
    * Real cross-tenant identity verification, required before a username
    * can exist at all — an IDENTITY badge alone isn't enough on its own
    * (org_membership-style inheritance, or a REGISTRY_VERIFIED check with
-   * no document, could produce one without ever recording a name), so
-   * this also requires the actual PhoneNameEvidence row a real
-   * document_ocr pass writes (see resolveCaseActivity's own comment).
-   * Returns the slugified name a chosen username must be built from.
+   * no document, could produce one without ever recording a name). Nor is
+   * just any PhoneNameEvidence row: a name read off a passport (document_ocr)
+   * proves a name and a national ID number exist, but never that this
+   * specific phone belongs to that specific national ID — only a method
+   * whose method-attributes.ts mapping proves NATIONAL_ID_NUMBER and
+   * PHONE together (today, estamp_registry — a real registry confirming
+   * this phone is linked to this CNIC) does that. This is the actual bar:
+   * name, national ID, AND a phone independently tied to that national ID,
+   * not any one or two of the three. Returns the slugified name a chosen
+   * username must be built from.
    */
   private async requireVerifiedRealName(phone: string): Promise<string> {
     const badges = await this.crossTenantBadges.getBadgesForPhone(phone);
@@ -125,12 +145,12 @@ export class ProfilesService {
       throw new ForbiddenException('Verify your identity before choosing a username.');
     }
     const name = await this.prisma.unscoped.phoneNameEvidence.findFirst({
-      where: { phone },
+      where: { phone, method: { in: cnicPhoneLinkedMethods() } },
       orderBy: { verifiedAt: 'desc' },
     });
     if (!name) {
       throw new ForbiddenException(
-        'A verified government ID with your name on it is required before choosing a username.',
+        'A verified national ID with a phone number confirmed linked to it (e.g. e-stamp registry verification) is required before choosing a username.',
       );
     }
     return slugifyRealName(`${name.givenName} ${name.familyName}`);
@@ -475,6 +495,14 @@ export class ProfilesService {
     const badges = profile.showBadges ? await this.getBadges(account, organization) : null;
     const realName = showRealName ? await this.getRealName(account, organization) : null;
 
+    // "Verified" here means one specific, checkable fact: this exact
+    // number is the one the owner's Account completed OTP verification
+    // with — not "this profile is trustworthy" in general. An org-owned
+    // profile has no account to compare against, so both are always
+    // false rather than guessed.
+    const phoneVerified = showPhone && account !== null && profile.phone !== null && profile.phone === account.phone;
+    const whatsappVerified = showWhatsapp && account !== null && profile.whatsapp !== null && profile.whatsapp === account.phone;
+
     return {
       id: profile.id,
       slug: profile.slug,
@@ -499,6 +527,8 @@ export class ProfilesService {
       showHours: profile.showHours,
       badges,
       realName,
+      phoneVerified,
+      whatsappVerified,
     };
   }
 

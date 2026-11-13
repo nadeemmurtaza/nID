@@ -1,4 +1,4 @@
-import { apiFetch, ApiError } from './api';
+import { apiFetch, ApiError, type Badge } from './api';
 
 const API_URL = process.env.NEXT_PUBLIC_NID_API_URL ?? 'http://localhost:4000';
 
@@ -396,4 +396,59 @@ export interface BrandMembership {
 
 export function getMyBrandMemberships(token: string): Promise<BrandMembership[]> {
   return authedFetch('/v1/brands/my-memberships', token);
+}
+
+// ---- verification center ----
+
+export interface AccountVerificationStatus {
+  badges: Badge[];
+  realName: { value: string; verifiedAt: string; cnicPhoneLinked: boolean } | null;
+  cnicPhoneLinked: boolean;
+  usernameEligible: boolean;
+  email: { address: string | null; verifiedAt: string | null };
+}
+
+export function getVerificationStatus(token: string): Promise<AccountVerificationStatus> {
+  return authedFetch('/v1/accounts/me/verification', token);
+}
+
+export function startEmailVerification(token: string, email: string): Promise<{ accepted: true }> {
+  return authedFetch('/v1/accounts/me/email/start', token, { method: 'POST', body: JSON.stringify({ email }) });
+}
+
+export function verifyEmail(token: string, code: string): Promise<Account> {
+  return authedFetch('/v1/accounts/me/email/verify', token, { method: 'POST', body: JSON.stringify({ code }) });
+}
+
+export type SelfServicePolicy = 'identity' | 'cnic-phone-link';
+
+export interface SelfServiceVerificationCase {
+  id: string;
+  status: 'PENDING' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'NEEDS_REVIEW';
+  policyId: string;
+  /** Present on listVerificationCases()/getVerificationCase() results; absent on createVerificationCase()'s own response (the caller already knows which policy it just requested). */
+  policy?: { name: SelfServicePolicy };
+  createdAt: string;
+  resolvedAt: string | null;
+  hostedUrl?: string;
+  attempts: { method: string; status: string }[];
+}
+
+export function createVerificationCase(
+  token: string,
+  policyName: SelfServicePolicy,
+  referenceId?: string,
+): Promise<SelfServiceVerificationCase> {
+  return authedFetch('/v1/accounts/me/verification/cases', token, {
+    method: 'POST',
+    body: JSON.stringify({ policyName, referenceId }),
+  });
+}
+
+export function listVerificationCases(token: string): Promise<SelfServiceVerificationCase[]> {
+  return authedFetch('/v1/accounts/me/verification/cases', token);
+}
+
+export function getVerificationCase(token: string, id: string): Promise<SelfServiceVerificationCase> {
+  return authedFetch(`/v1/accounts/me/verification/cases/${id}`, token);
 }

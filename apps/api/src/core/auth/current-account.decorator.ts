@@ -19,3 +19,14 @@ export const CurrentAccountOptional = createParamDecorator(
     return request.account;
   },
 );
+
+/** The current request's session token hash, set by AccountSessionGuard — for a "log out this device" route. */
+export const CurrentSessionTokenHash = createParamDecorator((_data: unknown, ctx: ExecutionContext): string => {
+  const request = ctx.switchToHttp().getRequest<Request & { sessionTokenHash?: string }>();
+  if (!request.sessionTokenHash) {
+    throw new InternalServerErrorException(
+      '@CurrentSessionTokenHash() used on a route without AccountSessionGuard — add @UseGuards(AccountSessionGuard).',
+    );
+  }
+  return request.sessionTokenHash;
+});

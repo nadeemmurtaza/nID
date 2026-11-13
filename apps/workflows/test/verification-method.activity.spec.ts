@@ -481,6 +481,39 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
     expect(attributes.every((a) => a.level === 'REGISTRY_VERIFIED' && a.method === 'estamp_registry')).toBe(true);
   });
 
+  it('a PASSED estamp_registry attempt also writes PhoneNameEvidence, method estamp_registry — the CNIC+phone-linked evidence the username gate requires', async () => {
+    // estamp_registry doesn't OCR a name itself (RegistryCheckProvider's
+    // contract is a referenceId+phone check against a third party, not a
+    // document read) — the name it corroborates is whatever the Subject
+    // already has on file, seeded here the same way a prior document_ocr
+    // pass or CreateSubjectDto would have set it.
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-name-capture-estamp', ['estamp_registry']);
+    await migratorPrisma.subject.update({ where: { id: subjectId }, data: { givenName: 'Hira', familyName: 'Baig' } });
+    await migratorPrisma.verificationMethodAttempt.updateMany({
+      where: { caseId, method: 'estamp_registry' },
+      data: { status: 'PASSED', completedAt: new Date() },
+    });
+
+    await resolveCaseActivity({ tenantId, caseId, subjectId, caseStatus: 'APPROVED', decision: 'PASSED', raw: {} });
+
+    const evidence = await migratorPrisma.phoneNameEvidence.findMany({ where: { subjectId, caseId } });
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toMatchObject({ method: 'estamp_registry', givenName: 'Hira', familyName: 'Baig' });
+  });
+
+  it('never writes PhoneNameEvidence from estamp_registry when the Subject has no name on file yet', async () => {
+    const { tenantId, subjectId, caseId } = await makeCase('activity-test-name-capture-estamp-noname', ['estamp_registry']);
+    await migratorPrisma.verificationMethodAttempt.updateMany({
+      where: { caseId, method: 'estamp_registry' },
+      data: { status: 'PASSED', completedAt: new Date() },
+    });
+
+    await resolveCaseActivity({ tenantId, caseId, subjectId, caseStatus: 'APPROVED', decision: 'PASSED', raw: {} });
+
+    const evidence = await migratorPrisma.phoneNameEvidence.findMany({ where: { subjectId, caseId } });
+    expect(evidence).toHaveLength(0);
+  });
+
   it('a PASSED document_ocr attempt with an MRZ name writes PhoneNameEvidence and updates Subject.givenName/familyName', async () => {
     // Same isolation-testing approach as the attribute test above —
     // resolveCaseActivity's own name-capture logic doesn't care HOW the

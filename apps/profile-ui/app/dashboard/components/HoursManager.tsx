@@ -107,7 +107,7 @@ export function HoursManager({ token }: { token: string }) {
                 />
               </div>
             )}
-            <button type="button" className="small-btn" onClick={() => saveDay(day)} disabled={savingDay === day}>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={() => saveDay(day)} disabled={savingDay === day}>
               {savingDay === day ? 'Saving…' : 'Save'}
             </button>
           </div>

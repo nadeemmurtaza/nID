@@ -11,6 +11,7 @@ import { TenantStaffModule } from './modules/tenant-staff/tenant-staff.module';
 import { VerificationCasesModule } from './modules/verification-cases/verification-cases.module';
 import { SessionsModule } from './modules/sessions/sessions.module';
 import { AccountsModule } from './modules/accounts/accounts.module';
+import { AccountVerificationModule } from './modules/account-verification/account-verification.module';
 import { OAuthModule } from './modules/oauth/oauth.module';
 import { BadgesModule } from './modules/badges/badges.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
@@ -36,6 +37,7 @@ import { PermissionModule } from './modules/permission/permission.module';
     VerificationCasesModule,
     SessionsModule,
     AccountsModule,
+    AccountVerificationModule,
     OAuthModule,
     BadgesModule,
     ProfilesModule,

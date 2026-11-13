@@ -61,6 +61,9 @@ export interface PublicProfile {
   showHours: boolean;
   badges: Badge[] | null;
   realName: string | null;
+  /** True only when this exact number matches the owner's own OTP-verified Account.phone — see profiles.service.ts's own comment on the source field. */
+  phoneVerified: boolean;
+  whatsappVerified: boolean;
 }
 
 export interface Service {

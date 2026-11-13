@@ -86,3 +86,20 @@ export const METHOD_ATTRIBUTES: Record<string, MethodAttributeMapping> = {
 export function attributesProvenBy(method: string): MethodAttributeMapping | undefined {
   return METHOD_ATTRIBUTES[method];
 }
+
+/**
+ * Methods proving NATIONAL_ID_NUMBER and PHONE together — real
+ * third-party evidence that a specific phone is linked to a specific
+ * national ID, not two independently-true facts. This is the exact bar
+ * profiles.service.ts's username gate (requireVerifiedRealName) and
+ * AccountVerificationService both require, computed once here so neither
+ * has to hardcode a method name (docs/HOUSE-RULES.md rule 1) — today
+ * this returns only `estamp_registry`, but a future method proving the
+ * same combination qualifies automatically.
+ */
+export function cnicPhoneLinkedMethods(): string[] {
+  return Object.keys(METHOD_ATTRIBUTES).filter((method) => {
+    const attributes = METHOD_ATTRIBUTES[method]?.attributes ?? [];
+    return attributes.includes('NATIONAL_ID_NUMBER') && attributes.includes('PHONE');
+  });
+}

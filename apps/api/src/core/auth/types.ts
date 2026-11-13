@@ -20,3 +20,13 @@ export interface AuthenticatedActor {
   actorType: ActorType;
   actorId: string;
 }
+
+/**
+ * Who is creating a VerificationCase — a tenant's own API key (the
+ * original, still-primary path), or an Account creating a case against
+ * itself through the self-service Verification Center. Kept separate
+ * from AuthenticatedActor/ActorType above: those describe who's acting
+ * for a TENANT (staff vs. API key), this describes who's acting for the
+ * CASE CREATION call specifically, and an Account is never a tenant actor.
+ */
+export type CaseCreationActor = { type: 'API_KEY'; id: string } | { type: 'ACCOUNT'; id: string };

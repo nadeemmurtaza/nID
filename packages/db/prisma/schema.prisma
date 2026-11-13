@@ -48,10 +48,6 @@ enum AuditActorType {
   SUBJECT
   SYSTEM
   API_KEY
-  /// An ecosystem service acting with its own BillingServiceCredential.
-  SERVICE
-  /// A person on BILLING_ADMIN_ACCOUNT_IDS — merchant-of-record staff, not tenant staff.
-  PLATFORM_ADMIN
 }
 
 /// What a VerificationPolicy/Case is actually verifying about a Subject —
@@ -558,10 +554,17 @@ model Account {
   phone           String    @unique
   email           String?   @unique
   phoneVerifiedAt DateTime?
+  /// Set only by a real verifyEmail() success (accounts.service.ts) —
+  /// never backfilled or inferred. Null means exactly what it says:
+  /// nothing has confirmed control of this email address, even if the
+  /// `email` column itself is non-null (a change in progress, or a value
+  /// set some other way, is not the same claim as "verified").
+  emailVerifiedAt DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   sessions        AccountSession[]
+  emailOtpCodes   AccountEmailOtpCode[]
   loginRequests   OAuthLoginRequest[]
   profile         Profile?
   staffMemberships TenantStaffMembership[]
@@ -610,6 +613,11 @@ model AccountOtpCode {
   id         String    @id @default(cuid())
   phone      String
   codeHash   String
+  /// Wrong-guess counter for THIS code only — verifyOtp() locks the code
+  /// (sets consumedAt) once this reaches its MAX_OTP_ATTEMPTS constant,
+  /// forcing a fresh startOtp() rather than letting one code be guessed
+  /// across its whole 10-minute TTL. See accounts.service.ts.
+  attempts   Int       @default(0)
   consumedAt DateTime?
   expiresAt  DateTime
   createdAt  DateTime  @default(now())
@@ -623,6 +631,35 @@ model AccountSession {
   tokenHash String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+}
+
+/// The email-verification counterpart to AccountOtpCode — same
+/// attempt-lockout + resend-cooldown mechanics (see accounts.service.ts's
+/// startEmailVerification/verifyEmail), deliberately not shared code with
+/// the phone flow despite the similarity: phone OTP bootstraps the Account
+/// itself (unauthenticated), email verification only ever runs against an
+/// already-authenticated Account (AccountSessionGuard) confirming a SECOND
+/// fact about it — different enough callers that forcing one shared
+/// implementation would cost more clarity than the duplication saves
+/// (same reasoning attribute-badges.ts's own header comment gives for a
+/// near-identical case). `email` is stored on the code row itself, not as
+/// a `pendingEmail` column on Account — the "what email is being
+/// verified" question is answered by the most recent unconsumed row for
+/// this accountId, the same append-only-evidence shape this schema
+/// already uses everywhere else.
+model AccountEmailOtpCode {
+  id         String    @id @default(cuid())
+  accountId  String
+  email      String
+  codeHash   String
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -726,11 +763,7 @@ model PhoneBadgeEvidence {
 /// a locked username can ever be changed — see Profile's own comment)
 /// needs to compare successive verified values over time.
 ///
-/// Append-only, one row per PASSED document_ocr case whose MRZ had a
-/// checksum-valid name (see evaluate-document.ts) — never dob_document/
-/// education_document/employment_document, which use the same
-/// ImageClaimProvider mechanism but aren't a government-issued identity
-/// document. Written by resolveCaseActivity (apps/workflows), same
+/// Append-only. Written by resolveCaseActivity (apps/workflows), same
 /// trigger point and same no-RLS cross-tenant trust domain as
 /// PhoneBadgeEvidence above — a phone, not a tenantId-scoped Subject, is
 /// the join key a person's own Account needs to read this by, across
@@ -738,12 +771,28 @@ model PhoneBadgeEvidence {
 /// Reading "the current verified name" means the most recent row by
 /// verifiedAt; reading "did the name just change" means comparing the two
 /// most recent rows.
+///
+/// `method` records which PASSED VerificationMethodAttempt produced this
+/// row — document_ocr (a checksum-valid government-ID MRZ read, see
+/// evaluate-document.ts; never dob_document/education_document/
+/// employment_document, which reuse the same ImageClaimProvider mechanism
+/// for documents that aren't a government identity credential), or any
+/// method whose packages/verification-providers/src/method-attributes.ts
+/// mapping proves NATIONAL_ID_NUMBER and PHONE together in one check
+/// (today, only estamp_registry — a real third-party registry confirming
+/// THIS phone is linked to THIS CNIC, not just that a name was read off
+/// some document). This distinction is why the column exists: the
+/// username gate (profiles.service.ts's requireVerifiedRealName)
+/// specifically requires the second, stronger kind, not just "any row
+/// exists here" — a name alone was never enough to prove which phone a
+/// government ID actually belongs to.
 model PhoneNameEvidence {
   id         String   @id @default(cuid())
   phone      String
   tenantId   String
   subjectId  String
   caseId     String
+  method     String
   givenName  String
   familyName String
   verifiedAt DateTime
