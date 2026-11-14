@@ -10,10 +10,15 @@ use sqlx::postgres::PgTransaction;
 /// Database connection pool wrapper.
 #[derive(Debug, Clone)]
 pub struct DbPool {
-    pool: Pool,
+    pub(crate) pool: Pool,
 }
 
 impl DbPool {
+    /// Create a new DbPool from an existing Pool (for sharing).
+    pub fn new(pool: Pool) -> Self {
+        Self { pool }
+    }
+
     /// Create a new connection pool from a PostgreSQL connection string.
     pub async fn connect(database_url: &str) -> Result<Self> {
         let mut cfg = Config::new();

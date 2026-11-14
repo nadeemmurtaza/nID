@@ -10,6 +10,7 @@ pub mod organizations;
 pub mod sessions;
 pub mod brands;
 pub mod profiles;
+pub mod badges;
 pub mod access;
 pub mod roles;
 pub mod permissions;
