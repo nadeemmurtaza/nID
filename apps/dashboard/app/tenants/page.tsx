@@ -4,8 +4,6 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   listTenants,
-  getTenantById,
-  updateTenant,
   getPlatformAdminSecret,
   ApiError,
   type TenantListItem,
@@ -14,7 +12,7 @@ import { Header } from '../components/header';
 import { useDashboardSession } from '../../lib/use-dashboard-session';
 
 export default function TenantsPage() {
-  const { state, logout } = useDashboardSession();
+  const { logout } = useDashboardSession();
   const [tenants, setTenants] = useState<TenantListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -41,7 +39,7 @@ export default function TenantsPage() {
   return (
     <>
       <Header
-        tenant={{ name: 'Platform Admin', slug: 'platform' }}
+        tenant={{ name: 'Platform Admin' }}
         onLogout={logout}
       />
       <main className="shell">

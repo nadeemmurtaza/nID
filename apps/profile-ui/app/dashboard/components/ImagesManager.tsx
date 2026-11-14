@@ -50,8 +50,8 @@ export function ImagesManager({ token, slug }: { token: string; slug: string }) 
         {banners.map((img) => (
           <div className="thumb" key={img.id}>
             <img src={apiUrl(`/v1/profiles/${slug}/images/${img.id}`)} alt="" />
-            <button type="button" onClick={() => handleDelete(img.id)}>
-              ✕
+            <button type="button" onClick={() => handleDelete(img.id)} aria-label="Delete image">
+              <DeleteIcon size={16} />
             </button>
           </div>
         ))}
@@ -73,8 +73,8 @@ export function ImagesManager({ token, slug }: { token: string; slug: string }) 
         {gallery.map((img) => (
           <div className="thumb" key={img.id}>
             <img src={apiUrl(`/v1/profiles/${slug}/images/${img.id}`)} alt="" />
-            <button type="button" onClick={() => handleDelete(img.id)}>
-              ✕
+            <button type="button" onClick={() => handleDelete(img.id)} aria-label="Delete image">
+              <DeleteIcon size={16} />
             </button>
           </div>
         ))}

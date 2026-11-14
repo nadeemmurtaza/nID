@@ -5,10 +5,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@nid/db';
 import { PrismaService } from '../../core/db/prisma.service';
 import { TenantsService } from '../tenants/tenants.service';
 import type { Account } from '@nid/db';
-import { Prisma } from '@nid/db';
 
 export interface CreateAccessGrantDto {
   accountId: string;
@@ -86,15 +86,13 @@ export class AccessService {
     }
 
     // Check for duplicate grant
-    const existing = await this.prisma.unscoped.accessGrant.findUnique({
+    const existing = await this.prisma.unscoped.accessGrant.findFirst({
       where: {
-        accountId_tenantId_organizationId_brandId: {
-          accountId: dto.accountId,
-          tenantId,
-          organizationId: dto.organizationId ?? undefined,
-          brandId: dto.brandId ?? undefined,
-        },
-      } as any,
+        accountId: dto.accountId,
+        tenantId,
+        organizationId: dto.organizationId ?? null,
+        brandId: dto.brandId ?? null,
+      },
     });
 
     if (existing) {
@@ -116,7 +114,7 @@ export class AccessService {
         where: { id: dto.brandId },
         include: {
           organization: {
-            select: { tenantId: true },
+            select: { id: true, tenantId: true },
           },
         },
       });
@@ -198,7 +196,7 @@ export class AccessService {
 
     const where: any = {
       tenantId,
-      status: 'ACTIVE',
+      status: 'ACTIVE' as const,
       ...(organizationId && { organizationId }),
       ...(brandId && { brandId }),
     };
@@ -443,15 +441,13 @@ export class AccessService {
     }
 
     // Check for existing grant
-    const existing = await this.prisma.unscoped.accessGrant.findUnique({
+    const existing = await this.prisma.unscoped.accessGrant.findFirst({
       where: {
-        accountId_tenantId_organizationId_brandId: {
-          accountId,
-          tenantId,
-          organizationId: null,
-          brandId: null,
-        },
-      } as any,
+        accountId,
+        tenantId,
+        organizationId: null,
+        brandId: null,
+      },
     });
 
     if (existing) {
@@ -581,7 +577,7 @@ export class AccessService {
     } else {
       // Collect from roles
       roleAssignments.forEach((ra) => {
-        const perms = ra.role.permissions as any;
+        const perms = ra.role.permissions as string[];
         if (Array.isArray(perms)) {
           perms.forEach((p) => permissions.add(String(p)));
         }
@@ -621,7 +617,7 @@ export class AccessService {
     };
   }
 
-  private async emitWebhookEvent(tenantId: string, eventType: string, data: unknown) {
+  private async emitWebhookEvent(tenantId: string, eventType: string, data: Record<string, unknown> | unknown[]) {
     const tenant = await this.prisma.unscoped.tenant.findUnique({
       where: { id: tenantId },
       select: { webhookUrl: true, webhookSecretPlaintext: true },
@@ -649,7 +645,7 @@ export class AccessService {
       data: {
         tenantId,
         eventType,
-        payload: payloadObj as any,
+        payload: payloadObj as Prisma.InputJsonValue,
         targetUrl: tenant.webhookUrl,
         status: 'PENDING',
         attempts: 0,

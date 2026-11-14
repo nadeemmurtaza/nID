@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { BadgeAlertIcon, CircleCheckIcon, ClockIcon, EyeIcon, XIcon } from 'lucide-animated';
+import { Logomark } from '../../components/logomark';
+import { OtpInput } from '../../components/otp-input';
 
 const API_URL = process.env.NEXT_PUBLIC_NID_API_URL ?? 'http://localhost:4000';
 

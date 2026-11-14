@@ -1,13 +1,12 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@nid/db';
 import { PrismaService } from '../../core/db/prisma.service';
 import type { Account } from '@nid/db';
-import { Prisma } from '@nid/db';
 
 export interface CreateDepartmentDto {
   name: string;
@@ -77,7 +76,7 @@ export class DepartmentService {
         tenantId,
         name: dto.name,
         slug,
-        ...(dto.defaultPermissions !== undefined && { defaultPermissions: dto.defaultPermissions as any }),
+        defaultPermissions: dto.defaultPermissions ?? Prisma.JsonNull,
         icon: dto.icon ?? null,
         color: dto.color ?? null,
         inheritedFromTenant: true,
@@ -160,7 +159,7 @@ export class DepartmentService {
     }
 
     // Check slug uniqueness
-    let newSlug = dto.slug ?? dept.slug;
+    const newSlug = dto.slug ?? dept.slug;
     if (dto.slug && dto.slug !== dept.slug) {
       const existing = await this.prisma.unscoped.department.findUnique({
         where: { tenantId_slug: { tenantId, slug: dto.slug } },
@@ -222,16 +221,14 @@ export class DepartmentService {
     const scope = dto.scope || (dto.brandId ? 'BRAND' : dto.organizationId ? 'ORGANIZATION' : 'TENANT');
 
     // Check for duplicate
-    const existing = await this.prisma.unscoped.departmentAssignment.findUnique({
+    const existing = await this.prisma.unscoped.departmentAssignment.findFirst({
       where: {
-        accountId_departmentId_scope_organizationId_brandId: {
-          accountId: dto.accountId,
-          departmentId,
-          scope,
-          organizationId: dto.organizationId ?? undefined,
-          brandId: dto.brandId ?? undefined,
-        },
-      } as any,
+        accountId: dto.accountId,
+        departmentId,
+        scope,
+        organizationId: dto.organizationId ?? null,
+        brandId: dto.brandId ?? null,
+      },
     });
 
     if (existing) {
@@ -364,7 +361,7 @@ export class DepartmentService {
     };
   }
 
-  private async emitWebhookEvent(tenantId: string, eventType: string, data: unknown) {
+  private async emitWebhookEvent(tenantId: string, eventType: string, data: Record<string, unknown> | unknown[]) {
     const tenant = await this.prisma.unscoped.tenant.findUnique({
       where: { id: tenantId },
       select: { webhookUrl: true, webhookSecretPlaintext: true },
@@ -390,7 +387,7 @@ export class DepartmentService {
       data: {
         tenantId,
         eventType,
-        payload: payloadObj as any,
+        payload: payloadObj as Prisma.InputJsonValue,
         targetUrl: tenant.webhookUrl,
         status: 'PENDING',
         attempts: 0,
