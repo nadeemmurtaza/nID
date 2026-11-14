@@ -5,6 +5,16 @@ NEWAX ecosystem. nID is the single identity provider for the whole
 ecosystem (login, MFA/2FA, OAuth sessions, secrets vault) — it must never
 own business data from another domain.
 
+## Repo Structure & Naming Conventions
+
+See `CONVENTIONS.md` for the ecosystem-wide rules on folder layout,
+module/service naming, file naming, renaming, branches, worktrees,
+commits, and merge strategy — identical across every NEWAX repo. It
+also lists this repo's current gaps against that layout (`apps/api`
+vs. `apps/rust-api` naming by language instead of by module, the
+verification engines' location under `packages/`) so they aren't
+mistaken for the target shape.
+
 ## NEWAX Ecosystem — Technology Stack & Architecture Plan
 
 > Applies to every repo in the ecosystem (nID, Communicator, core-newax,
