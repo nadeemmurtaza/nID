@@ -5,9 +5,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
-import { generateApiKey, hashApiKey } from '@nid/shared-types';
-import { PrismaService } from '../../core/db/prisma.service';
+import { generateApiKey } from '@nid/shared-types';
 import { Prisma } from '@nid/db';
+import { PrismaService } from '../../core/db/prisma.service';
 import { AuditService } from '../../core/audit/audit.service';
 import type { ActorType } from '../../core/auth/types';
 
@@ -449,7 +449,7 @@ export class TenantsService {
    * This is the core mechanism for real-time sync to Communicator.
    * Uses OutboundEvent model for tracking delivery status.
    */
-  private async emitWebhookEvent(tenantId: string, eventType: string, data: unknown) {
+  private async emitWebhookEvent(tenantId: string, eventType: string, data: Record<string, unknown> | unknown[]) {
     const tenant = await this.prisma.unscoped.tenant.findUnique({
       where: { id: tenantId },
       select: { webhookUrl: true, webhookSecretPlaintext: true },
@@ -480,7 +480,7 @@ export class TenantsService {
       data: {
         tenantId,
         eventType,
-        payload: payloadObj as any,
+        payload: payloadObj as Prisma.InputJsonValue,
         targetUrl: tenant.webhookUrl,
         status: 'PENDING',
         attempts: 0,

@@ -5,9 +5,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@nid/db';
 import { PrismaService } from '../../core/db/prisma.service';
 import type { Account } from '@nid/db';
-import { Prisma } from '@nid/db';
 
 export interface CreateRoleDto {
   name: string;
@@ -37,7 +37,7 @@ export interface RoleInfo {
   slug: string;
   description: string | null;
   permissions: string[];
-  isSystem: boolean;
+  isBuiltIn: boolean;
   createdAt: Date;
   updatedAt: Date;
   assignmentCount: number;
@@ -73,7 +73,7 @@ export class RoleService {
         name: dto.name,
         slug,
         description: dto.description ?? null,
-        permissions: dto.permissions as any,
+        permissions: dto.permissions,
         isSystem: false,
       },
     });
@@ -153,7 +153,7 @@ export class RoleService {
       throw new BadRequestException('Built-in roles cannot be modified.');
     }
 
-    let newSlug = dto.slug ?? role.slug;
+    const newSlug = dto.slug ?? role.slug;
     if (dto.slug && dto.slug !== role.slug) {
       const existing = await this.prisma.unscoped.roleDefinition.findUnique({
         where: { tenantId_slug: { tenantId, slug: dto.slug } },
@@ -247,16 +247,14 @@ export class RoleService {
 
     const scope = dto.scope || (dto.brandId ? 'BRAND' : dto.organizationId ? 'ORGANIZATION' : 'TENANT');
 
-    const existing = await this.prisma.unscoped.roleAssignment.findUnique({
+    const existing = await this.prisma.unscoped.roleAssignment.findFirst({
       where: {
-        accountId_roleDefinitionId_scope_organizationId_brandId: {
-          accountId: dto.accountId,
-          roleDefinitionId: roleId,
-          scope,
-          organizationId: dto.organizationId ?? undefined,
-          brandId: dto.brandId ?? undefined,
-        },
-      } as any,
+        accountId: dto.accountId,
+        roleDefinitionId: roleId,
+        scope,
+        organizationId: dto.organizationId ?? null,
+        brandId: dto.brandId ?? null,
+      },
     });
 
     if (existing) {
@@ -329,8 +327,8 @@ export class RoleService {
       roleId: a.roleDefinitionId,
       roleName: a.role.name,
       roleSlug: a.role.slug,
-      permissions: a.role.permissions as any,
-      isSystem: a.role.isSystem,
+      permissions: a.role.permissions as string[],
+      isBuiltIn: a.role.isSystem,
       scope: a.scope,
       organizationId: a.organizationId,
       brandId: a.brandId,
@@ -416,7 +414,7 @@ export class RoleService {
           name: role.name,
           slug: role.slug,
           description: role.description,
-          permissions: role.permissions as any,
+          permissions: role.permissions,
           isSystem: true,
         },
       });
@@ -466,15 +464,15 @@ export class RoleService {
       name: role.name,
       slug: role.slug,
       description: role.description,
-      permissions: role.permissions as any,
-      isSystem: role.isSystem,
+      permissions: role.permissions as string[],
+      isBuiltIn: role.isSystem,
       createdAt: role.createdAt,
       updatedAt: role.updatedAt,
       assignmentCount,
     };
   }
 
-  private async emitWebhookEvent(tenantId: string, eventType: string, data: unknown) {
+  private async emitWebhookEvent(tenantId: string, eventType: string, data: Record<string, unknown> | unknown[]) {
     const tenant = await this.prisma.unscoped.tenant.findUnique({
       where: { id: tenantId },
       select: { webhookUrl: true, webhookSecretPlaintext: true },
@@ -500,7 +498,7 @@ export class RoleService {
       data: {
         tenantId,
         eventType,
-        payload: payloadObj as any,
+        payload: payloadObj as Prisma.InputJsonValue,
         targetUrl: tenant.webhookUrl,
         status: 'PENDING',
         attempts: 0,

@@ -91,6 +91,7 @@ export interface Tenant {
   name: string;
   slug: string;
   dataResidencyRegion: string;
+  webhookUrl: string | null;
   createdAt: string;
   /** Which kind of credential this session actually authenticated with — see TenantActorGuard. */
   signedInAs: 'API_KEY' | 'TENANT_STAFF';
@@ -220,7 +221,7 @@ export interface TenantListItem {
   };
 }
 
-export interface TenantDetail extends TenantListItem {}
+export type TenantDetail = TenantListItem;
 
 export interface UpdateTenantRequest {
   name?: string;

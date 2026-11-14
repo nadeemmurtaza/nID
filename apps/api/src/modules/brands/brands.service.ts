@@ -1,13 +1,10 @@
 import {
-  BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { randomBytes } from 'crypto';
-import type { Account, Brand, Organization } from '@nid/db';
-import { Prisma, PrismaClient } from '@nid/db';
+import type { Brand } from '@nid/db';
+import { Prisma } from '@nid/db';
 import { PrismaService } from '../../core/db/prisma.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 
@@ -82,7 +79,7 @@ export class BrandsService {
    */
   async create(accountId: string, dto: CreateBrandDto): Promise<Brand & { webhookMessage?: string }> {
     // Verify account is admin of the organization
-    const membership = await this.organizations.requireActiveAdmin(
+    await this.organizations.requireActiveAdmin(
       dto.organizationId,
       accountId,
     );
@@ -122,14 +119,18 @@ export class BrandsService {
         website: dto.website ?? null,
         email: dto.email ?? null,
         phone: dto.phone ?? null,
-        ...(dto.socialLinks !== undefined && { socialLinks: dto.socialLinks as any }),
-        ...(dto.products !== undefined && { products: dto.products as any }),
-        ...(dto.services !== undefined && { services: dto.services as any }),
-        ...(dto.prices !== undefined && { prices: dto.prices as any }),
-        ...(dto.policies !== undefined && { policies: dto.policies as any }),
-        ...(dto.rules !== undefined && { rules: dto.rules as any }),
-        ...(dto.toneGuidelines !== undefined && { toneGuidelines: dto.toneGuidelines as any }),
-        ...(dto.keywords !== undefined && { keywords: dto.keywords as any }),
+        logoKey: dto.logoKey ?? null,
+        primaryColor: dto.primaryColor ?? null,
+        secondaryColor: dto.secondaryColor ?? null,
+        address: dto.address ?? null,
+        socialLinks: (dto.socialLinks as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        products: (dto.products as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        services: (dto.services as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        prices: (dto.prices as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        policies: (dto.policies as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        rules: (dto.rules as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        toneGuidelines: (dto.toneGuidelines as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        keywords: (dto.keywords as Prisma.InputJsonValue) ?? Prisma.JsonNull,
       },
       include: {
         organization: true,
@@ -206,7 +207,7 @@ export class BrandsService {
     );
 
     // If slug is changing, check for duplicates
-    let newSlug = dto.slug ?? brand.slug;
+    const newSlug = dto.slug ?? brand.slug;
     if (dto.slug && dto.slug !== brand.slug) {
       const existing = await this.prisma.unscoped.brand.findUnique({
         where: {
@@ -235,14 +236,18 @@ export class BrandsService {
         ...(dto.website !== undefined && { website: dto.website }),
         ...(dto.email !== undefined && { email: dto.email }),
         ...(dto.phone !== undefined && { phone: dto.phone }),
-        ...(dto.socialLinks !== undefined && { socialLinks: dto.socialLinks as any }),
-        ...(dto.products !== undefined && { products: dto.products as any }),
-        ...(dto.services !== undefined && { services: dto.services as any }),
-        ...(dto.prices !== undefined && { prices: dto.prices as any }),
-        ...(dto.policies !== undefined && { policies: dto.policies as any }),
-        ...(dto.rules !== undefined && { rules: dto.rules as any }),
-        ...(dto.toneGuidelines !== undefined && { toneGuidelines: dto.toneGuidelines as any }),
-        ...(dto.keywords !== undefined && { keywords: dto.keywords as any }),
+        ...(dto.logoKey !== undefined && { logoKey: dto.logoKey }),
+        ...(dto.primaryColor !== undefined && { primaryColor: dto.primaryColor }),
+        ...(dto.secondaryColor !== undefined && { secondaryColor: dto.secondaryColor }),
+        ...(dto.address !== undefined && { address: dto.address }),
+        ...(dto.socialLinks !== undefined && { socialLinks: dto.socialLinks as Prisma.InputJsonValue }),
+        ...(dto.products !== undefined && { products: dto.products as Prisma.InputJsonValue }),
+        ...(dto.services !== undefined && { services: dto.services as Prisma.InputJsonValue }),
+        ...(dto.prices !== undefined && { prices: dto.prices as Prisma.InputJsonValue }),
+        ...(dto.policies !== undefined && { policies: dto.policies as Prisma.InputJsonValue }),
+        ...(dto.rules !== undefined && { rules: dto.rules as Prisma.InputJsonValue }),
+        ...(dto.toneGuidelines !== undefined && { toneGuidelines: dto.toneGuidelines as Prisma.InputJsonValue }),
+        ...(dto.keywords !== undefined && { keywords: dto.keywords as Prisma.InputJsonValue }),
         ...(dto.active !== undefined && { active: dto.active }),
       },
       include: {
