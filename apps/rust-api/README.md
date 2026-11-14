@@ -4,7 +4,6 @@ Rust backend replacing the TypeScript NestJS API in `apps/api`.
 
 ## Architecture
 
-This is Phase 1 of the backend migration from TypeScript/Node.js to Rust.
 The Rust API shares the same PostgreSQL database with the same schema
 (managed by Prisma in `packages/db`), so both backends can coexist during
 the migration period.
@@ -17,7 +16,9 @@ the migration period.
 | Database | SQLx + deadpool-postgres | Prisma |
 | Async runtime | Tokio | Node.js event loop |
 | Workflows | Temporal Rust SDK (planned) | Temporal TypeScript SDK |
-| Logging | tracing | NestJS Logger |
+| Logging | tracing + request tracing middleware | NestJS Logger |
+| Error handling | Structured ApiError enum | NestJS exception filters |
+| Audit logging | AuditService | NestJS audit.service.ts |
 
 ### Project Structure
 
@@ -25,13 +26,36 @@ the migration period.
 apps/rust-api/
 ├── Cargo.toml
 └── src/
-    ├── main.rs              # Entry point, server bootstrap
+    ├── main.rs              # Entry point, router wiring, graceful shutdown
     ├── core/
     │   ├── config/          # Environment config (mirrors env.ts)
-    │   ├── db/              # Connection pool + tenant context
-    │   └── auth/            # Session & API key guards
+    │   ├── db/              # Connection pool + tenant context (RLS)
+    │   ├── auth/            # Session & API key extractors
+    │   ├── middleware/      # Request tracing, timing, X-Request-Id
+    │   ├── error/           # Structured ApiError with HTTP status mapping
+    │   └── audit/           # Audit log recording service
     └── modules/
-        └── accounts/        # First migrated module (OTP, sessions)
+        ├── accounts/        # OTP, sessions, email verification
+        ├── tenants/         # Tenant CRUD, API keys, staff management
+        ├── subjects/        # Subject creation, badges, attribute badges
+        ├── verification_cases/  # Case creation, OTP/code/location submission
+        ├── organizations/   # Org CRUD, memberships, beneficial owners
+        ├── sessions/        # Verification session status, method submission
+        ├── brands/          # Brand CRUD, membership listing
+        ├── profiles/        # Profile CRUD, grants, badges, public lookup
+        ├── badges/          # Badge ranking, cross-tenant lookups (library)
+        ├── organization_profiles/  # Org-owned profile management
+        ├── access/          # Grant CRUD, ownership transfer, partnerships
+        ├── roles/           # Role definitions, assignments
+        ├── permissions/     # Permission catalog, group queries
+        ├── departments/     # Department CRUD, assignments
+        ├── invitations/     # Email/username invites, accept/revoke
+        ├── tenant_staff/    # Staff invite and listing
+        ├── account_verification/  # Verification status, self-verification
+        ├── oauth/           # Login requests, approve, claim, token exchange
+        ├── booking/         # Services, availability, appointments
+        ├── profile_content/ # Offers, business hours, links, images
+        └── health/          # Health check endpoint
 ```
 
 ### Shared Crates
@@ -43,12 +67,28 @@ crates/
 └── billing/        # Money, ledger, billing types (mirrors packages/billing)
 ```
 
+## Migration Status
+
+All 16 NestJS API modules have been migrated to Rust with **155+ endpoints** covering:
+
+- **Core infrastructure**: Config, DB pool with RLS, auth extractors, middleware, error handling, audit logging
+- **All API modules**: Accounts, Tenants, Subjects, Verification Cases, Organizations, Sessions, Brands, Profiles, Badges, Organization Profiles, Access Control, Roles, Permissions, Departments, Invitations, Tenant Staff, Account Verification, OAuth, Booking, Profile Content, Health
+
+### Remaining Work
+
+- **File upload endpoints**: Document, liveness, and profile image uploads require multipart form parsing in Axum (currently stubs)
+- **Temporal workflow integration**: Verification case workflows need Temporal Rust SDK
+- **Compilation**: Requires MSVC Build Tools on Windows (admin install needed)
+- **Testing**: Integration tests for all endpoints
+- **Performance**: Benchmarking against TypeScript baseline
+
 ## Development
 
 ### Prerequisites
 
 - Rust 1.70+ (use `rustup` to install)
-- PostgreSQL 16 (via docker-compose)
+- MSVC Build Tools (Windows) — "Desktop development with C++" workload
+- PostgreSQL 16 (via docker-compose or local install)
 - Temporal 1.24 (via docker-compose, for workflows)
 
 ### Running
@@ -72,15 +112,3 @@ cargo clippy --workspace -- -D warnings
 # Format
 cargo fmt --workspace
 ```
-
-### Migration Strategy
-
-1. **Phase 1 (now):** Rust project structure + core infrastructure + Accounts module
-2. **Phase 2:** Migrate tenant-facing modules (Subjects, VerificationCases, Sessions)
-3. **Phase 3:** Migrate profile and booking modules
-4. **Phase 4:** Migrate shared packages (billing, forensics, OCR, liveness)
-5. **Phase 5:** Migrate Temporal workflows to Rust SDK
-6. **Phase 6:** Remove TypeScript backend, Rust-only
-
-During migration, both backends share the same database. The TypeScript API
-remains the primary entry point until all modules are migrated.

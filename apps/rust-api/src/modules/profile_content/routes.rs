@@ -39,5 +39,7 @@ pub fn profile_content_router() -> Router<Arc<ProfileContentState>> {
         .route("/v1/profiles/:slug/business-hours", get(handlers::list_public_business_hours))
         .route("/v1/profiles/:slug/links", get(handlers::list_public_links))
         .route("/v1/profiles/:slug/images", get(handlers::list_public_images))
+        .route("/v1/profiles/:slug/photo", get(handlers::get_public_photo))
+        .route("/v1/profiles/:slug/images/:imageId", get(handlers::get_public_image))
         .route("/v1/profiles/:slug/contact-messages", post(handlers::create_public_contact_message))
 }

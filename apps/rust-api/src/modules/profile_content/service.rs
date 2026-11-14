@@ -745,4 +745,45 @@ impl ProfileContentService {
 
         Ok((custom_links, social_links))
     }
+
+    /// Get the public profile photo bytes — mirrors ProfileImagesService.getPublicPhoto().
+    ///
+    /// Returns the image URL and content type. The actual image streaming is handled
+    /// by the storage driver; this method resolves the photo record for the profile.
+    pub async fn get_public_photo(&self, slug: &str) -> Result<(String, String)> {
+        let mut conn = self.db.get().await?;
+        let profile_id = self.get_published_profile_id(slug).await?;
+
+        let (url, content_type): (String, String) = sqlx::query_as(
+            "SELECT url, content_type FROM profile_image
+             WHERE profile_id = $1 AND kind = 'photo'
+             ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(&profile_id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .ok_or_else(|| anyhow!("No photo found for this profile"))?;
+
+        Ok((url, content_type))
+    }
+
+    /// Get a public gallery image by ID — mirrors ProfileImagesService.getPublicImageBytes().
+    ///
+    /// Returns the image URL and content type for the given image ID.
+    pub async fn get_public_image(&self, slug: &str, image_id: &str) -> Result<(String, String)> {
+        let mut conn = self.db.get().await?;
+        let profile_id = self.get_published_profile_id(slug).await?;
+
+        let (url, content_type): (String, String) = sqlx::query_as(
+            "SELECT url, content_type FROM profile_image
+             WHERE id = $1 AND profile_id = $2",
+        )
+        .bind(image_id)
+        .bind(&profile_id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .ok_or_else(|| anyhow!("Image not found"))?;
+
+        Ok((url, content_type))
+    }
 }

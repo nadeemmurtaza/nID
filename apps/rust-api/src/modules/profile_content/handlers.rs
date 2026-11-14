@@ -350,6 +350,28 @@ pub async fn list_public_images(
     Ok(Json(images))
 }
 
+/// GET /v1/profiles/:slug/photo — get the public profile photo
+pub async fn get_public_photo(
+    Path(slug): Path<String>,
+    State(state): State<Arc<ProfileContentState>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let (url, content_type) = state.service.get_public_photo(&slug)
+        .await
+        .map_err(not_found)?;
+    Ok(Json(serde_json::json!({ "url", "contentType": content_type })))
+}
+
+/// GET /v1/profiles/:slug/images/:imageId — get a specific public gallery image
+pub async fn get_public_image(
+    Path((slug, image_id)): Path<(String, String)>,
+    State(state): State<Arc<ProfileContentState>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let (url, content_type) = state.service.get_public_image(&slug, &image_id)
+        .await
+        .map_err(not_found)?;
+    Ok(Json(serde_json::json!({ "url", "contentType": content_type })))
+}
+
 fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
     tracing::error!(error = %err, "Internal error");
     (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "message": err.to_string() })))
