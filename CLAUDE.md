@@ -15,6 +15,13 @@ vs. `apps/rust-api` naming by language instead of by module, the
 verification engines' location under `packages/`) so they aren't
 mistaken for the target shape.
 
+See `COMMUNICATION.md` for how this repo is meant to talk to
+Communicator and the rest of the ecosystem (Module Gateway/gRPC, the
+NATS event bus, per-ID ownership — nID owns tenant/org/customer
+identity), how modules talk to each other inside this one repo, and
+how third-party platforms fit in. None of the cross-repo pieces exist
+yet — see its audit note.
+
 ## NEWAX Ecosystem — Technology Stack & Architecture Plan
 
 > Applies to every repo in the ecosystem (nID, Communicator, core-newax,
@@ -145,6 +152,41 @@ used pnpm; Communicator used npm and has been converted to match:
 - Keep using `pnpm install` / `pnpm -r --filter` here, same as always
   — this section exists so the choice (and why Communicator now
   matches it) is recorded once, ecosystem-wide.
+
+#### Tech-stack compliance audit (2026-11-14)
+
+Honest status against the plan above, not papered over:
+
+- **Backend wire protocol: not compliant.** Neither `apps/api` nor
+  `apps/rust-api` speaks gRPC/Connect — both are REST/JSON today, no
+  `tonic`/`prost`/`.proto` anywhere in this repo. The plan above is
+  the target for new cross-repo communication (see
+  `COMMUNICATION.md`), not a description of what's running.
+- **Database: mixed compliance.** `apps/rust-api` uses SQLx +
+  PostgreSQL, as planned. **`packages/db` genuinely depends on
+  `@prisma/client` at runtime** (not just `.prisma` as modeling
+  notation — this is the real ORM, used by `apps/api` and likely
+  `apps/workflows`). This directly contradicts the "no Prisma"
+  decision and is the single biggest tech-stack gap this audit found.
+  Fixing it means either migrating `apps/api`'s database access to
+  SQLx, or retiring `apps/api` in favor of `apps/rust-api` (which
+  would also resolve the `apps/api`-vs-`apps/rust-api` dual-backend
+  gap already logged in `CONVENTIONS.md`). Both are real migrations
+  with real risk (existing access patterns, Prisma migrations already
+  applied) — not something to execute inside an audit pass. This
+  needs an explicit decision on which backend wins before anyone
+  touches it.
+- **Workflow orchestration: undocumented but real.** `apps/workflows`
+  depends on Temporal (`@temporalio/core-bridge`). This was never
+  part of the ecosystem tech-stack plan — recorded here as a factual
+  correction, not a recommendation to change it.
+- **Cache: not implemented.** No `moka`, no Redis, in this repo today.
+- **Frontend: not compliant, and not a quick fix.** All four apps
+  (`dashboard`, `login-ui`, `profile-ui`, `verify-ui`) are Next.js/
+  React, not Svelte, and talk REST, not Connect. These are real,
+  already-shipped apps — re-platforming them is a dedicated project,
+  not an audit fix. Treat the Svelte/WASM plan as the target for new
+  client surfaces until a migration is explicitly decided.
 
 ### Why this combination and not the obvious alternatives
 
