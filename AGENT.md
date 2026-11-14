@@ -79,6 +79,26 @@ via WebAssembly so there is still exactly one logic implementation, not
   platform via `UniFFI` (native) or `wasm-bindgen` (web). This is the
   piece that keeps behavior identical across platforms and keeps the
   footprint small everywhere.
+
+#### Design system (shared global CSS tokens)
+
+Canonical token file: `packages/design-tokens/tokens.css` (package
+`@newax/design-tokens`), consumed by every Next.js app in this repo
+(`dashboard`, `login-ui`, `profile-ui`, `verify-ui`) via
+`@import "@newax/design-tokens/tokens.css";` at the top of each app's
+`app/globals.css`. Same palette, typography, spacing, layout, radius,
+elevation and motion tokens as every other NEWAX repo — Communicator's
+`frontend/src/styles/newax-tokens.css` is the identical copy. Until
+`core-newax` hosts this as a real shared package (the correct
+long-term home, per this ecosystem's "build once, reuse everywhere"
+rule), the file is duplicated byte-for-byte across repos: edit one,
+copy to the others, never fork the values. The file also defines
+compatibility aliases (`--bg`, `--fg`, `--accent`, etc.) so the short
+variable names already used across these four apps keep resolving
+without a rewrite — new code should read the canonical `--color-*`,
+`--text-*`, `--space-*`, `--radius-*`, `--elevation-*`, `--layer-*`,
+`--motion-*` names directly.
+
 - **iOS:** Swift/SwiftUI shell, calling the Rust core via UniFFI. ARC,
   no GC pauses, no bridge overhead.
 - **Android:** Kotlin/Jetpack Compose shell, same UniFFI bridge into the
