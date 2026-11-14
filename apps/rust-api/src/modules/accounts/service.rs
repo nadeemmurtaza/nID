@@ -243,4 +243,125 @@ impl AccountsService {
         .map_err(|_| anyhow!("Account not found"))?;
         Ok(account)
     }
+
+    /// Start email verification — sends a code to the given email.
+    /// Mirrors AccountsService.startEmailVerification().
+    pub async fn start_email_verification(&self, account_id: &str, email: &str) -> Result<()> {
+        let mut conn = self.db.get().await?;
+
+        // Verify account exists
+        sqlx::query("SELECT id FROM account WHERE id = $1")
+            .bind(account_id)
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(|_| anyhow!("Account not found"))?;
+
+        // Check cooldown
+        let outstanding: Option<(f64,)> = sqlx::query_as(
+            "SELECT EXTRACT(EPOCH FROM (NOW() - created_at)) as elapsed
+             FROM account_otp_code
+             WHERE phone = $1 AND consumed_at IS NULL
+             ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(email)
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        if let Some((elapsed,)) = outstanding {
+            if elapsed < OTP_RESEND_COOLDOWN_SECONDS as f64 {
+                return Err(anyhow!("Please wait before requesting another code."));
+            }
+        }
+
+        // Generate email verification code
+        let mut rng = rand::thread_rng();
+        let code = rng.gen_range(0..10u32).to_string()
+            .pad_start(OTP_CODE_LENGTH, '0');
+        let code_hash = sha256_hex(&code);
+        let expires_at = Utc::now() + chrono::Duration::minutes(OTP_TTL_MINUTES);
+
+        sqlx::query(
+            "INSERT INTO account_otp_code (id, phone, code_hash, expires_at)
+             VALUES (gen_random_uuid(), $1, $2, $3)",
+        )
+        .bind(email)
+        .bind(&code_hash)
+        .bind(expires_at)
+        .execute(&mut *conn)
+        .await?;
+
+        if !self.env.otp_sms_dev_mode {
+            return Err(anyhow!(
+                "Account email verification has no production email vendor wired up yet"
+            ));
+        }
+
+        info!("[accounts:dev] would send email verification code {} to {}", code, email);
+        Ok(())
+    }
+
+    /// Verify an email verification code.
+    /// Mirrors AccountsService.verifyEmail().
+    pub async fn verify_email(&self, account_id: &str, code: &str) -> Result<AccountResponse> {
+        let mut conn = self.db.get().await?;
+
+        // Get the account's email
+        let email: String = sqlx::query_scalar(
+            "SELECT email FROM account WHERE id = $1",
+        )
+        .bind(account_id)
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(|_| anyhow!("Account not found or email not set"))?;
+
+        // Find the live challenge (stored with email as phone)
+        let challenge: Option<(String, String, i32)> = sqlx::query_as(
+            "SELECT id, code_hash, attempts
+             FROM account_otp_code
+             WHERE phone = $1 AND consumed_at IS NULL AND expires_at > NOW()
+             ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(&email)
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        let challenge = challenge.ok_or_else(|| anyhow!("That code is incorrect or has expired."))?;
+        let (challenge_id, code_hash, attempts) = challenge;
+
+        if attempts >= MAX_OTP_ATTEMPTS {
+            sqlx::query("UPDATE account_otp_code SET consumed_at = NOW() WHERE id = $1")
+                .bind(&challenge_id)
+                .execute(&mut *conn)
+                .await?;
+            return Err(anyhow!("Too many incorrect attempts. Request a new code."));
+        }
+
+        let submitted_hash = sha256_hex(code);
+        if submitted_hash != code_hash {
+            sqlx::query(
+                "UPDATE account_otp_code SET attempts = attempts + 1 WHERE id = $1",
+            )
+            .bind(&challenge_id)
+            .execute(&mut *conn)
+            .await?;
+            return Err(anyhow!("That code is incorrect or has expired."));
+        }
+
+        // Consume the code
+        sqlx::query("UPDATE account_otp_code SET consumed_at = NOW() WHERE id = $1")
+            .bind(&challenge_id)
+            .execute(&mut *conn)
+            .await?;
+
+        // Mark email as verified
+        let account: AccountRow = sqlx::query_as(
+            "UPDATE account SET email_verified_at = NOW() WHERE id = $1
+             RETURNING id, phone, email, phone_verified_at, email_verified_at",
+        )
+        .bind(account_id)
+        .fetch_one(&mut *conn)
+        .await?;
+
+        Ok(account.into())
+    }
 }

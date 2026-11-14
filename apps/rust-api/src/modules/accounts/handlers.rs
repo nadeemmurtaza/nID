@@ -11,6 +11,7 @@ use crate::core::db::DbPool;
 use crate::core::config::AppEnv;
 use crate::modules::accounts::dto::{
     AcceptedResponse, AccountResponse, StartOtpRequest, VerifyOtpRequest, VerifyOtpResponse,
+    StartEmailVerificationRequest, VerifyEmailRequest,
 };
 use crate::modules::accounts::service::AccountsService;
 
@@ -82,6 +83,34 @@ pub async fn logout_all(
         .await
         .map_err(internal_error)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST /v1/accounts/me/email/start
+pub async fn start_email_verification(
+    Path(account_id): Path<String>,
+    State(state): State<Arc<AccountsState>>,
+    Json(req): Json<StartEmailVerificationRequest>,
+) -> Result<Json<AcceptedResponse>, (StatusCode, Json<serde_json::Value>)> {
+    state
+        .service
+        .start_email_verification(&account_id, &req.email)
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(AcceptedResponse { accepted: true }))
+}
+
+/// POST /v1/accounts/me/email/verify
+pub async fn verify_email(
+    Path(account_id): Path<String>,
+    State(state): State<Arc<AccountsState>>,
+    Json(req): Json<VerifyEmailRequest>,
+) -> Result<Json<AccountResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let account = state
+        .service
+        .verify_email(&account_id, &req.code)
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(account))
 }
 
 /// Convert anyhow error to HTTP error response

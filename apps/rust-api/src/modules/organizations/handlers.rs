@@ -78,3 +78,43 @@ pub async fn list_beneficial_owners(
     let owners = state.service.list_beneficial_owners(&tenant_id, &org_id).await.map_err(error_response)?;
     Ok(Json(owners))
 }
+
+// ── Account-session endpoints ──
+
+/// GET /v1/organizations/my-memberships/:accountId
+pub async fn list_my_memberships(
+    Path(account_id): Path<String>,
+    State(state): State<Arc<OrganizationsState>>,
+) -> Result<Json<Vec<OrganizationResponse>>, (StatusCode, Json<serde_json::Value>)> {
+    let orgs = state.service.list_my_memberships(&account_id).await.map_err(error_response)?;
+    Ok(Json(orgs))
+}
+
+/// GET /v1/organizations/invites/mine/:accountId
+pub async fn list_my_invites(
+    Path(account_id): Path<String>,
+    State(state): State<Arc<OrganizationsState>>,
+) -> Result<Json<Vec<MembershipResponse>>, (StatusCode, Json<serde_json::Value>)> {
+    let invites = state.service.list_my_invites(&account_id).await.map_err(error_response)?;
+    Ok(Json(invites))
+}
+
+/// POST /v1/organizations/invites/:membershipId/accept/:accountId
+pub async fn accept_invite(
+    Path((membership_id, account_id)): Path<(String, String)>,
+    State(state): State<Arc<OrganizationsState>>,
+) -> Result<Json<MembershipResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let membership = state.service.respond_to_invite(&account_id, &membership_id, "ACCEPTED")
+        .await.map_err(error_response)?;
+    Ok(Json(membership))
+}
+
+/// POST /v1/organizations/invites/:membershipId/decline/:accountId
+pub async fn decline_invite(
+    Path((membership_id, account_id)): Path<(String, String)>,
+    State(state): State<Arc<OrganizationsState>>,
+) -> Result<Json<MembershipResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let membership = state.service.respond_to_invite(&account_id, &membership_id, "DECLINED")
+        .await.map_err(error_response)?;
+    Ok(Json(membership))
+}

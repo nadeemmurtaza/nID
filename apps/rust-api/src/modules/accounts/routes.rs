@@ -15,4 +15,6 @@ pub fn accounts_router() -> Router<Arc<AccountsState>> {
         .route("/v1/accounts/me", get(handlers::me))
         .route("/v1/accounts/me/logout", post(handlers::logout))
         .route("/v1/accounts/me/logout-all", post(handlers::logout_all))
+        .route("/v1/accounts/me/email/start", post(handlers::start_email_verification))
+        .route("/v1/accounts/me/email/verify", post(handlers::verify_email))
 }

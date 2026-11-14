@@ -23,6 +23,37 @@ pub struct BrandResponse {
     pub created_at: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateBrandRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub slug: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub bio: Option<String>,
+    #[serde(default)]
+    pub website: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub phone: Option<String>,
+    #[serde(default)]
+    pub active: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BrandMembershipResponse {
+    pub brand_id: String,
+    pub brand_name: String,
+    pub brand_slug: String,
+    pub organization_id: String,
+    pub organization_name: String,
+    pub tenant_id: String,
+    pub role: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct MessageResponse {
     pub message: String,

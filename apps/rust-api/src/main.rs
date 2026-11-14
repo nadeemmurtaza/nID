@@ -163,7 +163,42 @@ async fn main() -> anyhow::Result<()> {
     let app = build_router(state);
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", env.api_port)).await?;
-    axum::serve(listener, app).await?;
+    let addr = listener.local_addr()?;
+    tracing::info!(%addr, "Listening for connections");
+
+    // Graceful shutdown on SIGINT/SIGTERM
+    let graceful = async {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_signal())
+            .await
+    };
+
+    graceful.await?;
+    tracing::info!("nID Rust API shutting down");
 
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {},
+        () = terminate => {},
+    }
 }

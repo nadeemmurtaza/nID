@@ -252,4 +252,148 @@ impl OrganizationsService {
 
         Ok(owners)
     }
+
+    // ── Account-session endpoints (mirrors TypeScript OrganizationsController) ──
+
+    /// List organizations the account is an active member of — mirrors listMyMemberships().
+    pub async fn list_my_memberships(&self, account_id: &str) -> Result<Vec<OrganizationResponse>> {
+        let mut conn = self.db.get().await?;
+
+        // Find the person subject for this account
+        let subject_id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM subject WHERE account_id = $1 LIMIT 1",
+        )
+        .bind(account_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        let subject_id = subject_id.ok_or_else(|| anyhow!("No subject found for account"))?;
+
+        // Get active organization memberships
+        let org_ids: Vec<String> = sqlx::query_scalar(
+            "SELECT organization_id FROM organization_membership
+             WHERE person_subject_id = $1 AND status = 'ACTIVE'",
+        )
+        .bind(&subject_id)
+        .fetch_all(&mut *conn)
+        .await?;
+
+        let mut results = Vec::new();
+        for org_id in org_ids {
+            let org: OrganizationRow = sqlx::query_as(
+                "SELECT id, tenant_id, subject_id, legal_name, registration_number, country_code, address, created_at, updated_at
+                 FROM organization WHERE id = $1",
+            )
+            .bind(&org_id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .ok_or_else(|| anyhow!("Organization not found"))?;
+
+            results.push(Self::row_to_response(org));
+        }
+
+        Ok(results)
+    }
+
+    /// List pending invites for an account — mirrors listMyInvites().
+    pub async fn list_my_invites(&self, account_id: &str) -> Result<Vec<MembershipResponse>> {
+        let mut conn = self.db.get().await?;
+
+        // Find the person subject for this account
+        let subject_id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM subject WHERE account_id = $1 LIMIT 1",
+        )
+        .bind(account_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        let subject_id = subject_id.ok_or_else(|| anyhow!("No subject found for account"))?;
+
+        // Get pending memberships for this subject
+        let rows = sqlx::query(
+            "SELECT id, tenant_id, organization_id, subject_id, role, status, phone, account_id, created_at
+             FROM organization_membership
+             WHERE person_subject_id = $1 AND status = 'PENDING'
+             ORDER BY created_at DESC",
+        )
+        .bind(&subject_id)
+        .fetch_all(&mut *conn)
+        .await?;
+
+        let invites: Vec<MembershipResponse> = rows
+            .into_iter()
+            .map(|row| MembershipResponse {
+                id: row.get("id"),
+                tenant_id: row.get("tenant_id"),
+                organization_id: row.get("organization_id"),
+                subject_id: row.get("subject_id"),
+                role: row.get("role"),
+                status: row.get("status"),
+                phone: row.get("phone"),
+                account_id: row.get("account_id"),
+                created_at: row.get::<chrono::DateTime<chrono::Utc>, _>("created_at").to_rfc3339(),
+            })
+            .collect();
+
+        Ok(invites)
+    }
+
+    /// Accept or decline an invite — mirrors respondToInvite().
+    pub async fn respond_to_invite(
+        &self,
+        account_id: &str,
+        membership_id: &str,
+        response: &str,
+    ) -> Result<MembershipResponse> {
+        let mut conn = self.db.get().await?;
+
+        // Find the person subject for this account
+        let subject_id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM subject WHERE account_id = $1 LIMIT 1",
+        )
+        .bind(account_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        let subject_id = subject_id.ok_or_else(|| anyhow!("No subject found for account"))?;
+
+        // Verify membership exists and is pending
+        let current_status: String = sqlx::query_scalar(
+            "SELECT status FROM organization_membership WHERE id = $1",
+        )
+        .bind(membership_id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .ok_or_else(|| anyhow!("Invite not found"))?;
+
+        if current_status != "PENDING" {
+            return Err(anyhow!("Invite is not pending"));
+        }
+
+        // Update the membership
+        let membership: (String, String, String, String, String, String, Option<String>, Option<String>, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
+            "UPDATE organization_membership
+             SET status = $1, person_subject_id = $2, account_id = $3
+             WHERE id = $4
+             RETURNING id, tenant_id, organization_id, subject_id, role, status, phone, account_id, created_at",
+        )
+        .bind(response)
+        .bind(&subject_id)
+        .bind(account_id)
+        .bind(membership_id)
+        .fetch_one(&mut *conn)
+        .await?;
+
+        Ok(MembershipResponse {
+            id: membership.0,
+            tenant_id: membership.1,
+            organization_id: membership.2,
+            subject_id: membership.3,
+            role: membership.4,
+            status: membership.5,
+            phone: membership.6,
+            account_id: membership.7,
+            created_at: membership.8.to_rfc3339(),
+        })
+    }
 }
