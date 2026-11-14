@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Request body for POST /v1/profiles
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateProfileRequest {
     pub slug: String,
     pub display_name: String,
@@ -59,6 +60,7 @@ pub struct CreateProfileRequest {
 
 /// Request body for PATCH /v1/profiles/me
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateProfileRequest {
     #[serde(default)]
     pub slug: Option<String>,
@@ -116,6 +118,7 @@ pub struct UpdateProfileRequest {
 
 /// Request body for POST /v1/profiles/me/grants
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateGrantRequest {
     pub grantee_slug: String,
     pub field: String,
@@ -123,6 +126,7 @@ pub struct CreateGrantRequest {
 
 /// Profile field grant response
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProfileFieldGrantResponse {
     pub id: String,
     pub profile_id: String,
@@ -135,6 +139,7 @@ pub struct ProfileFieldGrantResponse {
 
 /// Full profile response (owner view)
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProfileResponse {
     pub id: String,
     pub account_id: Option<String>,
@@ -172,6 +177,7 @@ pub struct ProfileResponse {
 
 /// Badge entry in public profile response
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BadgeEntry {
     pub claim_type: String,
     pub level: String,
@@ -181,6 +187,7 @@ pub struct BadgeEntry {
 
 /// Public profile response (viewer sees only what's exposed)
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PublicProfileResponse {
     pub id: String,
     pub slug: String,

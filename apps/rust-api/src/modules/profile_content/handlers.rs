@@ -1,18 +1,18 @@
 //! HTTP handlers for profile content endpoints.
 
-use axum::extract::{Path, State, Multipart};
+use axum::extract::{Path, Query, State, Multipart};
 use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
 
+use crate::core::auth::session::AccountSession;
 use crate::core::config::AppEnv;
-use crate::core::db::DbPool;
 use crate::core::upload::read_single_file;
 use crate::modules::profile_content::dto::{
     BusinessHourResponse, ContactMessageResponse, CreateContactMessageRequest,
     CreateCustomLinkRequest, CreateOfferRequest, CreateSocialLinkRequest,
     CustomLinkResponse, MessageResponse, OfferResponse, ProfileImageResponse,
-    SocialLinkResponse, UpsertBusinessHourRequest, UpdateCustomLinkRequest,
+    SocialLinkResponse, UploadProfileImageRequest, UpsertBusinessHourRequest, UpdateCustomLinkRequest,
     UpdateOfferRequest, UpdateSocialLinkRequest,
 };
 use crate::modules::profile_content::service::ProfileContentService;
@@ -26,11 +26,11 @@ pub struct ProfileContentState {
 
 /// POST /v1/profiles/me/offers
 pub async fn create_offer(
+    account: AccountSession,
     State(state): State<Arc<ProfileContentState>>,
     Json(req): Json<CreateOfferRequest>,
 ) -> Result<Json<OfferResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let offer = state.service.create_offer(&account_id, &req)
+    let offer = state.service.create_offer(&account.id, &req)
         .await
         .map_err(internal_error)?;
     Ok(Json(offer))
@@ -38,10 +38,10 @@ pub async fn create_offer(
 
 /// GET /v1/profiles/me/offers
 pub async fn list_my_offers(
+    account: AccountSession,
     State(state): State<Arc<ProfileContentState>>,
 ) -> Result<Json<Vec<OfferResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let offers = state.service.list_my_offers(&account_id)
+    let offers = state.service.list_my_offers(&account.id)
         .await
         .map_err(internal_error)?;
     Ok(Json(offers))
@@ -49,12 +49,12 @@ pub async fn list_my_offers(
 
 /// PATCH /v1/profiles/me/offers/:id
 pub async fn update_offer(
+    account: AccountSession,
     Path(id): Path<String>,
     State(state): State<Arc<ProfileContentState>>,
     Json(req): Json<UpdateOfferRequest>,
 ) -> Result<Json<OfferResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let offer = state.service.update_offer(&account_id, &id, &req)
+    let offer = state.service.update_offer(&account.id, &id, &req)
         .await
         .map_err(not_found)?;
     Ok(Json(offer))
@@ -62,11 +62,11 @@ pub async fn update_offer(
 
 /// DELETE /v1/profiles/me/offers/:id
 pub async fn remove_offer(
+    account: AccountSession,
     Path(id): Path<String>,
     State(state): State<Arc<ProfileContentState>>,
 ) -> Result<Json<MessageResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    state.service.remove_offer(&account_id, &id)
+    state.service.remove_offer(&account.id, &id)
         .await
         .map_err(not_found)?;
     Ok(Json(MessageResponse {
@@ -78,12 +78,12 @@ pub async fn remove_offer(
 
 /// PUT /v1/profiles/me/business-hours/:day
 pub async fn upsert_business_hour(
+    account: AccountSession,
     Path(day): Path<String>,
     State(state): State<Arc<ProfileContentState>>,
     Json(req): Json<UpsertBusinessHourRequest>,
 ) -> Result<Json<BusinessHourResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let hour = state.service.upsert_business_hour(&account_id, &day, &req)
+    let hour = state.service.upsert_business_hour(&account.id, &day, &req)
         .await
         .map_err(internal_error)?;
     Ok(Json(hour))
@@ -91,10 +91,10 @@ pub async fn upsert_business_hour(
 
 /// GET /v1/profiles/me/business-hours
 pub async fn list_my_business_hours(
+    account: AccountSession,
     State(state): State<Arc<ProfileContentState>>,
 ) -> Result<Json<Vec<BusinessHourResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let hours = state.service.list_my_business_hours(&account_id)
+    let hours = state.service.list_my_business_hours(&account.id)
         .await
         .map_err(internal_error)?;
     Ok(Json(hours))
@@ -102,11 +102,11 @@ pub async fn list_my_business_hours(
 
 /// DELETE /v1/profiles/me/business-hours/:day
 pub async fn remove_business_hour(
+    account: AccountSession,
     Path(day): Path<String>,
     State(state): State<Arc<ProfileContentState>>,
 ) -> Result<Json<MessageResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    state.service.remove_business_hour(&account_id, &day)
+    state.service.remove_business_hour(&account.id, &day)
         .await
         .map_err(not_found)?;
     Ok(Json(MessageResponse {
@@ -118,11 +118,11 @@ pub async fn remove_business_hour(
 
 /// POST /v1/profiles/me/links/custom
 pub async fn create_custom_link(
+    account: AccountSession,
     State(state): State<Arc<ProfileContentState>>,
     Json(req): Json<CreateCustomLinkRequest>,
 ) -> Result<Json<CustomLinkResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let link = state.service.create_custom_link(&account_id, &req)
+    let link = state.service.create_custom_link(&account.id, &req)
         .await
         .map_err(internal_error)?;
     Ok(Json(link))
@@ -130,10 +130,10 @@ pub async fn create_custom_link(
 
 /// GET /v1/profiles/me/links/custom
 pub async fn list_my_custom_links(
+    account: AccountSession,
     State(state): State<Arc<ProfileContentState>>,
 ) -> Result<Json<Vec<CustomLinkResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let links = state.service.list_my_custom_links(&account_id)
+    let links = state.service.list_my_custom_links(&account.id)
         .await
         .map_err(internal_error)?;
     Ok(Json(links))
@@ -141,11 +141,11 @@ pub async fn list_my_custom_links(
 
 /// DELETE /v1/profiles/me/links/custom/:id
 pub async fn remove_custom_link(
+    account: AccountSession,
     Path(id): Path<String>,
     State(state): State<Arc<ProfileContentState>>,
 ) -> Result<Json<MessageResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    state.service.remove_custom_link(&account_id, &id)
+    state.service.remove_custom_link(&account.id, &id)
         .await
         .map_err(not_found)?;
     Ok(Json(MessageResponse {
@@ -155,12 +155,12 @@ pub async fn remove_custom_link(
 
 /// PATCH /v1/profiles/me/links/custom/:id
 pub async fn update_custom_link(
+    account: AccountSession,
     Path(id): Path<String>,
     State(state): State<Arc<ProfileContentState>>,
     Json(req): Json<UpdateCustomLinkRequest>,
 ) -> Result<Json<CustomLinkResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let link = state.service.update_custom_link(&account_id, &id, &req)
+    let link = state.service.update_custom_link(&account.id, &id, &req)
         .await
         .map_err(not_found)?;
     Ok(Json(link))
@@ -170,11 +170,11 @@ pub async fn update_custom_link(
 
 /// POST /v1/profiles/me/links/social
 pub async fn create_social_link(
+    account: AccountSession,
     State(state): State<Arc<ProfileContentState>>,
     Json(req): Json<CreateSocialLinkRequest>,
 ) -> Result<Json<SocialLinkResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let link = state.service.create_social_link(&account_id, &req)
+    let link = state.service.create_social_link(&account.id, &req)
         .await
         .map_err(internal_error)?;
     Ok(Json(link))
@@ -182,10 +182,10 @@ pub async fn create_social_link(
 
 /// GET /v1/profiles/me/links/social
 pub async fn list_my_social_links(
+    account: AccountSession,
     State(state): State<Arc<ProfileContentState>>,
 ) -> Result<Json<Vec<SocialLinkResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let links = state.service.list_my_social_links(&account_id)
+    let links = state.service.list_my_social_links(&account.id)
         .await
         .map_err(internal_error)?;
     Ok(Json(links))
@@ -193,11 +193,11 @@ pub async fn list_my_social_links(
 
 /// DELETE /v1/profiles/me/links/social/:id
 pub async fn remove_social_link(
+    account: AccountSession,
     Path(id): Path<String>,
     State(state): State<Arc<ProfileContentState>>,
 ) -> Result<Json<MessageResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    state.service.remove_social_link(&account_id, &id)
+    state.service.remove_social_link(&account.id, &id)
         .await
         .map_err(not_found)?;
     Ok(Json(MessageResponse {
@@ -207,12 +207,12 @@ pub async fn remove_social_link(
 
 /// PATCH /v1/profiles/me/links/social/:id
 pub async fn update_social_link(
+    account: AccountSession,
     Path(id): Path<String>,
     State(state): State<Arc<ProfileContentState>>,
     Json(req): Json<UpdateSocialLinkRequest>,
 ) -> Result<Json<SocialLinkResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let link = state.service.update_social_link(&account_id, &id, &req)
+    let link = state.service.update_social_link(&account.id, &id, &req)
         .await
         .map_err(not_found)?;
     Ok(Json(link))
@@ -222,12 +222,12 @@ pub async fn update_social_link(
 
 /// POST /v1/profiles/me/photo
 pub async fn upload_photo(
+    account: AccountSession,
     State(state): State<Arc<ProfileContentState>>,
     multipart: Multipart,
 ) -> Result<Json<ProfileImageResponse>, (StatusCode, Json<serde_json::Value>)> {
     let file = read_single_file(multipart, "file").await.map_err(internal_error)?;
-    let account_id = "account".to_string();
-    let img = state.service.upload_photo(&account_id, file)
+    let img = state.service.upload_photo(&account.id, file)
         .await
         .map_err(internal_error)?;
     Ok(Json(img))
@@ -235,13 +235,14 @@ pub async fn upload_photo(
 
 /// POST /v1/profiles/me/images
 pub async fn upload_gallery_image(
+    account: AccountSession,
+    Query(query): Query<UploadProfileImageRequest>,
     State(state): State<Arc<ProfileContentState>>,
     multipart: Multipart,
 ) -> Result<Json<ProfileImageResponse>, (StatusCode, Json<serde_json::Value>)> {
     let file = read_single_file(multipart, "file").await.map_err(internal_error)?;
-    let account_id = "account".to_string();
-    let kind = "gallery".to_string();
-    let img = state.service.upload_gallery_image(&account_id, &kind, file)
+    let kind = query.kind.unwrap_or_else(|| "gallery".to_string());
+    let img = state.service.upload_gallery_image(&account.id, &kind, file)
         .await
         .map_err(internal_error)?;
     Ok(Json(img))
@@ -249,10 +250,10 @@ pub async fn upload_gallery_image(
 
 /// GET /v1/profiles/me/images
 pub async fn list_my_images(
+    account: AccountSession,
     State(state): State<Arc<ProfileContentState>>,
 ) -> Result<Json<Vec<ProfileImageResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let images = state.service.list_my_images(&account_id)
+    let images = state.service.list_my_images(&account.id)
         .await
         .map_err(internal_error)?;
     Ok(Json(images))
@@ -260,11 +261,11 @@ pub async fn list_my_images(
 
 /// DELETE /v1/profiles/me/images/:id
 pub async fn remove_image(
+    account: AccountSession,
     Path(id): Path<String>,
     State(state): State<Arc<ProfileContentState>>,
 ) -> Result<Json<MessageResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    state.service.remove_image(&account_id, &id)
+    state.service.remove_image(&account.id, &id)
         .await
         .map_err(not_found)?;
     Ok(Json(MessageResponse {
@@ -276,10 +277,10 @@ pub async fn remove_image(
 
 /// GET /v1/profiles/me/contact-messages
 pub async fn list_my_contact_messages(
+    account: AccountSession,
     State(state): State<Arc<ProfileContentState>>,
 ) -> Result<Json<Vec<ContactMessageResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let messages = state.service.list_my_contact_messages(&account_id)
+    let messages = state.service.list_my_contact_messages(&account.id)
         .await
         .map_err(internal_error)?;
     Ok(Json(messages))
@@ -287,11 +288,11 @@ pub async fn list_my_contact_messages(
 
 /// POST /v1/profiles/me/contact-messages/:id/read
 pub async fn mark_contact_message_read(
+    account: AccountSession,
     Path(id): Path<String>,
     State(state): State<Arc<ProfileContentState>>,
 ) -> Result<Json<ContactMessageResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let msg = state.service.mark_contact_message_read(&account_id, &id)
+    let msg = state.service.mark_contact_message_read(&account.id, &id)
         .await
         .map_err(not_found)?;
     Ok(Json(msg))
@@ -363,7 +364,7 @@ pub async fn get_public_photo(
     let (url, content_type) = state.service.get_public_photo(&slug)
         .await
         .map_err(not_found)?;
-    Ok(Json(serde_json::json!({ "url", "contentType": content_type })))
+    Ok(Json(serde_json::json!({ "url": url, "contentType": content_type })))
 }
 
 /// GET /v1/profiles/:slug/images/:imageId — get a specific public gallery image
@@ -374,7 +375,7 @@ pub async fn get_public_image(
     let (url, content_type) = state.service.get_public_image(&slug, &image_id)
         .await
         .map_err(not_found)?;
-    Ok(Json(serde_json::json!({ "url", "contentType": content_type })))
+    Ok(Json(serde_json::json!({ "url": url, "contentType": content_type })))
 }
 
 fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {

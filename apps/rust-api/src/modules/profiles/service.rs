@@ -5,7 +5,6 @@
 use anyhow::{anyhow, Result};
 use chrono::Utc;
 use sqlx::{FromRow, Row};
-use tracing::info;
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
@@ -257,7 +256,7 @@ impl ProfilesService {
 
     /// Get profile by account ID (owner view)
     pub async fn get_mine(&self, account_id: &str) -> Result<ProfileResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
 
         let profile: ProfileRow = sqlx::query_as(
             "SELECT id, account_id, organization_id, slug, display_name, headline, category, bio, photo_key,
@@ -363,7 +362,7 @@ impl ProfilesService {
         .bind(&req.display_name)
         .bind(&req.headline)
         .bind(&req.category)
-        .bind(req.bio.as_ref().map(|o| o.as_ref()).map(|o| o.unwrap_or("")))
+        .bind(req.bio.as_ref().map(|inner| inner.as_deref().unwrap_or("")))
         .bind(&req.phone)
         .bind(&req.whatsapp)
         .bind(&req.public_email)

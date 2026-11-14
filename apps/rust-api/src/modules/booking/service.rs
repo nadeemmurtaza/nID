@@ -1,7 +1,7 @@
 //! Booking service — business logic for booking operations.
 
 use anyhow::{anyhow, Result};
-use sqlx::{FromRow, Row};
+use sqlx::Row;
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
@@ -122,22 +122,22 @@ impl BookingService {
         let mut active_val: Option<bool> = None;
 
         if let Some(ref n) = req.name {
-            sets.push("name = $1");
+            sets.push("name = $1".to_string());
             name_val = Some(n.clone());
         }
         if req.duration_minutes.is_some() {
             let idx = sets.len() + 1;
-            sets.push(&format!("duration_minutes = ${}", idx));
+            sets.push(format!("duration_minutes = ${}", idx));
             dur_val = req.duration_minutes;
         }
         if req.price_minor.is_some() {
             let idx = sets.len() + 1;
-            sets.push(&format!("price_minor = ${}", idx));
+            sets.push(format!("price_minor = ${}", idx));
             price_val = req.price_minor;
         }
         if req.is_active.is_some() {
             let idx = sets.len() + 1;
-            sets.push(&format!("is_active = ${}", idx));
+            sets.push(format!("is_active = ${}", idx));
             active_val = req.is_active;
         }
 
@@ -324,17 +324,17 @@ impl BookingService {
         let mut end_val: Option<String> = None;
 
         if let Some(ref w) = req.weekday {
-            sets.push("weekday = $1");
+            sets.push("weekday = $1".to_string());
             weekday_val = Some(w.clone());
         }
         if let Some(ref s) = req.start_time {
             let idx = sets.len() + 1;
-            sets.push(&format!("start_time = ${}", idx));
+            sets.push(format!("start_time = ${}", idx));
             start_val = Some(s.clone());
         }
         if let Some(ref e) = req.end_time {
             let idx = sets.len() + 1;
-            sets.push(&format!("end_time = ${}", idx));
+            sets.push(format!("end_time = ${}", idx));
             end_val = Some(e.clone());
         }
 
@@ -405,7 +405,7 @@ impl BookingService {
         .ok_or_else(|| anyhow!("Profile not accepting bookings"))?;
 
         // Verify service belongs to this profile
-        let duration_minutes: i32 = sqlx::query(
+        let _duration_minutes: i32 = sqlx::query(
             "SELECT duration_minutes FROM service WHERE id = $1 AND profile_id = $2 AND is_active = true",
         )
         .bind(service_id)
@@ -430,10 +430,10 @@ impl BookingService {
         .await?;
 
         // Generate 30-minute slots and check against booked appointments
-        let from_dt = chrono::DateTime::<chrono::Utc>::parse_from_rfc3339(from)
+        let from_dt = chrono::DateTime::parse_from_rfc3339(from)
             .map_err(|_| anyhow!("Invalid 'from' timestamp"))?
             .with_timezone(&chrono::Utc);
-        let to_dt = chrono::DateTime::<chrono::Utc>::parse_from_rfc3339(to)
+        let to_dt = chrono::DateTime::parse_from_rfc3339(to)
             .map_err(|_| anyhow!("Invalid 'to' timestamp"))?
             .with_timezone(&chrono::Utc);
 
@@ -444,11 +444,11 @@ impl BookingService {
         while current + slot_duration <= to_dt {
             let slot_end = current + slot_duration;
             let is_available = booked.iter().all(|(start, end)| {
-                let b_start = chrono::DateTime::<chrono::Utc>::parse_from_rfc3339(start)
+                let b_start = chrono::DateTime::parse_from_rfc3339(start)
                     .ok()
                     .map(|d| d.with_timezone(&chrono::Utc))
                     .unwrap_or(current);
-                let b_end = chrono::DateTime::<chrono::Utc>::parse_from_rfc3339(end)
+                let b_end = chrono::DateTime::parse_from_rfc3339(end)
                     .ok()
                     .map(|d| d.with_timezone(&chrono::Utc))
                     .unwrap_or(slot_end);

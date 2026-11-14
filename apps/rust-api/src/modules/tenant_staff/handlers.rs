@@ -5,8 +5,8 @@ use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
 
+use crate::core::auth::api_key::AuthenticatedApiKey;
 use crate::core::config::AppEnv;
-use crate::core::db::DbPool;
 use crate::modules::tenant_staff::dto::{InviteStaffRequest, StaffMemberResponse};
 use crate::modules::tenant_staff::service::TenantStaffService;
 
@@ -17,12 +17,11 @@ pub struct TenantStaffState {
 
 /// POST /v1/tenant-staff
 pub async fn invite(
+    tenant: AuthenticatedApiKey,
     State(state): State<Arc<TenantStaffState>>,
     Json(req): Json<InviteStaffRequest>,
 ) -> Result<Json<StaffMemberResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let tenant_id = "tenant".to_string();
-    let api_key_id = "key".to_string();
-    let staff = state.service.invite(&tenant_id, &api_key_id, &req)
+    let staff = state.service.invite(&tenant.tenant_id, &tenant.id, &req)
         .await
         .map_err(internal_error)?;
     Ok(Json(staff))
@@ -30,11 +29,10 @@ pub async fn invite(
 
 /// GET /v1/tenant-staff
 pub async fn list(
+    tenant: AuthenticatedApiKey,
     State(state): State<Arc<TenantStaffState>>,
 ) -> Result<Json<Vec<StaffMemberResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let tenant_id = "tenant".to_string();
-    let api_key_id = "key".to_string();
-    let staff = state.service.list(&tenant_id, &api_key_id)
+    let staff = state.service.list(&tenant.tenant_id, &tenant.id)
         .await
         .map_err(internal_error)?;
     Ok(Json(staff))

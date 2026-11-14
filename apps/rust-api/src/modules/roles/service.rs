@@ -3,7 +3,7 @@
 //! Mirrors `apps/api/src/modules/role/role.service.ts`.
 
 use anyhow::{anyhow, Result};
-use sqlx::{FromRow, Row};
+use sqlx::{FromRow, PgConnection, Row};
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
@@ -48,17 +48,61 @@ impl RolesService {
         }
     }
 
+    /// Mirrors role.service.ts's requireOwnerOrPartner: only an ACTIVE
+    /// OWNER/PARTNER access grant may create, modify or delete roles.
+    async fn require_owner_or_partner(&self, conn: &mut PgConnection, account_id: &str, tenant_id: &str) -> Result<()> {
+        let grant = sqlx::query(
+            "SELECT id FROM access_grant WHERE account_id = $1 AND tenant_id = $2 AND access_type IN ('OWNER', 'PARTNER') AND status = 'ACTIVE'",
+        )
+        .bind(account_id)
+        .bind(tenant_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        if grant.is_none() {
+            return Err(anyhow!("Only tenant owners or partners can perform this action."));
+        }
+        Ok(())
+    }
+
+    /// Mirrors role.service.ts's requireAccess: any ACTIVE access grant is enough to read.
+    async fn require_access(&self, conn: &mut PgConnection, account_id: &str, tenant_id: &str) -> Result<()> {
+        let grant = sqlx::query(
+            "SELECT id FROM access_grant WHERE account_id = $1 AND tenant_id = $2 AND status = 'ACTIVE'",
+        )
+        .bind(account_id)
+        .bind(tenant_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        if grant.is_none() {
+            return Err(anyhow!("You do not have access to this tenant."));
+        }
+        Ok(())
+    }
+
     pub async fn create_role(
         &self,
+        account_id: &str,
         tenant_id: &str,
         req: &crate::modules::roles::dto::CreateRoleRequest,
     ) -> Result<RoleResponse> {
         let mut conn = self.db.get().await?;
+        self.require_owner_or_partner(&mut conn, account_id, tenant_id).await?;
+
+        let existing = sqlx::query("SELECT id FROM role_definition WHERE tenant_id = $1 AND slug = $2")
+            .bind(tenant_id)
+            .bind(&req.slug)
+            .fetch_optional(&mut *conn)
+            .await?;
+        if existing.is_some() {
+            return Err(anyhow!("A role with slug \"{}\" already exists.", req.slug));
+        }
 
         let role: RoleRow = sqlx::query_as(
             r#"
             INSERT INTO role_definition (id, tenant_id, name, slug, permissions, description, is_system)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)
+            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, false)
             RETURNING id, tenant_id, name, slug, permissions, description, is_system, created_at, updated_at
             "#,
         )
@@ -67,18 +111,18 @@ impl RolesService {
         .bind(&req.slug)
         .bind(&req.permissions)
         .bind(&req.description)
-        .bind(req.is_system)
         .fetch_one(&mut *conn)
         .await?;
 
         Ok(Self::row_to_response(role))
     }
 
-    pub async fn list_roles(&self, tenant_id: &str) -> Result<Vec<RoleResponse>> {
+    pub async fn list_roles(&self, account_id: &str, tenant_id: &str) -> Result<Vec<RoleResponse>> {
         let mut conn = self.db.get().await?;
+        self.require_access(&mut conn, account_id, tenant_id).await?;
 
         let rows: Vec<RoleRow> = sqlx::query_as(
-            "SELECT id, tenant_id, name, slug, permissions, description, is_system, created_at, updated_at FROM role_definition WHERE tenant_id = $1 ORDER BY name",
+            "SELECT id, tenant_id, name, slug, permissions, description, is_system, created_at, updated_at FROM role_definition WHERE tenant_id = $1 ORDER BY is_system ASC, name ASC",
         )
         .bind(tenant_id)
         .fetch_all(&mut *conn)
@@ -87,8 +131,9 @@ impl RolesService {
         Ok(rows.into_iter().map(Self::row_to_response).collect())
     }
 
-    pub async fn get_role(&self, tenant_id: &str, role_id: &str) -> Result<RoleResponse> {
+    pub async fn get_role(&self, account_id: &str, tenant_id: &str, role_id: &str) -> Result<RoleResponse> {
         let mut conn = self.db.get().await?;
+        self.require_access(&mut conn, account_id, tenant_id).await?;
 
         let role: RoleRow = sqlx::query_as(
             "SELECT id, tenant_id, name, slug, permissions, description, is_system, created_at, updated_at FROM role_definition WHERE id = $1 AND tenant_id = $2",
@@ -104,11 +149,26 @@ impl RolesService {
 
     pub async fn update_role(
         &self,
+        account_id: &str,
         tenant_id: &str,
         role_id: &str,
         req: &crate::modules::roles::dto::UpdateRoleRequest,
     ) -> Result<RoleResponse> {
         let mut conn = self.db.get().await?;
+        self.require_owner_or_partner(&mut conn, account_id, tenant_id).await?;
+
+        let existing_role: RoleRow = sqlx::query_as(
+            "SELECT id, tenant_id, name, slug, permissions, description, is_system, created_at, updated_at FROM role_definition WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(role_id)
+        .bind(tenant_id)
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(|_| anyhow!("Role not found"))?;
+
+        if existing_role.is_system {
+            return Err(anyhow!("Built-in roles cannot be modified."));
+        }
 
         let mut sets = Vec::new();
         let mut name_val: Option<String> = None;
@@ -116,71 +176,112 @@ impl RolesService {
         let mut desc_val: Option<Option<String>> = None;
 
         if let Some(ref n) = req.name {
-            sets.push("name = $1");
+            sets.push(format!("name = ${}", sets.len() + 1));
             name_val = Some(n.clone());
         }
         if req.permissions.is_some() {
-            let idx = sets.len() + 1;
-            sets.push(&format!("permissions = ${}", idx));
+            sets.push(format!("permissions = ${}", sets.len() + 1));
             perms_val = req.permissions.as_ref();
         }
         if req.description.is_some() {
-            let idx = sets.len() + 1;
-            sets.push(&format!("description = ${}", idx));
-            desc_val = req.description;
+            sets.push(format!("description = ${}", sets.len() + 1));
+            desc_val = req.description.clone();
         }
 
         if sets.is_empty() {
-            return self.get_role(tenant_id, role_id).await;
+            return Ok(Self::row_to_response(existing_role));
         }
 
+        let query = format!(
+            "UPDATE role_definition SET {} WHERE id = ${} AND tenant_id = ${} RETURNING id, tenant_id, name, slug, permissions, description, is_system, created_at, updated_at",
+            sets.join(", "),
+            sets.len() + 1,
+            sets.len() + 2,
+        );
+        let mut q = sqlx::query_as::<_, RoleRow>(&query);
+        if let Some(v) = name_val { q = q.bind(v); }
+        if let Some(v) = perms_val { q = q.bind(v); }
+        if desc_val.is_some() { q = q.bind(desc_val); }
+        let role = q
+            .bind(role_id)
+            .bind(tenant_id)
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(|_| anyhow!("Role not found"))?;
+
+        Ok(Self::row_to_response(role))
+    }
+
+    pub async fn delete_role(&self, account_id: &str, tenant_id: &str, role_id: &str) -> Result<()> {
+        let mut conn = self.db.get().await?;
+        self.require_owner_or_partner(&mut conn, account_id, tenant_id).await?;
+
         let role: RoleRow = sqlx::query_as(
-            &format!(
-                "UPDATE role_definition SET {} WHERE id = ${} AND tenant_id = ${} RETURNING id, tenant_id, name, slug, permissions, description, is_system, created_at, updated_at",
-                sets.join(", "),
-                sets.len() + 1,
-                sets.len() + 2,
-            ),
+            "SELECT id, tenant_id, name, slug, permissions, description, is_system, created_at, updated_at FROM role_definition WHERE id = $1 AND tenant_id = $2",
         )
-        .bind(&name_val)
-        .bind(perms_val)
-        .bind(&desc_val)
         .bind(role_id)
         .bind(tenant_id)
         .fetch_one(&mut *conn)
         .await
         .map_err(|_| anyhow!("Role not found"))?;
 
-        Ok(Self::row_to_response(role))
-    }
-
-    pub async fn delete_role(&self, tenant_id: &str, role_id: &str) -> Result<()> {
-        let mut conn = self.db.get().await?;
-
-        let result = sqlx::query(
-            "DELETE FROM role_definition WHERE id = $1 AND tenant_id = $2",
-        )
-        .bind(role_id)
-        .bind(tenant_id)
-        .execute(&mut *conn)
-        .await?;
-
-        if result.rows_affected() == 0 {
-            return Err(anyhow!("Role not found."));
+        if role.is_system {
+            return Err(anyhow!("Built-in roles cannot be deleted."));
         }
+
+        sqlx::query("DELETE FROM role_assignment WHERE role_definition_id = $1")
+            .bind(role_id)
+            .execute(&mut *conn)
+            .await?;
+
+        sqlx::query("DELETE FROM role_definition WHERE id = $1")
+            .bind(role_id)
+            .execute(&mut *conn)
+            .await?;
 
         Ok(())
     }
 
     pub async fn assign_role(
         &self,
+        account_id: &str,
         tenant_id: &str,
         role_id: &str,
         req: &AssignRoleRequest,
     ) -> Result<RoleAssignmentResponse> {
         let mut conn = self.db.get().await?;
+        self.require_owner_or_partner(&mut conn, account_id, tenant_id).await?;
 
-        let scope = req.scope.as_deref().unwrap_or("TENANT");
+        sqlx::query("SELECT id FROM role_definition WHERE id = $1 AND tenant_id = $2")
+            .bind(role_id)
+            .bind(tenant_id)
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(|_| anyhow!("Role not found"))?;
+
+        sqlx::query("SELECT id FROM account WHERE id = $1")
+            .bind(&req.account_id)
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(|_| anyhow!("Account not found"))?;
+
+        let scope = req.scope.as_deref().unwrap_or_else(|| {
+            if req.brand_id.is_some() { "BRAND" } else if req.organization_id.is_some() { "ORGANIZATION" } else { "TENANT" }
+        });
+
+        let existing = sqlx::query(
+            "SELECT id FROM role_assignment WHERE account_id = $1 AND role_definition_id = $2 AND scope = $3 AND organization_id IS NOT DISTINCT FROM $4 AND brand_id IS NOT DISTINCT FROM $5",
+        )
+        .bind(&req.account_id)
+        .bind(role_id)
+        .bind(scope)
+        .bind(&req.organization_id)
+        .bind(&req.brand_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+        if existing.is_some() {
+            return Err(anyhow!("This account already has this role at this scope."));
+        }
 
         let assignment: (String, String, String, String, Option<String>, Option<String>, String, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
             r#"
@@ -212,13 +313,15 @@ impl RolesService {
 
     pub async fn remove_role_assignment(
         &self,
+        caller_account_id: &str,
         tenant_id: &str,
         role_id: &str,
         account_id: &str,
     ) -> Result<()> {
         let mut conn = self.db.get().await?;
+        self.require_owner_or_partner(&mut conn, caller_account_id, tenant_id).await?;
 
-        let result = sqlx::query(
+        sqlx::query(
             "DELETE FROM role_assignment WHERE role_definition_id = $1 AND account_id = $2 AND tenant_id = $3",
         )
         .bind(role_id)
@@ -227,15 +330,12 @@ impl RolesService {
         .execute(&mut *conn)
         .await?;
 
-        if result.rows_affected() == 0 {
-            return Err(anyhow!("Role assignment not found."));
-        }
-
         Ok(())
     }
 
-    pub async fn get_account_roles(&self, tenant_id: &str, account_id: &str) -> Result<Vec<RoleAssignmentResponse>> {
+    pub async fn get_account_roles(&self, caller_account_id: &str, tenant_id: &str, account_id: &str) -> Result<Vec<RoleAssignmentResponse>> {
         let mut conn = self.db.get().await?;
+        self.require_access(&mut conn, caller_account_id, tenant_id).await?;
 
         let rows: Vec<(String, String, String, String, Option<String>, Option<String>, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
             "SELECT id, account_id, role_definition_id, tenant_id, organization_id, brand_id, scope, created_at FROM role_assignment WHERE account_id = $1 AND tenant_id = $2",

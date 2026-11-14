@@ -1,58 +1,33 @@
 //! Database connection pool — replaces PrismaService from TypeScript.
 //!
-//! Uses deadpool-postgres for connection pooling with SQLx for query building.
-//! Mirrors the tenant-scoped transaction pattern from packages/db/src/index.ts.
+//! Uses SQLx's own connection pool throughout. Mirrors the tenant-scoped
+//! transaction pattern from packages/db/src/index.ts.
 
 use anyhow::Result;
-use deadpool_postgres::{Config, Pool, Runtime, Transaction};
-use sqlx::postgres::PgTransaction;
+use sqlx::postgres::{PgPoolOptions, PgPool};
+use sqlx::pool::PoolConnection;
+use sqlx::{Postgres, Transaction};
 
 /// Database connection pool wrapper.
 #[derive(Debug, Clone)]
 pub struct DbPool {
-    pub(crate) pool: Pool,
+    pub(crate) pool: PgPool,
 }
 
 impl DbPool {
     /// Create a new DbPool from an existing Pool (for sharing).
-    pub fn new(pool: Pool) -> Self {
+    pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 
     /// Create a new connection pool from a PostgreSQL connection string.
     pub async fn connect(database_url: &str) -> Result<Self> {
-        let mut cfg = Config::new();
-        // Parse the connection string
-        let url = database_url
-            .strip_prefix("postgresql://")
-            .or_else(|| database_url.strip_prefix("postgres://"))
-            .unwrap_or(database_url);
-
-        cfg.host = url.split(':').next().unwrap_or("localhost").to_string();
-        if let Some(port_str) = url.split(':').nth(1) {
-            if let Some(clean_port) = port_str.split('/').next() {
-                cfg.port = clean_port.parse().unwrap_or(5432);
-            }
-        }
-        if let Some(after_host_port) = url.splitn(2, '/').nth(1) {
-            if let Some(db_name) = after_host_port.split('?').next() {
-                cfg.dbname = Some(db_name.to_string());
-            }
-            // Extract username/password from connection string
-            let before_slash = url.split('/').next().unwrap_or("");
-            let after_scheme = before_slash.split(':').collect::<Vec<&str>>();
-            if after_slash.len() >= 3 {
-                cfg.username = Some(after_slash[0].to_string());
-                cfg.password = Some(after_slash[1].to_string());
-            }
-        }
-
-        let pool = cfg.create_pool(Some(Runtime::Tokio1), None)?;
+        let pool = PgPoolOptions::new().connect(database_url).await?;
         Ok(Self { pool })
     }
 
     /// Get the inner pool for direct access.
-    pub fn inner(&self) -> &Pool {
+    pub fn inner(&self) -> &PgPool {
         &self.pool
     }
 
@@ -62,7 +37,7 @@ impl DbPool {
     /// `withTenantContext` from packages/db/src/index.ts.
     pub async fn with_tenant<T, F, Fut>(&self, tenant_id: &str, f: F) -> Result<T>
     where
-        F: FnOnce(Transaction<'_>) -> Fut,
+        F: FnOnce(Transaction<'_, Postgres>) -> Fut,
         Fut: std::future::Future<Output = Result<T>>,
     {
         let mut tx = self.pool.begin().await?;
@@ -75,7 +50,7 @@ impl DbPool {
     }
 
     /// Get a connection from the pool (unscoped — for non-tenant tables).
-    pub async fn get(&self) -> Result<deadpool_postgres::Object> {
-        self.pool.get().await.map_err(|e| e.into())
+    pub async fn get(&self) -> Result<PoolConnection<Postgres>> {
+        self.pool.acquire().await.map_err(|e| e.into())
     }
 }

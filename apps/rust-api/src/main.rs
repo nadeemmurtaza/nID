@@ -7,7 +7,7 @@
 mod core;
 mod modules;
 
-use axum::{Router, routing, middleware};
+use axum::{Router, middleware, Extension};
 use std::sync::Arc;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -139,10 +139,11 @@ fn build_router(state: AppState) -> Router {
         .merge(oauth_router().with_state(oauth_state))
         .merge(booking_router().with_state(booking_state))
         .merge(profile_content_router().with_state(profile_content_state))
+        .layer(Extension(state.db.clone()))
+        .layer(Extension(state.env.clone()))
         .layer(middleware::from_fn(request_tracing))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .with_state(state)
 }
 
 /// Bootstrap the API server.
@@ -165,12 +166,13 @@ async fn main() -> anyhow::Result<()> {
 
     // Build shared services
     let audit = AuditService::new(db.clone());
+    let api_port = env.api_port;
 
     // Build and run server
     let state = AppState { db, env, audit };
     let app = build_router(state);
 
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", env.api_port)).await?;
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", api_port)).await?;
     let addr = listener.local_addr()?;
     tracing::info!(%addr, "Listening for connections");
 

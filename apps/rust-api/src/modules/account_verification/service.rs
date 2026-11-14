@@ -1,7 +1,7 @@
 //! Account verification service — business logic for self-verification.
 
 use anyhow::{anyhow, Result};
-use sqlx::{FromRow, Row};
+use sqlx::Row;
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;

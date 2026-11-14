@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Request body for POST /v1/roles
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateRoleRequest {
     pub name: String,
     pub slug: String,
@@ -16,6 +17,7 @@ pub struct CreateRoleRequest {
 
 /// Request body for PATCH /v1/roles/:id
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateRoleRequest {
     #[serde(default)]
     pub name: Option<String>,
@@ -27,6 +29,7 @@ pub struct UpdateRoleRequest {
 
 /// Request body for POST /v1/roles/:id/assign
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AssignRoleRequest {
     pub account_id: String,
     #[serde(default)]
@@ -39,6 +42,7 @@ pub struct AssignRoleRequest {
 
 /// Role definition in API responses
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RoleResponse {
     pub id: String,
     pub tenant_id: String,
@@ -53,6 +57,7 @@ pub struct RoleResponse {
 
 /// Role assignment response
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RoleAssignmentResponse {
     pub id: String,
     pub account_id: String,
@@ -66,6 +71,7 @@ pub struct RoleAssignmentResponse {
 
 /// Generic message response
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MessageResponse {
     pub message: String,
 }

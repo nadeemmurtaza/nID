@@ -39,50 +39,35 @@ impl StorageDriver for LocalStorageDriver {
     }
 
     async fn get(&self, key: &str) -> Result<Vec<u8>, StorageError> {
-        // Search for the key across all namespaces
-        if let Ok(entries) = fs::read_dir(&self.root).await {
-            use futures::StreamExt;
-            let stream = entries;
-            let mut stream = stream.filter_map(|entry| async {
-                let entry = entry.ok()?;
-                let namespace = entry.file_name();
-                let group_dir = self.root.join(&namespace);
-                let sub = fs::read_dir(&group_dir).ok()?;
-                futures::stream::TryStreamExt::map(sub, |sub_entry| {
-                    let group = sub_entry.file_name();
-                    Ok((group_dir.clone(), group))
-                })
-            });
+        // Search for the key across all namespace/group directories.
+        let Ok(mut namespaces) = fs::read_dir(&self.root).await else {
+            return Err(StorageError::NotFound(format!("root not found: {:?}", self.root)));
+        };
 
-            // Flatten and search
-            let mut found = false;
-            let mut entries = Box::pin(fs::read_dir(&self.root));
-            while let Some(entry) = entries.next().await {
-                let entry = entry?;
-                let namespace = entry.file_name();
-                let group_dir = self.root.join(&namespace);
-                let mut sub_entries = Box::pin(fs::read_dir(&group_dir).await?);
-                while let Some(sub_entry) = sub_entries.next().await {
-                    let sub_entry = sub_entry?;
-                    let group = sub_entry.file_name();
-                    let file_dir = sub_entry.path();
-                    let mut file_entries = Box::pin(fs::read_dir(&file_dir).await?);
-                    while let Some(file_entry) = file_entries.next().await {
-                        let file_entry = file_entry?;
-                        let file_name = file_entry.file_name();
-                        if file_name.to_string_lossy().starts_with(key) {
-                            let path = file_entry.path();
-                            let data = fs::read(&path).await?;
-                            return Ok(data);
-                        }
+        while let Some(namespace_entry) = namespaces.next_entry().await? {
+            let group_root = namespace_entry.path();
+            let Ok(mut groups) = fs::read_dir(&group_root).await else {
+                continue;
+            };
+
+            while let Some(group_entry) = groups.next_entry().await? {
+                let file_dir = group_entry.path();
+                let Ok(mut files) = fs::read_dir(&file_dir).await else {
+                    continue;
+                };
+
+                while let Some(file_entry) = files.next_entry().await? {
+                    let file_name = file_entry.file_name();
+                    if file_name.to_string_lossy().starts_with(key) {
+                        let path = file_entry.path();
+                        let data = fs::read(&path).await?;
+                        return Ok(data);
                     }
                 }
             }
-
-            Err(StorageError::NotFound(key.to_string()))
-        } else {
-            Err(StorageError::NotFound(format!("root not found: {:?}", self.root)))
         }
+
+        Err(StorageError::NotFound(key.to_string()))
     }
 }
 

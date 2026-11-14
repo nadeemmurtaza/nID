@@ -1,12 +1,12 @@
 //! HTTP handlers for booking endpoints.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
 
+use crate::core::auth::session::AccountSession;
 use crate::core::config::AppEnv;
-use crate::core::db::DbPool;
 use crate::modules::booking::dto::{
     AppointmentResponse, AvailabilityQueryRequest, AvailabilityRuleResponse, CreateAppointmentRequest,
     CreateAvailabilityRuleRequest, CreateServiceRequest, FreeSlotResponse, MessageResponse,
@@ -23,11 +23,11 @@ pub struct BookingState {
 
 /// POST /v1/profiles/me/services
 pub async fn create_service(
+    account: AccountSession,
     State(state): State<Arc<BookingState>>,
     Json(req): Json<CreateServiceRequest>,
 ) -> Result<Json<ServiceResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let service = state.service.create_service(&account_id, &req)
+    let service = state.service.create_service(&account.id, &req)
         .await
         .map_err(internal_error)?;
     Ok(Json(service))
@@ -35,10 +35,10 @@ pub async fn create_service(
 
 /// GET /v1/profiles/me/services
 pub async fn list_my_services(
+    account: AccountSession,
     State(state): State<Arc<BookingState>>,
 ) -> Result<Json<Vec<ServiceResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let services = state.service.list_my_services(&account_id)
+    let services = state.service.list_my_services(&account.id)
         .await
         .map_err(internal_error)?;
     Ok(Json(services))
@@ -46,12 +46,12 @@ pub async fn list_my_services(
 
 /// PATCH /v1/profiles/me/services/:id
 pub async fn update_service(
+    account: AccountSession,
     Path(id): Path<String>,
     State(state): State<Arc<BookingState>>,
     Json(req): Json<UpdateServiceRequest>,
 ) -> Result<Json<ServiceResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let service = state.service.update_service(&account_id, &id, &req)
+    let service = state.service.update_service(&account.id, &id, &req)
         .await
         .map_err(not_found)?;
     Ok(Json(service))
@@ -59,11 +59,11 @@ pub async fn update_service(
 
 /// DELETE /v1/profiles/me/services/:id
 pub async fn remove_service(
+    account: AccountSession,
     Path(id): Path<String>,
     State(state): State<Arc<BookingState>>,
 ) -> Result<Json<MessageResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    state.service.remove_service(&account_id, &id)
+    state.service.remove_service(&account.id, &id)
         .await
         .map_err(not_found)?;
     Ok(Json(MessageResponse {
@@ -75,11 +75,11 @@ pub async fn remove_service(
 
 /// POST /v1/profiles/me/availability-rules
 pub async fn create_availability_rule(
+    account: AccountSession,
     State(state): State<Arc<BookingState>>,
     Json(req): Json<CreateAvailabilityRuleRequest>,
 ) -> Result<Json<AvailabilityRuleResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let rule = state.service.create_availability_rule(&account_id, &req)
+    let rule = state.service.create_availability_rule(&account.id, &req)
         .await
         .map_err(internal_error)?;
     Ok(Json(rule))
@@ -87,10 +87,10 @@ pub async fn create_availability_rule(
 
 /// GET /v1/profiles/me/availability-rules
 pub async fn list_my_availability_rules(
+    account: AccountSession,
     State(state): State<Arc<BookingState>>,
 ) -> Result<Json<Vec<AvailabilityRuleResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let rules = state.service.list_my_availability_rules(&account_id)
+    let rules = state.service.list_my_availability_rules(&account.id)
         .await
         .map_err(internal_error)?;
     Ok(Json(rules))
@@ -98,11 +98,11 @@ pub async fn list_my_availability_rules(
 
 /// DELETE /v1/profiles/me/availability-rules/:id
 pub async fn remove_availability_rule(
+    account: AccountSession,
     Path(id): Path<String>,
     State(state): State<Arc<BookingState>>,
 ) -> Result<Json<MessageResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    state.service.remove_availability_rule(&account_id, &id)
+    state.service.remove_availability_rule(&account.id, &id)
         .await
         .map_err(not_found)?;
     Ok(Json(MessageResponse {
@@ -112,12 +112,12 @@ pub async fn remove_availability_rule(
 
 /// PATCH /v1/profiles/me/availability-rules/:id
 pub async fn update_availability_rule(
+    account: AccountSession,
     Path(id): Path<String>,
     State(state): State<Arc<BookingState>>,
     Json(req): Json<UpdateAvailabilityRuleRequest>,
 ) -> Result<Json<AvailabilityRuleResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let rule = state.service.update_availability_rule(&account_id, &id, &req)
+    let rule = state.service.update_availability_rule(&account.id, &id, &req)
         .await
         .map_err(not_found)?;
     Ok(Json(rule))
@@ -127,10 +127,10 @@ pub async fn update_availability_rule(
 
 /// GET /v1/profiles/me/appointments
 pub async fn list_my_appointments(
+    account: AccountSession,
     State(state): State<Arc<BookingState>>,
 ) -> Result<Json<Vec<AppointmentResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let appointments = state.service.list_my_appointments(&account_id)
+    let appointments = state.service.list_my_appointments(&account.id)
         .await
         .map_err(internal_error)?;
     Ok(Json(appointments))
@@ -138,11 +138,11 @@ pub async fn list_my_appointments(
 
 /// POST /v1/profiles/me/appointments/:id/confirm
 pub async fn confirm_appointment(
+    account: AccountSession,
     Path(id): Path<String>,
     State(state): State<Arc<BookingState>>,
 ) -> Result<Json<AppointmentResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let appt = state.service.confirm_appointment(&account_id, &id)
+    let appt = state.service.confirm_appointment(&account.id, &id)
         .await
         .map_err(not_found)?;
     Ok(Json(appt))
@@ -150,11 +150,11 @@ pub async fn confirm_appointment(
 
 /// POST /v1/profiles/me/appointments/:id/cancel
 pub async fn cancel_appointment(
+    account: AccountSession,
     Path(id): Path<String>,
     State(state): State<Arc<BookingState>>,
 ) -> Result<Json<AppointmentResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    let appt = state.service.cancel_appointment(&account_id, &id)
+    let appt = state.service.cancel_appointment(&account.id, &id)
         .await
         .map_err(not_found)?;
     Ok(Json(appt))
@@ -189,7 +189,7 @@ pub async fn create_public_appointment(
 pub async fn get_public_availability(
     Path(slug): Path<String>,
     State(state): State<Arc<BookingState>>,
-    Json(query): Json<AvailabilityQueryRequest>,
+    Query(query): Query<AvailabilityQueryRequest>,
 ) -> Result<Json<Vec<FreeSlotResponse>>, (StatusCode, Json<serde_json::Value>)> {
     let slots = state.service.compute_free_slots(&slug, &query.service_id, &query.from, &query.to)
         .await

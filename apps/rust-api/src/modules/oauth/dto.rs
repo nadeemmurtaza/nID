@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateLoginRequestDto {
     pub client_id: String,
     pub redirect_uri: String,
@@ -11,6 +12,7 @@ pub struct CreateLoginRequestDto {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenExchangeDto {
     pub code: String,
     pub client_id: String,
@@ -19,6 +21,7 @@ pub struct TokenExchangeDto {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LoginRequestStatusResponse {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -26,6 +29,7 @@ pub struct LoginRequestStatusResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenResponse {
     pub access_token: String,
     pub token_type: String,

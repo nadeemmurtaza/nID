@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateOrganizationRequest {
     pub subject_id: String,
     pub legal_name: String,
@@ -15,6 +16,7 @@ pub struct CreateOrganizationRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateOrganizationRequest {
     #[serde(default)]
     pub legal_name: Option<String>,
@@ -27,6 +29,7 @@ pub struct UpdateOrganizationRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InviteMemberRequest {
     pub phone: String,
     #[serde(default)]
@@ -34,6 +37,7 @@ pub struct InviteMemberRequest {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OrganizationResponse {
     pub id: String,
     pub tenant_id: String,
@@ -47,6 +51,7 @@ pub struct OrganizationResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MembershipResponse {
     pub id: String,
     pub tenant_id: String,
@@ -60,6 +65,7 @@ pub struct MembershipResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BeneficialOwnerResponse {
     pub id: String,
     pub tenant_id: String,
@@ -70,6 +76,7 @@ pub struct BeneficialOwnerResponse {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MessageResponse {
     pub message: String,
 }

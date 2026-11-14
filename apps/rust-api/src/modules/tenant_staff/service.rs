@@ -26,7 +26,7 @@ impl TenantStaffService {
         Self { db, env }
     }
 
-    pub async fn invite(&self, tenant_id: &str, api_key_id: &str, req: &crate::modules::tenant_staff::dto::InviteStaffRequest) -> Result<StaffMemberResponse> {
+    pub async fn invite(&self, tenant_id: &str, _api_key_id: &str, req: &crate::modules::tenant_staff::dto::InviteStaffRequest) -> Result<StaffMemberResponse> {
         let mut conn = self.db.get().await?;
 
         // Check if already staff

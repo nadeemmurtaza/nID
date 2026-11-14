@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateDepartmentRequest {
     pub name: String,
     pub slug: String,
@@ -15,6 +16,7 @@ pub struct CreateDepartmentRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateDepartmentRequest {
     #[serde(default)]
     pub name: Option<String>,
@@ -27,6 +29,7 @@ pub struct UpdateDepartmentRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AssignDepartmentRequest {
     pub account_id: String,
     #[serde(default)]
@@ -38,6 +41,7 @@ pub struct AssignDepartmentRequest {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DepartmentResponse {
     pub id: String,
     pub tenant_id: String,
@@ -52,6 +56,7 @@ pub struct DepartmentResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DepartmentAssignmentResponse {
     pub id: String,
     pub account_id: String,
@@ -64,6 +69,7 @@ pub struct DepartmentAssignmentResponse {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MessageResponse {
     pub message: String,
 }

@@ -10,7 +10,6 @@ use axum::Json;
 use serde::Serialize;
 use sqlx::FromRow;
 
-use crate::core::auth::types::AuthenticatedTenant;
 use crate::core::db::DbPool;
 
 /// An API key resolved from a valid Bearer token.
@@ -24,8 +23,8 @@ pub struct AuthenticatedApiKey {
 
 /// Error response for authentication failures.
 #[derive(Serialize)]
-struct AuthError {
-    message: String,
+pub struct AuthError {
+    pub message: String,
 }
 
 impl<B> FromRequestParts<B> for AuthenticatedApiKey
@@ -34,7 +33,7 @@ where
 {
     type Rejection = (StatusCode, Json<AuthError>);
 
-    async fn from_request_parts(parts: &Parts, _state: &B) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(parts: &mut Parts, _state: &B) -> Result<Self, Self::Rejection> {
         let db = parts
             .extensions
             .get::<DbPool>()
@@ -90,7 +89,7 @@ where
         // Hash the API key and look it up
         let key_hash = nid_shared_types::hash_api_key(plaintext);
 
-        let conn = db.get().await.map_err(|_| {
+        let mut conn = db.get().await.map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(AuthError {

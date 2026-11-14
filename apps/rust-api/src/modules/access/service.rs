@@ -2,10 +2,9 @@
 //!
 //! Mirrors `apps/api/src/modules/access/access.service.ts`.
 
-use anyhow::{anyhow, Context, Result};
-use deadpool_postgres::Object;
+use anyhow::{anyhow, Result};
+use sqlx::PgConnection;
 use sqlx::{FromRow, Row};
-use tracing::info;
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
@@ -86,7 +85,7 @@ impl AccessService {
     }
 
     /// Verify caller is owner or partner of the tenant
-    async fn verify_caller_is_owner_or_partner(&self, conn: &mut Object, caller_id: &str, tenant_id: &str) -> Result<()> {
+    async fn verify_caller_is_owner_or_partner(&self, conn: &mut PgConnection, caller_id: &str, tenant_id: &str) -> Result<()> {
         let grant = sqlx::query_as::<_, AccessGrantRow>(
             "SELECT id, account_id, tenant_id, organization_id, brand_id, access_type, partnership_percentage, granted_by, status, granted_at FROM access_grant WHERE account_id = $1 AND tenant_id = $2 AND access_type IN ('OWNER', 'PARTNER') AND status = 'ACTIVE' LIMIT 1",
         )
@@ -202,16 +201,15 @@ impl AccessService {
         let mut query = String::from(
             "SELECT g.id, g.account_id, g.tenant_id, g.organization_id, g.brand_id, g.access_type, g.partnership_percentage, g.granted_by, g.status, g.granted_at, a.phone, a.email FROM access_grant g JOIN account a ON g.account_id = a.id WHERE g.tenant_id = $1 AND g.status = 'ACTIVE'",
         );
-        let mut params: Vec<Box<dyn sqlx::encode::Encode<'_, sqlx::Postgres> + sqlx::types::Type<sqlx::Postgres>>> = vec![Box::new(tenant_id.to_string())];
+        let mut param_idx = 1;
 
         if organization_id.is_some() {
-            query.push_str(" AND g.organization_id = $2");
-            params.push(Box::new(organization_id.unwrap().to_string()));
+            param_idx += 1;
+            query.push_str(&format!(" AND g.organization_id = ${}", param_idx));
         }
         if brand_id.is_some() {
-            let param_idx = params.len() + 1;
+            param_idx += 1;
             query.push_str(&format!(" AND g.brand_id = ${}", param_idx));
-            params.push(Box::new(brand_id.unwrap().to_string()));
         }
 
         // Build the query with proper binds
@@ -305,17 +303,17 @@ impl AccessService {
         let mut status_val: Option<String> = None;
 
         if let Some(ref t) = req.access_type {
-            sets.push("access_type = $1");
+            sets.push("access_type = $1".to_string());
             type_val = Some(Self::access_type_str(t).to_string());
         }
         if req.partnership_percentage.is_some() {
             let idx = sets.len() + 1;
-            sets.push(&format!("partnership_percentage = ${}", idx));
+            sets.push(format!("partnership_percentage = ${}", idx));
             pct_val = req.partnership_percentage;
         }
         if let Some(ref s) = req.status {
             let idx = sets.len() + 1;
-            sets.push(&format!("status = ${}", idx));
+            sets.push(format!("status = ${}", idx));
             status_val = Some(Self::status_str(s).to_string());
         }
 

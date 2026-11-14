@@ -5,8 +5,8 @@ use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
 
+use crate::core::auth::session::AccountSession;
 use crate::core::config::AppEnv;
-use crate::core::db::DbPool;
 use crate::modules::oauth::dto::{
     CreateLoginRequestDto, LoginRequestStatusResponse, TokenExchangeDto, TokenResponse,
 };
@@ -41,11 +41,11 @@ pub async fn status(
 
 /// POST /v1/oauth/login-requests/:pollToken/approve
 pub async fn approve(
+    account: AccountSession,
     Path(poll_token): Path<String>,
     State(state): State<Arc<OAuthState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
-    state.service.approve(&poll_token, &account_id)
+    state.service.approve(&poll_token, &account.id)
         .await
         .map_err(not_found)?;
     Ok(Json(serde_json::json!({ "message": "Approved" })))

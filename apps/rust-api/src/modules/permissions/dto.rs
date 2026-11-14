@@ -3,6 +3,7 @@
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PermissionCatalogEntry {
     pub id: String,
     pub group_name: String,
@@ -13,6 +14,7 @@ pub struct PermissionCatalogEntry {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PermissionGroup {
     pub group_name: String,
     pub permissions: Vec<PermissionCatalogEntry>,

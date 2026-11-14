@@ -2,11 +2,8 @@
 //!
 //! Mirrors `apps/api/src/modules/subjects/subjects.service.ts`.
 
-use anyhow::{anyhow, Context, Result};
-use chrono::Utc;
-use deadpool_postgres::Object;
+use anyhow::{anyhow, Result};
 use sqlx::{FromRow, Row};
-use tracing::info;
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
@@ -103,10 +100,10 @@ impl SubjectsService {
         api_key_id: &str,
         req: &crate::modules::subjects::dto::CreateSubjectRequest,
     ) -> Result<SubjectResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
         // Set tenant context for RLS
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -130,7 +127,7 @@ impl SubjectsService {
         .bind(&req.family_name)
         .bind(&req.email)
         .bind(&req.phone)
-        .bind(req.date_of_birth.as_ref().and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok().and_then(|nd| nd.and_time(chrono::LocalTime::MIN).into_owned())))
+        .bind(req.date_of_birth.as_ref().and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok().map(|nd| nd.and_time(chrono::NaiveTime::MIN))))
         .bind(&req.address_line1)
         .bind(&req.address_line2)
         .bind(&req.city)
@@ -170,15 +167,16 @@ impl SubjectsService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(subject))
     }
 
     /// Get subject by ID
     pub async fn get_by_id(&self, tenant_id: &str, api_key_id: &str, subject_id: &str) -> Result<SubjectResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
         // Set tenant context for RLS
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -204,6 +202,7 @@ impl SubjectsService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(subject))
     }
 
@@ -215,10 +214,10 @@ impl SubjectsService {
         actor_id: &str,
         subject_id: &str,
     ) -> Result<BadgesResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
         // Set tenant context for RLS
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -287,6 +286,7 @@ impl SubjectsService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(BadgesResponse {
             subject_id: subject.id,
             badges,
@@ -301,10 +301,10 @@ impl SubjectsService {
         actor_id: &str,
         subject_id: &str,
     ) -> Result<AttributeBadgesResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
         // Set tenant context for RLS
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -365,6 +365,7 @@ impl SubjectsService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(AttributeBadgesResponse {
             subject_id: subject.id,
             badges,
