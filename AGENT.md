@@ -7,6 +7,16 @@ NEWAX ecosystem. nID is the single identity provider for the whole
 ecosystem (login, MFA/2FA, OAuth sessions, secrets vault) — it must never
 own business data from another domain.
 
+## Repo Structure & Naming Conventions
+
+See `CONVENTIONS.md` for the ecosystem-wide rules on folder layout,
+module/service naming, file naming, renaming, branches, worktrees,
+commits, and merge strategy — identical across every NEWAX repo. It
+also lists this repo's current gaps against that layout (`apps/api`
+vs. `apps/rust-api` naming by language instead of by module, the
+verification engines' location under `packages/`) so they aren't
+mistaken for the target shape.
+
 ## NEWAX Ecosystem — Technology Stack & Architecture Plan
 
 > Applies to every repo in the ecosystem (nID, Communicator, core-newax,
@@ -79,6 +89,27 @@ via WebAssembly so there is still exactly one logic implementation, not
   platform via `UniFFI` (native) or `wasm-bindgen` (web). This is the
   piece that keeps behavior identical across platforms and keeps the
   footprint small everywhere.
+
+#### Design system (shared global CSS tokens)
+
+Canonical token file: `packages/design-tokens/tokens.css` (package
+`@newax/design-tokens`), consumed by every Next.js app in this repo
+(`dashboard`, `login-ui`, `profile-ui`, `verify-ui`) via
+`@import "@newax/design-tokens/tokens.css";` at the top of each app's
+`app/globals.css`. Same palette, typography, spacing, layout, radius,
+elevation and motion tokens as every other NEWAX repo — Communicator's
+`packages/design-tokens/tokens.css` is the identical copy, same
+package name (`@newax/design-tokens`), same folder. Until `core-newax`
+hosts this as a real shared package (the correct long-term home, per
+this ecosystem's "build once, reuse everywhere" rule), the package is
+duplicated byte-for-byte across repos: edit one, copy to the others,
+never fork the values. The file also defines
+compatibility aliases (`--bg`, `--fg`, `--accent`, etc.) so the short
+variable names already used across these four apps keep resolving
+without a rewrite — new code should read the canonical `--color-*`,
+`--text-*`, `--space-*`, `--radius-*`, `--elevation-*`, `--layer-*`,
+`--motion-*` names directly.
+
 - **iOS:** Swift/SwiftUI shell, calling the Rust core via UniFFI. ARC,
   no GC pauses, no bridge overhead.
 - **Android:** Kotlin/Jetpack Compose shell, same UniFFI bridge into the
@@ -95,6 +126,27 @@ via WebAssembly so there is still exactly one logic implementation, not
   A single cross-platform Dart/Flutter codebase is the faster-to-ship
   choice and was considered and rejected here specifically because
   runtime efficiency outranks speed-to-market for this project.
+
+#### Package manager: pnpm, everywhere, no exception
+
+Both repos' JS/TS tooling runs on **pnpm workspaces** (`pnpm-workspace.yaml`
+at the repo root, `apps/*` + `packages/*`), not npm. This repo already
+used pnpm; Communicator used npm and has been converted to match:
+
+- **Lowest RAM/disk, by construction:** pnpm keeps one global
+  content-addressable store and hard-links packages into each
+  `node_modules`, instead of npm's copy-per-project. Less disk churn,
+  less duplicate install garbage across `apps/*`/`packages/*`.
+- **No phantom dependencies:** pnpm's non-flat `node_modules` means
+  code can only import what its own `package.json` actually declares
+  — a correctness property npm's flat hoisting doesn't give you.
+- **Real monorepo primitives:** `workspace:*` protocol, `pnpm -r
+  --filter`, and content-addressable linking are built for exactly
+  the `apps/*` + `packages/*` shape both repos use — npm workspaces
+  support the shape but not the efficiency.
+- Keep using `pnpm install` / `pnpm -r --filter` here, same as always
+  — this section exists so the choice (and why Communicator now
+  matches it) is recorded once, ecosystem-wide.
 
 ### Why this combination and not the obvious alternatives
 

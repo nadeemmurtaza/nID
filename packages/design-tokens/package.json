@@ -1,0 +1,14 @@
+{
+  "name": "@newax/design-tokens",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared NEWAX design tokens (colour, typography, spacing, layout, elevation, motion) — pure CSS, no build step. Canonical copy lives here until core-newax hosts it.",
+  "main": "tokens.css",
+  "exports": {
+    ".": "./tokens.css",
+    "./tokens.css": "./tokens.css"
+  },
+  "files": [
+    "tokens.css"
+  ]
+}

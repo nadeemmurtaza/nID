@@ -1,59 +1,7 @@
-:root {
-  color-scheme: light dark;
-  --bg: #ffffff;
-  --bg-subtle: #f7f8fa;
-  --fg: #14171a;
-  --muted: #6b7280;
-  --border: #e5e7eb;
-  --border-strong: #d1d5db;
-  --accent: #2f6fed;
-  --accent-hover: #2557c7;
-  --accent-fg: #ffffff;
-  --accent-soft: rgba(47, 111, 237, 0.1);
-  --danger: #c4392b;
-  --danger-soft: rgba(196, 57, 43, 0.1);
-  --success: #1a8a5f;
-  --success-soft: rgba(26, 138, 95, 0.1);
-  --warn: #b3801a;
-  --warn-soft: rgba(179, 128, 26, 0.1);
-  --info: #6a4fc4;
-  --info-soft: rgba(106, 79, 196, 0.1);
-  --card-bg: #ffffff;
-  --row-hover: #f7f8fa;
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-md: 0 4px 16px rgba(15, 23, 42, 0.08);
-  --radius-card: 14px;
-  --radius-control: 8px;
-  --radius-sub: 10px;
-  --radius-pill: 999px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0e1013;
-    --bg-subtle: #15181c;
-    --fg: #f2f3f5;
-    --muted: #9099a3;
-    --border: #262b31;
-    --border-strong: #333941;
-    --accent: #5b8def;
-    --accent-hover: #7aa3f2;
-    --accent-fg: #0e1013;
-    --accent-soft: rgba(91, 141, 239, 0.16);
-    --danger: #e06456;
-    --danger-soft: rgba(224, 100, 86, 0.16);
-    --success: #2ebf85;
-    --success-soft: rgba(46, 191, 133, 0.16);
-    --warn: #d9a63d;
-    --warn-soft: rgba(217, 166, 61, 0.16);
-    --info: #9683e0;
-    --info-soft: rgba(150, 131, 224, 0.16);
-    --card-bg: #17191d;
-    --row-hover: #1b1e23;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.36);
-  }
-}
+/* NEWAX ecosystem design tokens — see packages/design-tokens/tokens.css
+   for the canonical source and the compatibility aliases (--bg, --fg,
+   --accent, etc.) that keep every rule below working unchanged. */
+@import "@newax/design-tokens/tokens.css";
 
 * {
   box-sizing: border-box;

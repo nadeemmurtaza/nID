@@ -12,6 +12,7 @@
     "check-contrast": "node scripts/check-contrast.mjs"
   },
   "dependencies": {
+    "@newax/design-tokens": "workspace:*",
     "lucide-animated": "^1.0.5",
     "motion": "^14.9.0",
     "next": "^15.5.0",
