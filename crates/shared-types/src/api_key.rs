@@ -4,7 +4,7 @@
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use rand::Rng;
+use rand::RngCore;
 
 use crate::crypto::sha256_hex;
 
@@ -30,7 +30,7 @@ pub fn generate_api_key(env: &str) -> GeneratedApiKey {
     };
     let mut rng = rand::thread_rng();
     let mut bytes = vec![0u8; KEY_BYTE_LENGTH];
-    rng.fill(&mut bytes);
+    rng.fill_bytes(&mut bytes);
     let raw = URL_SAFE_NO_PAD.encode(&bytes);
     let plaintext = format!("nid_{env}_{raw}");
     let prefix_len = format!("nid_{env}_").len() + PREFIX_VISIBLE_CHARS;

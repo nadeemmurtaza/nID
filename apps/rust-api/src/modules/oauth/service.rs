@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Result};
 use chrono::{Duration, Utc};
-use sqlx::{FromRow, Row};
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::core::config::AppEnv;
@@ -139,7 +139,7 @@ impl OAuthService {
         code: &str,
         client_id: &str,
         client_secret: &str,
-        redirect_uri: &str,
+        _redirect_uri: &str,
     ) -> Result<TokenResponse> {
         let mut conn = self.db.get().await?;
 

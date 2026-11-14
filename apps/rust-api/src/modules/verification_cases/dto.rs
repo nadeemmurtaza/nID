@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Request body for POST /v1/verification-cases
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateVerificationCaseRequest {
     pub subject_id: String,
     pub policy_name: String,
@@ -19,6 +20,7 @@ pub struct CreateVerificationCaseRequest {
 
 /// Request body for POST /v1/verification-cases/:id/resolve
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResolveCaseRequest {
     pub decision: String,
     #[serde(default)]
@@ -27,18 +29,21 @@ pub struct ResolveCaseRequest {
 
 /// Request body for POST /v1/verification-cases/:id/otp/submit
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubmitOtpRequest {
     pub code: String,
 }
 
 /// Request body for POST /v1/verification-cases/:id/claims/:method/report
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubmitSelfReportRequest {
     pub reported_value: String,
 }
 
 /// Request body for POST /v1/verification-cases/:id/claims/:method/agent-attest
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubmitAgentAttestationRequest {
     pub decision: String,
     #[serde(default)]
@@ -47,12 +52,14 @@ pub struct SubmitAgentAttestationRequest {
 
 /// Request body for POST /v1/verification-cases/:id/claims/:method/code
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubmitCodeRequest {
     pub code: String,
 }
 
 /// Request body for POST /v1/verification-cases/:id/claims/:method/location
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubmitLocationRequest {
     pub latitude: f64,
     pub longitude: f64,
@@ -60,6 +67,7 @@ pub struct SubmitLocationRequest {
 
 /// Verification case in API responses
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VerificationCaseResponse {
     pub id: String,
     pub tenant_id: String,
@@ -78,6 +86,7 @@ pub struct VerificationCaseResponse {
 
 /// Verification case with subject info
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VerificationCaseWithSubject {
     pub id: String,
     pub tenant_id: String,
@@ -97,6 +106,7 @@ pub struct VerificationCaseWithSubject {
 
 /// Subject summary embedded in case response
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubjectSummary {
     pub id: String,
     pub given_name: Option<String>,
@@ -107,6 +117,7 @@ pub struct SubjectSummary {
 
 /// Method attempt in API responses
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MethodAttemptResponse {
     pub id: String,
     pub tenant_id: String,
@@ -122,6 +133,7 @@ pub struct MethodAttemptResponse {
 
 /// Verification case with attempts
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VerificationCaseWithAttempts {
     pub id: String,
     pub tenant_id: String,
@@ -142,6 +154,7 @@ pub struct VerificationCaseWithAttempts {
 
 /// Created case response (includes session token)
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreatedCaseResponse {
     pub id: String,
     pub tenant_id: String,
@@ -159,6 +172,7 @@ pub struct CreatedCaseResponse {
 
 /// Generic message response
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MessageResponse {
     pub message: String,
 }

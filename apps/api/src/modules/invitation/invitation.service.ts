@@ -3,9 +3,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@nid/db';
 import { PrismaService } from '../../core/db/prisma.service';
 import type { Account } from '@nid/db';
-import { Prisma } from '@nid/db';
 
 export interface SendEmailInviteDto {
   email: string;
@@ -365,7 +365,7 @@ export class InvitationService {
     };
   }
 
-  private async emitWebhookEvent(tenantId: string, eventType: string, data: unknown) {
+  private async emitWebhookEvent(tenantId: string, eventType: string, data: Record<string, unknown> | unknown[]) {
     const tenant = await this.prisma.unscoped.tenant.findUnique({
       where: { id: tenantId },
       select: { webhookUrl: true, webhookSecretPlaintext: true },
@@ -391,7 +391,7 @@ export class InvitationService {
       data: {
         tenantId,
         eventType,
-        payload: payloadObj as any,
+        payload: payloadObj as Prisma.InputJsonValue,
         targetUrl: tenant.webhookUrl,
         status: 'PENDING',
         attempts: 0,

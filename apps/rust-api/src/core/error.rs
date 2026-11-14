@@ -6,7 +6,6 @@
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Json},
-    Json as AxumJson,
 };
 use serde::Serialize;
 use thiserror::Error;
@@ -39,7 +38,7 @@ impl ErrorResponse {
 /// The main error type for the nID API.
 ///
 /// Maps to HTTP status codes and produces structured JSON error responses.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum ApiError {
     #[error("Not found: {0}")]
     NotFound(String),
@@ -83,11 +82,11 @@ impl IntoResponse for ApiError {
             ApiError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, "Service Unavailable", msg.as_str()),
         };
 
-        let body = Json(AxumJson(ErrorResponse {
+        let body = Json(ErrorResponse {
             error: error_type.to_string(),
             message: Some(message.to_string()),
             code: None,
-        }));
+        });
 
         (status, body).into_response()
     }
@@ -105,9 +104,9 @@ impl From<sqlx::Error> for ApiError {
                         return ApiError::Conflict("A resource with this value already exists".to_string());
                     }
                 }
-                ApiError::Internal(format!("Database error: {}", err))
+                ApiError::Internal(format!("Database error: {}", db_err))
             }
-            _ => ApiError::Internal(format!("Database error: {}", err)),
+            other => ApiError::Internal(format!("Database error: {}", other)),
         }
     }
 }

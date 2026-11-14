@@ -23,6 +23,7 @@ pub enum AccessGrantStatus {
 
 /// Request body for POST /v1/access/grant
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateGrantRequest {
     pub account_id: String,
     #[serde(default)]
@@ -36,6 +37,7 @@ pub struct CreateGrantRequest {
 
 /// Request body for PATCH /v1/access/grant/:id
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateGrantRequest {
     #[serde(default)]
     pub access_type: Option<AccessType>,
@@ -47,6 +49,7 @@ pub struct UpdateGrantRequest {
 
 /// Request body for POST /v1/access/transfer-ownership
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TransferOwnershipRequest {
     pub new_owner_id: String,
     #[serde(default)]
@@ -57,6 +60,7 @@ pub struct TransferOwnershipRequest {
 
 /// Request body for POST /v1/access/partner
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AddPartnerRequest {
     pub account_id: String,
     pub percentage: f64,
@@ -64,6 +68,7 @@ pub struct AddPartnerRequest {
 
 /// Access grant in API responses
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AccessGrantResponse {
     pub id: String,
     pub account_id: String,
@@ -81,6 +86,7 @@ pub struct AccessGrantResponse {
 
 /// Permission entry for my-permissions endpoint
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PermissionEntry {
     pub group_name: String,
     pub service_name: String,
@@ -91,6 +97,7 @@ pub struct PermissionEntry {
 
 /// My permissions response
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MyPermissionsResponse {
     pub account_id: String,
     pub tenant_id: String,
@@ -99,6 +106,7 @@ pub struct MyPermissionsResponse {
 
 /// Generic message response
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MessageResponse {
     pub message: String,
 }

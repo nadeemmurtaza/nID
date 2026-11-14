@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Full session status with attempts and phone (returned by GET /v1/sessions/:token/status).
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionStatusResponse {
     pub case_id: String,
     pub status: String,
@@ -16,41 +17,48 @@ pub struct SessionStatusResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AttemptEntry {
     pub method: String,
     pub status: String,
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MessageResponse {
     pub message: String,
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AcceptedResponse {
     pub accepted: bool,
 }
 
 /// Request body for POST /v1/sessions/:token/otp/submit
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubmitOtpRequest {
     pub code: String,
 }
 
 /// Request body for POST /v1/sessions/:token/claims/:method/report
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubmitSelfReportRequest {
     pub reported_value: String,
 }
 
 /// Request body for POST /v1/sessions/:token/claims/:method/code
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubmitCodeRequest {
     pub code: String,
 }
 
 /// Request body for POST /v1/sessions/:token/claims/:method/location
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubmitLocationRequest {
     pub latitude: f64,
     pub longitude: f64,

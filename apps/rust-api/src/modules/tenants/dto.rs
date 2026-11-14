@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Request body for POST /v1/tenants
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateTenantRequest {
     pub name: String,
     pub slug: String,
@@ -19,6 +20,7 @@ pub struct CreateTenantRequest {
 
 /// Request body for PUT /v1/tenants/:id
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateTenantRequest {
     #[serde(default)]
     pub name: Option<String>,
@@ -36,6 +38,7 @@ pub struct UpdateTenantRequest {
 
 /// Request body for POST /v1/tenants/:id/api-keys
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateApiKeyRequest {
     #[serde(default)]
     pub key_prefix: Option<String>,
@@ -47,6 +50,7 @@ pub struct CreateApiKeyRequest {
 
 /// Request body for POST /v1/tenants/:id/staff
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InviteStaffRequest {
     pub account_id: String,
     #[serde(default = "default_staff_role")]
@@ -59,6 +63,7 @@ fn default_staff_role() -> String {
 
 /// Tenant in API responses
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TenantResponse {
     pub id: String,
     pub name: String,
@@ -72,6 +77,7 @@ pub struct TenantResponse {
 
 /// Tenant with counts (for listAll/getById)
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TenantWithCounts {
     pub id: String,
     pub name: String,
@@ -89,6 +95,7 @@ pub struct TenantWithCounts {
 
 /// Tenant with "who is signed in" info
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TenantSelfResponse {
     pub id: String,
     pub name: String,
@@ -103,6 +110,7 @@ pub struct TenantSelfResponse {
 
 /// Tenant membership for an account
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TenantMembership {
     pub tenant_id: String,
     pub tenant_name: String,
@@ -112,6 +120,7 @@ pub struct TenantMembership {
 
 /// API key response
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ApiKeyResponse {
     pub id: String,
     pub key_prefix: String,
@@ -123,6 +132,7 @@ pub struct ApiKeyResponse {
 
 /// New API key response (includes plaintext)
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NewApiKeyResponse {
     pub prefix: String,
     pub plaintext: String,
@@ -131,6 +141,7 @@ pub struct NewApiKeyResponse {
 
 /// Created tenant response (includes secrets)
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreatedTenantResponse {
     pub id: String,
     pub name: String,
@@ -146,6 +157,7 @@ pub struct CreatedTenantResponse {
 
 /// Staff member response
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StaffMemberResponse {
     pub id: String,
     pub account_id: String,
@@ -156,6 +168,7 @@ pub struct StaffMemberResponse {
 
 /// Generic message response
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MessageResponse {
     pub message: String,
 }

@@ -5,11 +5,10 @@
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
-use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::core::auth::session::AccountSession;
 use crate::core::config::AppEnv;
-use crate::core::db::DbPool;
 use crate::modules::access::dto::{
     AccessGrantResponse, AddPartnerRequest, CreateGrantRequest, MessageResponse,
     MyPermissionsResponse, TransferOwnershipRequest, UpdateGrantRequest,
@@ -24,6 +23,7 @@ pub struct AccessState {
 
 /// Query parameters for access endpoints
 #[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AccessQuery {
     #[serde(default)]
     pub tenant_id: String,
@@ -37,14 +37,12 @@ pub struct AccessQuery {
 
 /// POST /v1/access/grant
 pub async fn create_grant(
+    account: AccountSession,
     Query(query): Query<AccessQuery>,
     State(state): State<Arc<AccessState>>,
     Json(req): Json<CreateGrantRequest>,
 ) -> Result<Json<AccessGrantResponse>, (StatusCode, Json<serde_json::Value>)> {
-    // The caller_id comes from the session extractor in a real setup;
-    // for now we use a placeholder — the account-session guard would inject it.
-    let caller_id = req.account_id.clone(); // In real usage, from AccountSession extractor
-    let grant = state.service.create_grant(&caller_id, &query.tenant_id, &req)
+    let grant = state.service.create_grant(&account.id, &query.tenant_id, &req)
         .await
         .map_err(internal_error)?;
     Ok(Json(grant))
@@ -52,13 +50,12 @@ pub async fn create_grant(
 
 /// GET /v1/access/grants
 pub async fn list_grants(
+    account: AccountSession,
     Query(query): Query<AccessQuery>,
     State(state): State<Arc<AccessState>>,
 ) -> Result<Json<Vec<AccessGrantResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    // caller_id would come from AccountSession extractor
-    let caller_id = "caller".to_string();
     let grants = state.service.list_grants(
-        &caller_id,
+        &account.id,
         &query.tenant_id,
         query.organization_id.as_deref(),
         query.brand_id.as_deref(),
@@ -70,12 +67,12 @@ pub async fn list_grants(
 
 /// GET /v1/access/grant/:id
 pub async fn get_grant(
+    account: AccountSession,
     Path(id): Path<String>,
     Query(query): Query<AccessQuery>,
     State(state): State<Arc<AccessState>>,
 ) -> Result<Json<AccessGrantResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let caller_id = "caller".to_string();
-    let grant = state.service.get_grant(&caller_id, &query.tenant_id, &id)
+    let grant = state.service.get_grant(&account.id, &query.tenant_id, &id)
         .await
         .map_err(not_found)?;
     Ok(Json(grant))
@@ -83,13 +80,13 @@ pub async fn get_grant(
 
 /// PATCH /v1/access/grant/:id
 pub async fn update_grant(
+    account: AccountSession,
     Path(id): Path<String>,
     Query(query): Query<AccessQuery>,
     State(state): State<Arc<AccessState>>,
     Json(req): Json<UpdateGrantRequest>,
 ) -> Result<Json<AccessGrantResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let caller_id = "caller".to_string();
-    let grant = state.service.update_grant(&caller_id, &query.tenant_id, &id, &req)
+    let grant = state.service.update_grant(&account.id, &query.tenant_id, &id, &req)
         .await
         .map_err(not_found)?;
     Ok(Json(grant))
@@ -97,12 +94,12 @@ pub async fn update_grant(
 
 /// DELETE /v1/access/grant/:id
 pub async fn revoke_grant(
+    account: AccountSession,
     Path(id): Path<String>,
     Query(query): Query<AccessQuery>,
     State(state): State<Arc<AccessState>>,
 ) -> Result<Json<MessageResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let caller_id = "caller".to_string();
-    state.service.revoke_grant(&caller_id, &query.tenant_id, &id)
+    state.service.revoke_grant(&account.id, &query.tenant_id, &id)
         .await
         .map_err(internal_error)?;
     Ok(Json(MessageResponse {
@@ -114,12 +111,12 @@ pub async fn revoke_grant(
 
 /// POST /v1/access/transfer-ownership
 pub async fn transfer_ownership(
+    account: AccountSession,
     Query(query): Query<AccessQuery>,
     State(state): State<Arc<AccessState>>,
     Json(req): Json<TransferOwnershipRequest>,
 ) -> Result<Json<AccessGrantResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let caller_id = "caller".to_string();
-    let grant = state.service.transfer_ownership(&caller_id, &query.tenant_id, &req)
+    let grant = state.service.transfer_ownership(&account.id, &query.tenant_id, &req)
         .await
         .map_err(internal_error)?;
     Ok(Json(grant))
@@ -129,12 +126,12 @@ pub async fn transfer_ownership(
 
 /// POST /v1/access/partner
 pub async fn add_partner(
+    account: AccountSession,
     Query(query): Query<AccessQuery>,
     State(state): State<Arc<AccessState>>,
     Json(req): Json<AddPartnerRequest>,
 ) -> Result<Json<AccessGrantResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let caller_id = "caller".to_string();
-    let grant = state.service.add_partner(&caller_id, &query.tenant_id, &req.account_id, req.percentage)
+    let grant = state.service.add_partner(&account.id, &query.tenant_id, &req.account_id, req.percentage)
         .await
         .map_err(internal_error)?;
     Ok(Json(grant))
@@ -144,12 +141,12 @@ pub async fn add_partner(
 
 /// GET /v1/access/my-permissions
 pub async fn get_my_permissions(
+    account: AccountSession,
     Query(query): Query<AccessQuery>,
     State(state): State<Arc<AccessState>>,
 ) -> Result<Json<MyPermissionsResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = "account".to_string();
     let perms = state.service.get_my_permissions(
-        &account_id,
+        &account.id,
         &query.tenant_id,
         query.organization_id.as_deref(),
         query.brand_id.as_deref(),

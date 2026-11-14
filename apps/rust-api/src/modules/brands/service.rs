@@ -1,270 +1,396 @@
-//! Brands service.
+//! Brands service — business logic for brand operations.
+//!
+//! Mirrors `apps/api/src/modules/brands/brands.service.ts`. Brand is scoped by
+//! `organization_id`, not `tenant_id` — a Brand has no tenant_id column of its
+//! own (see the `Brand` model in packages/db/prisma/schema.prisma); tenant
+//! scoping only comes in indirectly, through Brand -> Organization -> tenantId.
+//! Access control is therefore account+organization-membership based, exactly
+//! like the TypeScript service, not tenant/RLS based.
 
 use anyhow::{anyhow, Result};
-use deadpool_postgres::Object;
-use sqlx::{FromRow, Row};
+use sqlx::Connection;
+use sqlx::FromRow;
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
-use crate::modules::brands::dto::BrandResponse;
+use crate::modules::brands::dto::{BrandMembershipResponse, BrandResponse, CreateBrandRequest, MessageResponse, UpdateBrandRequest};
+use crate::modules::organizations::service::OrganizationsService;
 
 #[derive(Debug, Clone, FromRow)]
 pub struct BrandRow {
     pub id: String,
-    pub tenant_id: String,
+    pub organization_id: String,
     pub name: String,
     pub slug: String,
-    pub logo_url: Option<String>,
+    pub description: Option<String>,
+    pub bio: Option<String>,
+    pub logo_key: Option<String>,
     pub primary_color: Option<String>,
+    pub secondary_color: Option<String>,
+    pub website: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub address: Option<String>,
+    pub social_links: Option<serde_json::Value>,
+    pub products: Option<serde_json::Value>,
+    pub services: Option<serde_json::Value>,
+    pub prices: Option<serde_json::Value>,
+    pub policies: Option<serde_json::Value>,
+    pub rules: Option<serde_json::Value>,
+    pub tone_guidelines: Option<serde_json::Value>,
+    pub keywords: Option<serde_json::Value>,
+    pub active: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
+
+const BRAND_COLUMNS: &str = "id, organization_id, name, slug, description, bio, logo_key, primary_color, secondary_color, website, email, phone, address, social_links, products, services, prices, policies, rules, tone_guidelines, keywords, active, created_at, updated_at";
 
 pub struct BrandsService {
     db: DbPool,
     env: AppEnv,
+    organizations: OrganizationsService,
 }
 
 impl BrandsService {
     pub fn new(db: DbPool, env: AppEnv) -> Self {
-        Self { db, env }
+        let organizations = OrganizationsService::new(db.clone(), env.clone());
+        Self { db, env, organizations }
     }
 
     fn row_to_response(row: BrandRow) -> BrandResponse {
         BrandResponse {
             id: row.id,
-            tenant_id: row.tenant_id,
+            organization_id: row.organization_id,
             name: row.name,
             slug: row.slug,
-            logo_url: row.logo_url,
+            description: row.description,
+            bio: row.bio,
+            logo_key: row.logo_key,
             primary_color: row.primary_color,
+            secondary_color: row.secondary_color,
+            website: row.website,
+            email: row.email,
+            phone: row.phone,
+            address: row.address,
+            social_links: row.social_links,
+            products: row.products,
+            services: row.services,
+            prices: row.prices,
+            policies: row.policies,
+            rules: row.rules,
+            tone_guidelines: row.tone_guidelines,
+            keywords: row.keywords,
+            active: row.active,
             created_at: row.created_at.to_rfc3339(),
+            updated_at: row.updated_at.to_rfc3339(),
+            webhook_message: None,
         }
     }
 
-    pub async fn create(
-        &self,
-        tenant_id: &str,
-        api_key_id: &str,
-        req: &crate::modules::brands::dto::CreateBrandRequest,
-    ) -> Result<BrandResponse> {
-        let conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1").bind(tenant_id).execute(&mut *conn).await?;
+    fn slugify(name: &str) -> String {
+        let lower = name.to_lowercase();
+        let mut slug = String::new();
+        let mut last_was_sep = false;
+        for ch in lower.trim().chars() {
+            if ch.is_ascii_alphanumeric() {
+                slug.push(ch);
+                last_was_sep = false;
+            } else if (ch.is_whitespace() || ch == '_' || ch == '-') && !last_was_sep {
+                slug.push('-');
+                last_was_sep = true;
+            }
+        }
+        slug.trim_matches('-').to_string()
+    }
 
-        let brand: BrandRow = sqlx::query_as(
+    /// Emits a webhook event to the tenant's registered webhook URL, logging it
+    /// to `outbound_event`. Mirrors BrandsService.emitWebhookEvent()'s logging
+    /// behavior; actual outbound HTTP delivery is handled asynchronously (no
+    /// HTTP client dependency is wired into this service).
+    async fn emit_webhook_event(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        tenant_id: &str,
+        event_type: &str,
+    ) -> Result<Option<String>> {
+        let tenant: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT webhook_url, webhook_secret_plaintext FROM tenant WHERE id = $1",
+        )
+        .bind(tenant_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        let Some((Some(webhook_url), Some(_secret))) = tenant else {
+            return Ok(None);
+        };
+
+        // outbound_event carries forced tenant-isolation RLS; this service
+        // is account/organization-scoped, not tenant-RLS-scoped, so the
+        // connection it's given has no app.tenant_id set. set_config(...,
+        // true) only persists for the current transaction, so this needs
+        // its own short-lived nested transaction around just this insert.
+        let mut nested = conn.begin().await?;
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id)
+            .execute(&mut *nested)
+            .await?;
+
+        sqlx::query(
             r#"
-            INSERT INTO brand (id, tenant_id, name, slug, logo_url, primary_color)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5)
-            RETURNING id, tenant_id, name, slug, logo_url, primary_color, created_at
+            INSERT INTO outbound_event (id, tenant_id, event_type, payload, target_url, status, attempts)
+            VALUES (gen_random_uuid(), $1, $2, $3, $4, 'PENDING', 0)
             "#,
         )
         .bind(tenant_id)
+        .bind(event_type)
+        .bind(serde_json::json!({ "event_type": event_type, "tenant_id": tenant_id }))
+        .bind(&webhook_url)
+        .execute(&mut *nested)
+        .await?;
+        nested.commit().await?;
+
+        Ok(Some("Webhook event emitted successfully".to_string()))
+    }
+
+    /// Create a brand under an organization. The account must be an ACTIVE admin
+    /// member of the organization. Mirrors BrandsService.create().
+    pub async fn create(&self, account_id: &str, req: &CreateBrandRequest) -> Result<BrandResponse> {
+        let mut conn = self.db.get().await?;
+        let tenant_id = self.organizations.require_active_admin(&req.organization_id, account_id).await?;
+
+        let organization: Option<String> = sqlx::query_scalar("SELECT id FROM organization WHERE id = $1")
+            .bind(&req.organization_id)
+            .fetch_optional(&mut *conn)
+            .await?;
+        if organization.is_none() {
+            return Err(anyhow!("Organization not found"));
+        }
+
+        let slug = req.slug.clone().unwrap_or_else(|| Self::slugify(&req.name));
+
+        let existing: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM brand WHERE organization_id = $1 AND slug = $2",
+        )
+        .bind(&req.organization_id)
+        .bind(&slug)
+        .fetch_optional(&mut *conn)
+        .await?;
+        if existing.is_some() {
+            return Err(anyhow!("A brand with slug \"{}\" already exists in this organization.", slug));
+        }
+
+        let social_links = req.social_links.as_ref().map(|m| serde_json::to_value(m).unwrap());
+        let tone_guidelines = req.tone_guidelines.as_ref().map(|s| serde_json::Value::String(s.clone()));
+        let keywords = req.keywords.as_ref().map(|k| serde_json::to_value(k).unwrap());
+
+        let brand: BrandRow = sqlx::query_as(&format!(
+            r#"
+            INSERT INTO brand (id, organization_id, name, slug, description, bio, website, email, phone, logo_key, primary_color, secondary_color, address, social_links, products, services, prices, policies, rules, tone_guidelines, keywords)
+            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+            RETURNING {BRAND_COLUMNS}
+            "#
+        ))
+        .bind(&req.organization_id)
         .bind(&req.name)
-        .bind(&req.slug)
-        .bind(&req.logo_url)
+        .bind(&slug)
+        .bind(&req.description)
+        .bind(&req.bio)
+        .bind(&req.website)
+        .bind(&req.email)
+        .bind(&req.phone)
+        .bind(&req.logo_key)
         .bind(&req.primary_color)
+        .bind(&req.secondary_color)
+        .bind(&req.address)
+        .bind(&social_links)
+        .bind(&req.products)
+        .bind(&req.services)
+        .bind(&req.prices)
+        .bind(&req.policies)
+        .bind(&req.rules)
+        .bind(&tone_guidelines)
+        .bind(&keywords)
         .fetch_one(&mut *conn)
         .await?;
 
-        sqlx::query(
-            r#"INSERT INTO audit_log_entry (id, tenant_id, actor_type, actor_id, action, metadata)
-               VALUES (gen_random_uuid(), $1, 'API_KEY', $2, 'brand.create', NULL)"#,
-        )
-        .bind(tenant_id)
-        .bind(api_key_id)
-        .execute(&mut *conn)
-        .await?;
+        let webhook_message = self.emit_webhook_event(&mut conn, &tenant_id, "brand.created").await?;
 
-        Ok(Self::row_to_response(brand))
+        let mut response = Self::row_to_response(brand);
+        response.webhook_message = webhook_message;
+        Ok(response)
     }
 
-    pub async fn list_all(&self, tenant_id: &str) -> Result<Vec<BrandResponse>> {
-        let conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1").bind(tenant_id).execute(&mut *conn).await?;
+    /// List all brands for a specific organization. The account must be an
+    /// ACTIVE member of the organization. Mirrors BrandsService.list().
+    pub async fn list(&self, account_id: &str, organization_id: &str) -> Result<Vec<BrandResponse>> {
+        let mut conn = self.db.get().await?;
+        self.organizations.require_active_member(organization_id, account_id).await?;
 
-        let rows: Vec<BrandRow> = sqlx::query_as(
-            "SELECT id, tenant_id, name, slug, logo_url, primary_color, created_at FROM brand ORDER BY created_at DESC",
-        )
+        let rows: Vec<BrandRow> = sqlx::query_as(&format!(
+            "SELECT {BRAND_COLUMNS} FROM brand WHERE organization_id = $1 AND active = true ORDER BY created_at ASC"
+        ))
+        .bind(organization_id)
         .fetch_all(&mut *conn)
         .await?;
 
         Ok(rows.into_iter().map(Self::row_to_response).collect())
     }
 
-    pub async fn get_by_slug(&self, tenant_id: &str, slug: &str) -> Result<BrandResponse> {
-        let conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1").bind(tenant_id).execute(&mut *conn).await?;
-
-        let brand: BrandRow = sqlx::query_as(
-            "SELECT id, tenant_id, name, slug, logo_url, primary_color, created_at FROM brand WHERE slug = $1",
-        )
-        .bind(slug)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Brand not found"))?;
-
-        Ok(Self::row_to_response(brand))
-    }
-
-    /// Get a brand by ID — mirrors BrandsService.getById().
-    pub async fn get_by_id(&self, tenant_id: &str, brand_id: &str) -> Result<BrandResponse> {
-        let conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1").bind(tenant_id).execute(&mut *conn).await?;
-
-        let brand: BrandRow = sqlx::query_as(
-            "SELECT id, tenant_id, name, slug, logo_url, primary_color, created_at FROM brand WHERE id = $1",
-        )
-        .bind(brand_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Brand not found"))?;
-
-        Ok(Self::row_to_response(brand))
-    }
-
-    /// Update a brand — mirrors BrandsService.update().
-    pub async fn update(
-        &self,
-        tenant_id: &str,
-        api_key_id: &str,
-        brand_id: &str,
-        req: &crate::modules::brands::dto::UpdateBrandRequest,
-    ) -> Result<BrandResponse> {
+    /// Get a single brand by ID. The account must be an ACTIVE member of the
+    /// brand's organization. Mirrors BrandsService.getById().
+    pub async fn get_by_id(&self, account_id: &str, brand_id: &str) -> Result<BrandResponse> {
         let mut conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1").bind(tenant_id).execute(&mut *conn).await?;
 
-        // Verify brand exists
-        let existing: (String, String) = sqlx::query_as(
-            "SELECT id, slug FROM brand WHERE id = $1",
-        )
-        .bind(brand_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Brand not found"))?;
-
-        // Build dynamic SET clause
-        let mut sets = Vec::new();
-        let mut binds: Vec<Box<dyn sqlx::types::Type<sqlx::Postgres> + Send + Sync>> = Vec::new();
-
-        if let Some(ref name) = req.name {
-            sets.push(format!("name = ${}", sets.len() + 1));
-            binds.push(Box::new(name.clone()));
-        }
-        if let Some(ref slug) = req.slug {
-            sets.push(format!("slug = ${}", sets.len() + 1));
-            binds.push(Box::new(slug.clone()));
-        }
-        if let Some(ref desc) = req.description {
-            sets.push(format!("description = ${}", sets.len() + 1));
-            binds.push(Box::new(desc.clone()));
-        }
-        if let Some(ref bio) = req.bio {
-            sets.push(format!("bio = ${}", sets.len() + 1));
-            binds.push(Box::new(bio.clone()));
-        }
-        if let Some(ref website) = req.website {
-            sets.push(format!("website = ${}", sets.len() + 1));
-            binds.push(Box::new(website.clone()));
-        }
-        if let Some(ref email) = req.email {
-            sets.push(format!("email = ${}", sets.len() + 1));
-            binds.push(Box::new(email.clone()));
-        }
-        if let Some(ref phone) = req.phone {
-            sets.push(format!("phone = ${}", sets.len() + 1));
-            binds.push(Box::new(phone.clone()));
-        }
-        if let Some(active) = req.active {
-            sets.push(format!("active = ${}", sets.len() + 1));
-            binds.push(Box::new(active));
-        }
-
-        if sets.is_empty() {
-            return self.get_by_id(tenant_id, brand_id).await;
-        }
-
-        let base_idx = sets.len() + 1;
-        let query = format!(
-            "UPDATE brand SET {} WHERE id = ${} RETURNING id, tenant_id, name, slug, logo_url, primary_color, created_at",
-            sets.join(", "),
-            base_idx
-        );
-
-        // Use raw query with dynamic binds
-        let brand: BrandRow = sqlx::query_as(&query)
+        let brand: BrandRow = sqlx::query_as(&format!("SELECT {BRAND_COLUMNS} FROM brand WHERE id = $1"))
             .bind(brand_id)
             .fetch_one(&mut *conn)
             .await
             .map_err(|_| anyhow!("Brand not found"))?;
 
-        // Audit log
-        sqlx::query(
-            r#"INSERT INTO audit_log_entry (id, tenant_id, actor_type, actor_id, action, metadata)
-               VALUES (gen_random_uuid(), $1, 'API_KEY', $2, 'brand.update', NULL)"#,
-        )
-        .bind(tenant_id)
-        .bind(api_key_id)
-        .execute(&mut *conn)
-        .await?;
+        self.organizations.require_active_member(&brand.organization_id, account_id).await?;
 
         Ok(Self::row_to_response(brand))
     }
 
-    /// Remove (deactivate) a brand — mirrors BrandsService.remove().
-    pub async fn remove(
-        &self,
-        tenant_id: &str,
-        api_key_id: &str,
-        brand_id: &str,
-    ) -> Result<crate::modules::brands::dto::MessageResponse> {
+    /// Update a brand. The account must be an ACTIVE admin of the brand's
+    /// organization. Mirrors BrandsService.update().
+    pub async fn update(&self, account_id: &str, brand_id: &str, req: &UpdateBrandRequest) -> Result<BrandResponse> {
         let mut conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1").bind(tenant_id).execute(&mut *conn).await?;
 
-        // Verify brand exists
-        sqlx::query("SELECT id FROM brand WHERE id = $1")
+        let existing: (String, String) = sqlx::query_as("SELECT organization_id, slug FROM brand WHERE id = $1")
+            .bind(brand_id)
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(|_| anyhow!("Brand not found"))?;
+        let (organization_id, current_slug) = existing;
+
+        let tenant_id = self.organizations.require_active_admin(&organization_id, account_id).await?;
+
+        if let Some(ref new_slug) = req.slug {
+            if *new_slug != current_slug {
+                let dup: Option<String> = sqlx::query_scalar(
+                    "SELECT id FROM brand WHERE organization_id = $1 AND slug = $2",
+                )
+                .bind(&organization_id)
+                .bind(new_slug)
+                .fetch_optional(&mut *conn)
+                .await?;
+                if dup.is_some() {
+                    return Err(anyhow!("A brand with slug \"{}\" already exists in this organization.", new_slug));
+                }
+            }
+        }
+
+        let has_update = req.name.is_some()
+            || req.slug.is_some()
+            || req.description.is_some()
+            || req.bio.is_some()
+            || req.website.is_some()
+            || req.email.is_some()
+            || req.phone.is_some()
+            || req.logo_key.is_some()
+            || req.primary_color.is_some()
+            || req.secondary_color.is_some()
+            || req.address.is_some()
+            || req.social_links.is_some()
+            || req.products.is_some()
+            || req.services.is_some()
+            || req.prices.is_some()
+            || req.policies.is_some()
+            || req.rules.is_some()
+            || req.tone_guidelines.is_some()
+            || req.keywords.is_some()
+            || req.active.is_some();
+
+        if !has_update {
+            return self.get_by_id(account_id, brand_id).await;
+        }
+
+        let social_links = req.social_links.as_ref().map(|m| serde_json::to_value(m).unwrap());
+        let tone_guidelines = req.tone_guidelines.as_ref().map(|s| serde_json::Value::String(s.clone()));
+        let keywords = req.keywords.as_ref().map(|k| serde_json::to_value(k).unwrap());
+
+        let mut qb = sqlx::QueryBuilder::<sqlx::Postgres>::new("UPDATE brand SET ");
+        let mut sep = qb.separated(", ");
+        if let Some(ref v) = req.name { sep.push("name = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = req.slug { sep.push("slug = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = req.description { sep.push("description = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = req.bio { sep.push("bio = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = req.website { sep.push("website = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = req.email { sep.push("email = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = req.phone { sep.push("phone = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = req.logo_key { sep.push("logo_key = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = req.primary_color { sep.push("primary_color = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = req.secondary_color { sep.push("secondary_color = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = req.address { sep.push("address = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = social_links { sep.push("social_links = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = req.products { sep.push("products = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = req.services { sep.push("services = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = req.prices { sep.push("prices = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = req.policies { sep.push("policies = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = req.rules { sep.push("rules = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = tone_guidelines { sep.push("tone_guidelines = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(ref v) = keywords { sep.push("keywords = "); sep.push_bind_unseparated(v.clone()); }
+        if let Some(v) = req.active { sep.push("active = "); sep.push_bind_unseparated(v); }
+        qb.push(" WHERE id = ");
+        qb.push_bind(brand_id.to_string());
+        qb.push(&format!(" RETURNING {BRAND_COLUMNS}"));
+
+        let brand: BrandRow = qb
+            .build_query_as()
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(|_| anyhow!("Brand not found"))?;
+
+        let webhook_message = self.emit_webhook_event(&mut conn, &tenant_id, "brand.updated").await?;
+
+        let mut response = Self::row_to_response(brand);
+        response.webhook_message = webhook_message;
+        Ok(response)
+    }
+
+    /// Delete (deactivate) a brand. The account must be an ACTIVE admin of the
+    /// brand's organization. Mirrors BrandsService.remove().
+    pub async fn remove(&self, account_id: &str, brand_id: &str) -> Result<MessageResponse> {
+        let mut conn = self.db.get().await?;
+
+        let organization_id: String = sqlx::query_scalar("SELECT organization_id FROM brand WHERE id = $1")
             .bind(brand_id)
             .fetch_one(&mut *conn)
             .await
             .map_err(|_| anyhow!("Brand not found"))?;
 
-        // Soft delete
+        let tenant_id = self.organizations.require_active_admin(&organization_id, account_id).await?;
+
         sqlx::query("UPDATE brand SET active = false WHERE id = $1")
             .bind(brand_id)
             .execute(&mut *conn)
             .await?;
 
-        // Audit log
-        sqlx::query(
-            r#"INSERT INTO audit_log_entry (id, tenant_id, actor_type, actor_id, action, metadata)
-               VALUES (gen_random_uuid(), $1, 'API_KEY', $2, 'brand.delete', NULL)"#,
-        )
-        .bind(tenant_id)
-        .bind(api_key_id)
-        .execute(&mut *conn)
-        .await?;
+        self.emit_webhook_event(&mut conn, &tenant_id, "brand.deleted").await?;
 
-        Ok(crate::modules::brands::dto::MessageResponse {
+        Ok(MessageResponse {
             message: "Brand deactivated successfully".to_string(),
         })
     }
 
-    /// List all brands across organizations the account is a member of — mirrors BrandsService.listMyMemberships().
-    pub async fn list_my_memberships(&self, account_id: &str) -> Result<Vec<crate::modules::brands::dto::BrandMembershipResponse>> {
+    /// List all brands across all organizations the account is a member of.
+    /// Mirrors BrandsService.listMyMemberships().
+    pub async fn list_my_memberships(&self, account_id: &str) -> Result<Vec<BrandMembershipResponse>> {
         let mut conn = self.db.get().await?;
 
-        // Find the person subject for this account
-        let subject_id: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM subject WHERE account_id = $1 LIMIT 1",
-        )
-        .bind(account_id)
-        .fetch_optional(&mut *conn)
-        .await?;
+        let subject_id: Option<String> = sqlx::query_scalar("SELECT id FROM subject WHERE account_id = $1 LIMIT 1")
+            .bind(account_id)
+            .fetch_optional(&mut *conn)
+            .await?;
 
-        let subject_id = subject_id.ok_or_else(|| anyhow!("No subject found for account"))?;
+        let Some(subject_id) = subject_id else {
+            return Ok(Vec::new());
+        };
 
-        // Get all active organization memberships
         let memberships: Vec<(String, Option<String>, bool)> = sqlx::query_as(
-            "SELECT organization_id, role, is_admin FROM organization_membership
-             WHERE person_subject_id = $1 AND status = 'ACTIVE'",
+            "SELECT organization_id, role, is_admin FROM organization_membership WHERE person_subject_id = $1 AND status = 'ACTIVE'",
         )
         .bind(&subject_id)
         .fetch_all(&mut *conn)
@@ -272,16 +398,14 @@ impl BrandsService {
 
         let mut results = Vec::new();
         for (org_id, role, is_admin) in memberships {
-            // Get organization info
-            let org: (String, String, String) = sqlx::query_as(
+            let org: Option<(String, String, String)> = sqlx::query_as(
                 "SELECT id, legal_name, tenant_id FROM organization WHERE id = $1",
             )
             .bind(&org_id)
             .fetch_optional(&mut *conn)
-            .await?
-            .ok_or_else(|| anyhow!("Organization not found"))?;
+            .await?;
+            let Some((organization_id, organization_name, tenant_id)) = org else { continue };
 
-            // Get active brands for this organization
             let brands: Vec<(String, String, String)> = sqlx::query_as(
                 "SELECT id, name, slug FROM brand WHERE organization_id = $1 AND active = true ORDER BY created_at ASC",
             )
@@ -292,13 +416,13 @@ impl BrandsService {
             let member_role = role.unwrap_or_else(|| if is_admin { "admin".to_string() } else { "member".to_string() });
 
             for (brand_id, brand_name, brand_slug) in brands {
-                results.push(crate::modules::brands::dto::BrandMembershipResponse {
+                results.push(BrandMembershipResponse {
                     brand_id,
                     brand_name,
                     brand_slug,
-                    organization_id: org.0,
-                    organization_name: org.1,
-                    tenant_id: org.2,
+                    organization_id: organization_id.clone(),
+                    organization_name: organization_name.clone(),
+                    tenant_id: tenant_id.clone(),
                     role: member_role.clone(),
                 });
             }

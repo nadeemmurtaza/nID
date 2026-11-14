@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateSelfVerificationCaseRequest {
     pub claim_type: String,
     #[serde(default)]
@@ -10,12 +11,14 @@ pub struct CreateSelfVerificationCaseRequest {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VerificationStatusResponse {
     pub account_id: String,
     pub badges: Vec<BadgeEntry>,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BadgeEntry {
     pub claim_type: String,
     pub level: String,
@@ -23,6 +26,7 @@ pub struct BadgeEntry {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VerificationCaseResponse {
     pub id: String,
     pub subject_id: String,

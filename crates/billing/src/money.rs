@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use strum::Display;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
 #[serde(rename_all = "UPPERCASE")]
 #[strum(serialize_all = "UPPERCASE")]
 pub enum Currency {

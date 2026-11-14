@@ -7,8 +7,8 @@ use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
 
-use crate::core::db::DbPool;
-use crate::core::config::AppEnv;
+use crate::core::auth::api_key::AuthenticatedApiKey;
+use crate::core::auth::tenant_actor::AuthenticatedActor;
 use crate::modules::subjects::dto::{
     AttributeBadgesResponse, BadgesResponse, CreateSubjectRequest, SubjectResponse,
 };
@@ -21,13 +21,13 @@ pub struct SubjectsState {
 
 /// POST /v1/subjects
 pub async fn create(
-    Path((tenant_id, api_key_id)): Path<(String, String)>,
+    tenant: AuthenticatedApiKey,
     State(state): State<Arc<SubjectsState>>,
     Json(req): Json<CreateSubjectRequest>,
 ) -> Result<Json<SubjectResponse>, (StatusCode, Json<serde_json::Value>)> {
     let subject = state
         .service
-        .create(&tenant_id, &api_key_id, &req)
+        .create(&tenant.tenant_id, &tenant.id, &req)
         .await
         .map_err(internal_error)?;
     Ok(Json(subject))
@@ -35,12 +35,13 @@ pub async fn create(
 
 /// GET /v1/subjects/:id
 pub async fn get_by_id(
-    Path((tenant_id, api_key_id, subject_id)): Path<(String, String, String)>,
+    tenant: AuthenticatedApiKey,
+    Path(subject_id): Path<String>,
     State(state): State<Arc<SubjectsState>>,
 ) -> Result<Json<SubjectResponse>, (StatusCode, Json<serde_json::Value>)> {
     let subject = state
         .service
-        .get_by_id(&tenant_id, &api_key_id, &subject_id)
+        .get_by_id(&tenant.tenant_id, &tenant.id, &subject_id)
         .await
         .map_err(not_found_or_error)?;
     Ok(Json(subject))
@@ -48,12 +49,13 @@ pub async fn get_by_id(
 
 /// GET /v1/subjects/:id/badges
 pub async fn get_badges(
-    Path((tenant_id, actor_type, actor_id, subject_id)): Path<(String, String, String, String)>,
+    actor: AuthenticatedActor,
+    Path(subject_id): Path<String>,
     State(state): State<Arc<SubjectsState>>,
 ) -> Result<Json<BadgesResponse>, (StatusCode, Json<serde_json::Value>)> {
     let badges = state
         .service
-        .get_badges(&tenant_id, &actor_type, &actor_id, &subject_id)
+        .get_badges(&actor.tenant_id, actor.actor_type, &actor.actor_id, &subject_id)
         .await
         .map_err(not_found_or_error)?;
     Ok(Json(badges))
@@ -61,12 +63,13 @@ pub async fn get_badges(
 
 /// GET /v1/subjects/:id/attribute-badges
 pub async fn get_attribute_badges(
-    Path((tenant_id, actor_type, actor_id, subject_id)): Path<(String, String, String, String)>,
+    actor: AuthenticatedActor,
+    Path(subject_id): Path<String>,
     State(state): State<Arc<SubjectsState>>,
 ) -> Result<Json<AttributeBadgesResponse>, (StatusCode, Json<serde_json::Value>)> {
     let badges = state
         .service
-        .get_attribute_badges(&tenant_id, &actor_type, &actor_id, &subject_id)
+        .get_attribute_badges(&actor.tenant_id, actor.actor_type, &actor.actor_id, &subject_id)
         .await
         .map_err(not_found_or_error)?;
     Ok(Json(badges))

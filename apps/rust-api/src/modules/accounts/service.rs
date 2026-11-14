@@ -2,9 +2,8 @@
 //!
 //! Mirrors `apps/api/src/modules/accounts/accounts.service.ts`.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use chrono::Utc;
-use deadpool_postgres::Object;
 use nid_shared_types::{generate_session_token, sha256_hex};
 use rand::Rng;
 use sqlx::{FromRow, Row};
@@ -55,10 +54,10 @@ impl AccountsService {
 
     /// Start an OTP challenge for the given phone number.
     pub async fn start_otp(&self, phone: &str) -> Result<()> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
 
         // Check cooldown — only while a code is still outstanding
-        let outstanding: Option<(i64,)> = sqlx::query_as(
+        let outstanding: Option<(f64,)> = sqlx::query_as(
             r#"
             SELECT EXTRACT(EPOCH FROM (NOW() - created_at)) as elapsed
             FROM account_otp_code
@@ -77,10 +76,12 @@ impl AccountsService {
             }
         }
 
-        // Generate OTP code
-        let mut rng = rand::thread_rng();
-        let code = rng.gen_range(0..10u32).to_string()
-            .pad_start(OTP_CODE_LENGTH, '0');
+        // Generate OTP code — rand::thread_rng() isn't Send, so it must not
+        // be held across an .await (axum requires handler futures be Send).
+        let code = {
+            let mut rng = rand::thread_rng();
+            format!("{:0width$}", rng.gen_range(0..10u32.pow(OTP_CODE_LENGTH as u32)), width = OTP_CODE_LENGTH)
+        };
         let code_hash = sha256_hex(&code);
         let expires_at = Utc::now() + chrono::Duration::minutes(OTP_TTL_MINUTES);
 
@@ -108,7 +109,7 @@ impl AccountsService {
 
     /// Verify an OTP code, creating the account if needed and returning a session.
     pub async fn verify_otp(&self, phone: &str, code: &str) -> Result<VerifyOtpResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
 
         // Find the live challenge
         let challenge: Option<(String, String, i32)> = sqlx::query_as(
@@ -192,7 +193,7 @@ impl AccountsService {
 
     /// Resolve a session token to an account.
     pub async fn resolve_session(&self, token: &str) -> Result<AccountRow> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
         let token_hash = sha256_hex(token);
 
         let account: AccountRow = sqlx::query_as(
@@ -213,7 +214,7 @@ impl AccountsService {
 
     /// Revoke a single session by token hash.
     pub async fn revoke_session(&self, token_hash: &str) -> Result<()> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
         sqlx::query("DELETE FROM account_session WHERE token_hash = $1")
             .bind(token_hash)
             .execute(&mut *conn)
@@ -223,7 +224,7 @@ impl AccountsService {
 
     /// Revoke all sessions for an account.
     pub async fn revoke_all_sessions(&self, account_id: &str) -> Result<()> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
         sqlx::query("DELETE FROM account_session WHERE account_id = $1")
             .bind(account_id)
             .execute(&mut *conn)
@@ -233,7 +234,7 @@ impl AccountsService {
 
     /// Get the current account by ID.
     pub async fn get_account(&self, account_id: &str) -> Result<AccountRow> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
         let account: AccountRow = sqlx::query_as(
             "SELECT id, phone, email, phone_verified_at, email_verified_at FROM account WHERE id = $1",
         )
@@ -274,9 +275,10 @@ impl AccountsService {
         }
 
         // Generate email verification code
-        let mut rng = rand::thread_rng();
-        let code = rng.gen_range(0..10u32).to_string()
-            .pad_start(OTP_CODE_LENGTH, '0');
+        let code = {
+            let mut rng = rand::thread_rng();
+            format!("{:0width$}", rng.gen_range(0..10u32.pow(OTP_CODE_LENGTH as u32)), width = OTP_CODE_LENGTH)
+        };
         let code_hash = sha256_hex(&code);
         let expires_at = Utc::now() + chrono::Duration::minutes(OTP_TTL_MINUTES);
 

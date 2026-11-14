@@ -4,7 +4,7 @@
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use rand::Rng;
+use rand::RngCore;
 
 use crate::crypto::sha256_hex;
 
@@ -24,7 +24,7 @@ const TOKEN_BYTE_LENGTH: usize = 24;
 pub fn generate_session_token() -> GeneratedSessionToken {
     let mut rng = rand::thread_rng();
     let mut bytes = vec![0u8; TOKEN_BYTE_LENGTH];
-    rng.fill(&mut bytes);
+    rng.fill_bytes(&mut bytes);
     let plaintext = URL_SAFE_NO_PAD.encode(&bytes);
     let hash = sha256_hex(&plaintext);
     GeneratedSessionToken { plaintext, hash }
@@ -37,7 +37,7 @@ const CHECKOUT_TOKEN_BYTE_LENGTH: usize = 32;
 pub fn generate_checkout_token() -> GeneratedSessionToken {
     let mut rng = rand::thread_rng();
     let mut bytes = vec![0u8; CHECKOUT_TOKEN_BYTE_LENGTH];
-    rng.fill(&mut bytes);
+    rng.fill_bytes(&mut bytes);
     let plaintext = URL_SAFE_NO_PAD.encode(&bytes);
     let hash = sha256_hex(&plaintext);
     GeneratedSessionToken { plaintext, hash }

@@ -123,13 +123,13 @@ impl OrganizationProfilesService {
         &self,
         account_id: &str,
         organization_id: &str,
-        conn: &mut deadpool_postgres::Object,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<()> {
         let org: OrgRow = sqlx::query_as(
             "SELECT id, is_verified FROM organization WHERE id = $1",
         )
         .bind(organization_id)
-        .fetch_one(&mut **conn)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|_| anyhow!("Organization not found"))?;
 
@@ -143,7 +143,7 @@ impl OrganizationProfilesService {
         )
         .bind(organization_id)
         .bind(account_id)
-        .fetch_one(&mut **conn)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|_| anyhow!("You are not authorized to manage this organization's profile"))?;
 
@@ -161,8 +161,8 @@ impl OrganizationProfilesService {
         organization_id: &str,
         req: &CreateOrgProfileRequest,
     ) -> Result<OrgProfileResponse> {
-        let conn = self.db.get().await?;
-        self.require_active_admin(account_id, organization_id, &conn).await?;
+        let mut conn = self.db.get().await?;
+        self.require_active_admin(account_id, organization_id, &mut *conn).await?;
 
         let now = Utc::now();
         let row: OrgProfileRow = sqlx::query_as(
@@ -215,8 +215,8 @@ impl OrganizationProfilesService {
         account_id: &str,
         organization_id: &str,
     ) -> Result<OrgProfileResponse> {
-        let conn = self.db.get().await?;
-        self.require_active_admin(account_id, organization_id, &conn).await?;
+        let mut conn = self.db.get().await?;
+        self.require_active_admin(account_id, organization_id, &mut *conn).await?;
 
         let row: OrgProfileRow = sqlx::query_as(
             "SELECT * FROM profile WHERE organization_id = $1",
@@ -236,129 +236,84 @@ impl OrganizationProfilesService {
         organization_id: &str,
         req: &UpdateOrgProfileRequest,
     ) -> Result<OrgProfileResponse> {
-        let conn = self.db.get().await?;
-        self.require_active_admin(account_id, organization_id, &conn).await?;
+        let mut conn = self.db.get().await?;
+        self.require_active_admin(account_id, organization_id, &mut *conn).await?;
 
-        let mut sets = Vec::new();
-        let mut params: Vec<Box<dyn sqlx::types::Type<sqlx::Postgres> + sqlx::Encode<'_, sqlx::Postgres>>> = Vec::new();
-        let idx = 2; // $1 is organization_id
+        // Build dynamic SET clause + binds together via QueryBuilder — a
+        // Vec<Box<dyn sqlx::Type<_>>> can't work here (Type isn't dyn
+        // compatible), and even if it compiled, binding each value
+        // separately from the SQL text they belong to is exactly how you
+        // silently update nothing.
+        let has_update = req.display_name.is_some()
+            || req.headline.is_some()
+            || req.category.is_some()
+            || req.bio.is_some()
+            || req.phone.is_some()
+            || req.whatsapp.is_some()
+            || req.public_email.is_some()
+            || req.address_line1.is_some()
+            || req.address_line2.is_some()
+            || req.city.is_some()
+            || req.region.is_some()
+            || req.country_code.is_some()
+            || req.latitude.is_some()
+            || req.longitude.is_some()
+            || req.timezone.is_some()
+            || req.show_phone.is_some()
+            || req.show_whatsapp.is_some()
+            || req.show_email.is_some()
+            || req.show_address.is_some()
+            || req.show_badges.is_some()
+            || req.show_booking.is_some()
+            || req.show_offers.is_some()
+            || req.show_hours.is_some()
+            || req.is_published.is_some();
 
-        // Build dynamic SET clause
-        let mut set_parts = Vec::new();
-        if let Some(ref v) = req.display_name {
-            set_parts.push(format!("display_name = ${}", idx));
-            params.push(Box::new(v.clone()));
-        }
-        if let Some(ref v) = req.headline {
-            set_parts.push(format!("headline = ${}", idx + params.len()));
-            params.push(Box::new(v.clone()));
-        }
-        if let Some(ref v) = req.category {
-            set_parts.push(format!("category = ${}", idx + params.len()));
-            params.push(Box::new(v.clone()));
-        }
-        if let Some(ref v) = req.bio {
-            set_parts.push(format!("bio = ${}", idx + params.len()));
-            params.push(Box::new(v.clone()));
-        }
-        if let Some(ref v) = req.phone {
-            set_parts.push(format!("phone = ${}", idx + params.len()));
-            params.push(Box::new(v.clone()));
-        }
-        if let Some(ref v) = req.whatsapp {
-            set_parts.push(format!("whatsapp = ${}", idx + params.len()));
-            params.push(Box::new(v.clone()));
-        }
-        if let Some(ref v) = req.public_email {
-            set_parts.push(format!("public_email = ${}", idx + params.len()));
-            params.push(Box::new(v.clone()));
-        }
-        if let Some(ref v) = req.address_line1 {
-            set_parts.push(format!("address_line1 = ${}", idx + params.len()));
-            params.push(Box::new(v.clone()));
-        }
-        if let Some(ref v) = req.address_line2 {
-            set_parts.push(format!("address_line2 = ${}", idx + params.len()));
-            params.push(Box::new(v.clone()));
-        }
-        if let Some(ref v) = req.city {
-            set_parts.push(format!("city = ${}", idx + params.len()));
-            params.push(Box::new(v.clone()));
-        }
-        if let Some(ref v) = req.region {
-            set_parts.push(format!("region = ${}", idx + params.len()));
-            params.push(Box::new(v.clone()));
-        }
-        if let Some(ref v) = req.country_code {
-            set_parts.push(format!("country_code = ${}", idx + params.len()));
-            params.push(Box::new(v.clone()));
-        }
-        if let Some(v) = req.latitude {
-            set_parts.push(format!("latitude = ${}", idx + params.len()));
-            params.push(Box::new(v));
-        }
-        if let Some(v) = req.longitude {
-            set_parts.push(format!("longitude = ${}", idx + params.len()));
-            params.push(Box::new(v));
-        }
-        if let Some(ref v) = req.timezone {
-            set_parts.push(format!("timezone = ${}", idx + params.len()));
-            params.push(Box::new(v.clone()));
-        }
-        if let Some(v) = req.show_phone {
-            set_parts.push(format!("show_phone = ${}", idx + params.len()));
-            params.push(Box::new(v));
-        }
-        if let Some(v) = req.show_whatsapp {
-            set_parts.push(format!("show_whatsapp = ${}", idx + params.len()));
-            params.push(Box::new(v));
-        }
-        if let Some(v) = req.show_email {
-            set_parts.push(format!("show_email = ${}", idx + params.len()));
-            params.push(Box::new(v));
-        }
-        if let Some(v) = req.show_address {
-            set_parts.push(format!("show_address = ${}", idx + params.len()));
-            params.push(Box::new(v));
-        }
-        if let Some(v) = req.show_badges {
-            set_parts.push(format!("show_badges = ${}", idx + params.len()));
-            params.push(Box::new(v));
-        }
-        if let Some(v) = req.show_booking {
-            set_parts.push(format!("show_booking = ${}", idx + params.len()));
-            params.push(Box::new(v));
-        }
-        if let Some(v) = req.show_offers {
-            set_parts.push(format!("show_offers = ${}", idx + params.len()));
-            params.push(Box::new(v));
-        }
-        if let Some(v) = req.show_hours {
-            set_parts.push(format!("show_hours = ${}", idx + params.len()));
-            params.push(Box::new(v));
-        }
-        if let Some(v) = req.is_published {
-            set_parts.push(format!("is_published = ${}", idx + params.len()));
-            params.push(Box::new(v));
-        }
-
-        if set_parts.is_empty() {
+        if !has_update {
             return self.get_for_organization(account_id, organization_id).await;
         }
 
-        set_parts.push(format!("updated_at = ${}", idx + params.len()));
-        params.push(Box::new(Utc::now()));
+        let mut qb = sqlx::QueryBuilder::<sqlx::Postgres>::new("UPDATE profile SET ");
+        let mut sep = qb.separated(", ");
+        macro_rules! set_field {
+            ($col:literal, $val:expr) => {
+                sep.push(concat!($col, " = "));
+                sep.push_bind_unseparated($val);
+            };
+        }
+        if let Some(ref v) = req.display_name { set_field!("display_name", v.clone()); }
+        if let Some(ref v) = req.headline { set_field!("headline", v.clone()); }
+        if let Some(ref v) = req.category { set_field!("category", v.clone()); }
+        if let Some(ref v) = req.bio { set_field!("bio", v.clone()); }
+        if let Some(ref v) = req.phone { set_field!("phone", v.clone()); }
+        if let Some(ref v) = req.whatsapp { set_field!("whatsapp", v.clone()); }
+        if let Some(ref v) = req.public_email { set_field!("public_email", v.clone()); }
+        if let Some(ref v) = req.address_line1 { set_field!("address_line1", v.clone()); }
+        if let Some(ref v) = req.address_line2 { set_field!("address_line2", v.clone()); }
+        if let Some(ref v) = req.city { set_field!("city", v.clone()); }
+        if let Some(ref v) = req.region { set_field!("region", v.clone()); }
+        if let Some(ref v) = req.country_code { set_field!("country_code", v.clone()); }
+        if let Some(v) = req.latitude { set_field!("latitude", v); }
+        if let Some(v) = req.longitude { set_field!("longitude", v); }
+        if let Some(ref v) = req.timezone { set_field!("timezone", v.clone()); }
+        if let Some(v) = req.show_phone { set_field!("show_phone", v); }
+        if let Some(v) = req.show_whatsapp { set_field!("show_whatsapp", v); }
+        if let Some(v) = req.show_email { set_field!("show_email", v); }
+        if let Some(v) = req.show_address { set_field!("show_address", v); }
+        if let Some(v) = req.show_badges { set_field!("show_badges", v); }
+        if let Some(v) = req.show_booking { set_field!("show_booking", v); }
+        if let Some(v) = req.show_offers { set_field!("show_offers", v); }
+        if let Some(v) = req.show_hours { set_field!("show_hours", v); }
+        if let Some(v) = req.is_published { set_field!("is_published", v); }
+        sep.push("updated_at = ");
+        sep.push_bind_unseparated(Utc::now());
 
-        let set_clause = set_parts.join(", ");
-        let query = format!(
-            "UPDATE profile SET {} WHERE organization_id = $1 RETURNING *",
-            set_clause
-        );
+        qb.push(" WHERE organization_id = ");
+        qb.push_bind(organization_id.to_string());
+        qb.push(" RETURNING *");
 
-        // Use a simpler approach with explicit query
-        let row: OrgProfileRow = sqlx::query_as(&query)
-            .bind(organization_id)
-            .persistent()
+        let row: OrgProfileRow = qb
+            .build_query_as()
             .fetch_one(&mut *conn)
             .await
             .map_err(|_| anyhow!("Organization profile not found"))?;
@@ -373,8 +328,8 @@ impl OrganizationProfilesService {
         organization_id: &str,
         req: &CreateOrgGrantRequest,
     ) -> Result<OrgProfileFieldGrantResponse> {
-        let conn = self.db.get().await?;
-        self.require_active_admin(account_id, organization_id, &conn).await?;
+        let mut conn = self.db.get().await?;
+        self.require_active_admin(account_id, organization_id, &mut *conn).await?;
 
         let profile: (String,) = sqlx::query_as(
             "SELECT id FROM profile WHERE organization_id = $1",
@@ -420,8 +375,8 @@ impl OrganizationProfilesService {
         account_id: &str,
         organization_id: &str,
     ) -> Result<Vec<OrgProfileFieldGrantResponse>> {
-        let conn = self.db.get().await?;
-        self.require_active_admin(account_id, organization_id, &conn).await?;
+        let mut conn = self.db.get().await?;
+        self.require_active_admin(account_id, organization_id, &mut *conn).await?;
 
         let profile: (String,) = sqlx::query_as(
             "SELECT id FROM profile WHERE organization_id = $1",
@@ -448,8 +403,8 @@ impl OrganizationProfilesService {
         organization_id: &str,
         grant_id: &str,
     ) -> Result<OrgProfileFieldGrantResponse> {
-        let conn = self.db.get().await?;
-        self.require_active_admin(account_id, organization_id, &conn).await?;
+        let mut conn = self.db.get().await?;
+        self.require_active_admin(account_id, organization_id, &mut *conn).await?;
 
         let now = Utc::now();
         let grant: GrantRow = sqlx::query_as(

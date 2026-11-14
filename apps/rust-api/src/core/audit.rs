@@ -5,8 +5,7 @@
 //! audit_log_entry table with actor information and metadata.
 
 use anyhow::{Context, Result};
-use chrono::Utc;
-use sqlx::PgPool;
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::core::db::DbPool;
@@ -54,10 +53,10 @@ impl AuditService {
     /// This is the main entry point for recording actions. It inserts a row
     /// into the audit_log_entry table with the current timestamp and a new UUID.
     pub async fn record(&self, entry: &AuditEntry) -> Result<Uuid> {
-        let mut conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
         // Set tenant context for RLS
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&entry.tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -95,6 +94,7 @@ impl AuditService {
             "Audit log entry recorded"
         );
 
+        conn.commit().await?;
         Ok(row_id)
     }
 
@@ -122,9 +122,9 @@ impl AuditService {
         tenant_id: &str,
         limit: usize,
     ) -> Result<Vec<serde_json::Value>> {
-        let mut conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -151,12 +151,13 @@ impl AuditService {
                     "actor_type": row.get::<String, _>("actor_type"),
                     "actor_id": row.get::<String, _>("actor_id"),
                     "action": row.get::<String, _>("action"),
-                    "metadata": row.get::<Option<String>, _>("metadata").and_then(|s| serde_json::from_str(&s).ok()),
+                    "metadata": row.get::<Option<String>, _>("metadata").and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
                     "created_at": row.get::<chrono::DateTime<chrono::Utc>, _>("created_at").to_rfc3339(),
                 })
             })
             .collect();
 
+        conn.commit().await?;
         Ok(entries)
     }
 }

@@ -1,13 +1,15 @@
 packages:
   - "apps/*"
   - "packages/*"
-allowBuilds:
-  '@prisma/client': true
-  '@prisma/engines': true
-  '@swc/core': true
-  '@tensorflow/tfjs-node': true
-  core-js: true
-  esbuild: true
-  prisma: true
-  protobufjs: true
-  tesseract.js: true
+onlyBuiltDependencies:
+  - '@prisma/client'
+  - '@prisma/engines'
+  - '@swc/core'
+  - '@tensorflow/tfjs-node'
+  - core-js
+  - esbuild
+  - prisma
+  - protobufjs
+  - tesseract.js
+minimumReleaseAgeExclude:
+  - '@nadeemmurtaza/design-system@0.1.0'

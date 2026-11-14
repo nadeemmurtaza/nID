@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InviteStaffRequest {
     pub account_id: String,
     #[serde(default = "default_role")]
@@ -14,6 +15,7 @@ fn default_role() -> String {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StaffMemberResponse {
     pub id: String,
     pub tenant_id: String,

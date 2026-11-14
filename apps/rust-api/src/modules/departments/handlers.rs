@@ -1,12 +1,14 @@
 //! HTTP handlers for departments endpoints.
+//!
+//! Mirrors `apps/api/src/modules/department/department.controller.ts`.
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
 
+use crate::core::auth::session::AccountSession;
 use crate::core::config::AppEnv;
-use crate::core::db::DbPool;
 use crate::modules::departments::dto::{
     AssignDepartmentRequest, CreateDepartmentRequest, DepartmentAssignmentResponse,
     DepartmentResponse, MessageResponse, UpdateDepartmentRequest,
@@ -19,6 +21,7 @@ pub struct DepartmentsState {
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DepartmentsQuery {
     #[serde(default)]
     pub tenant_id: String,
@@ -26,11 +29,12 @@ pub struct DepartmentsQuery {
 
 /// POST /v1/departments
 pub async fn create(
+    account: AccountSession,
     Query(query): Query<DepartmentsQuery>,
     State(state): State<Arc<DepartmentsState>>,
     Json(req): Json<CreateDepartmentRequest>,
 ) -> Result<Json<DepartmentResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let dept = state.service.create_department(&query.tenant_id, &req)
+    let dept = state.service.create_department(&account.id, &query.tenant_id, &req)
         .await
         .map_err(internal_error)?;
     Ok(Json(dept))
@@ -38,10 +42,11 @@ pub async fn create(
 
 /// GET /v1/departments
 pub async fn list(
+    account: AccountSession,
     Query(query): Query<DepartmentsQuery>,
     State(state): State<Arc<DepartmentsState>>,
 ) -> Result<Json<Vec<DepartmentResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let depts = state.service.list_departments(&query.tenant_id)
+    let depts = state.service.list_departments(&account.id, &query.tenant_id)
         .await
         .map_err(internal_error)?;
     Ok(Json(depts))
@@ -49,11 +54,12 @@ pub async fn list(
 
 /// GET /v1/departments/:id
 pub async fn get(
+    account: AccountSession,
     Path(id): Path<String>,
     Query(query): Query<DepartmentsQuery>,
     State(state): State<Arc<DepartmentsState>>,
 ) -> Result<Json<DepartmentResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let dept = state.service.get_department(&query.tenant_id, &id)
+    let dept = state.service.get_department(&account.id, &query.tenant_id, &id)
         .await
         .map_err(not_found)?;
     Ok(Json(dept))
@@ -61,12 +67,13 @@ pub async fn get(
 
 /// PATCH /v1/departments/:id
 pub async fn update(
+    account: AccountSession,
     Path(id): Path<String>,
     Query(query): Query<DepartmentsQuery>,
     State(state): State<Arc<DepartmentsState>>,
     Json(req): Json<UpdateDepartmentRequest>,
 ) -> Result<Json<DepartmentResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let dept = state.service.update_department(&query.tenant_id, &id, &req)
+    let dept = state.service.update_department(&account.id, &query.tenant_id, &id, &req)
         .await
         .map_err(not_found)?;
     Ok(Json(dept))
@@ -74,12 +81,13 @@ pub async fn update(
 
 /// POST /v1/departments/:id/assign
 pub async fn assign(
+    account: AccountSession,
     Path(id): Path<String>,
     Query(query): Query<DepartmentsQuery>,
     State(state): State<Arc<DepartmentsState>>,
     Json(req): Json<AssignDepartmentRequest>,
 ) -> Result<Json<DepartmentAssignmentResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let assignment = state.service.assign_department(&query.tenant_id, &id, &req)
+    let assignment = state.service.assign_department(&account.id, &query.tenant_id, &id, &req)
         .await
         .map_err(internal_error)?;
     Ok(Json(assignment))
@@ -87,11 +95,12 @@ pub async fn assign(
 
 /// DELETE /v1/departments/:id/assign/:accountId
 pub async fn remove_assignment(
-    Path((id, account_id)): Path<(String, String)>,
+    account: AccountSession,
+    Path((id, target_account_id)): Path<(String, String)>,
     Query(query): Query<DepartmentsQuery>,
     State(state): State<Arc<DepartmentsState>>,
 ) -> Result<Json<MessageResponse>, (StatusCode, Json<serde_json::Value>)> {
-    state.service.remove_department_assignment(&query.tenant_id, &id, &account_id)
+    state.service.remove_department_assignment(&account.id, &query.tenant_id, &id, &target_account_id)
         .await
         .map_err(not_found)?;
     Ok(Json(MessageResponse {
@@ -101,19 +110,28 @@ pub async fn remove_assignment(
 
 /// GET /v1/departments/account/:accountId
 pub async fn get_account_departments(
-    Path(account_id): Path<String>,
+    account: AccountSession,
+    Path(target_account_id): Path<String>,
     Query(query): Query<DepartmentsQuery>,
     State(state): State<Arc<DepartmentsState>>,
 ) -> Result<Json<Vec<DepartmentAssignmentResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let depts = state.service.get_account_departments(&query.tenant_id, &account_id)
+    let depts = state.service.get_account_departments(&account.id, &query.tenant_id, &target_account_id)
         .await
         .map_err(internal_error)?;
     Ok(Json(depts))
 }
 
 fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
-    tracing::error!(error = %err, "Internal error");
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "message": err.to_string() })))
+    let msg = err.to_string();
+    let status = if msg.contains("already") {
+        StatusCode::CONFLICT
+    } else if msg.contains("Only tenant owners") || msg.contains("do not have access") {
+        StatusCode::FORBIDDEN
+    } else {
+        tracing::error!(error = %err, "Internal error");
+        StatusCode::INTERNAL_SERVER_ERROR
+    };
+    (status, Json(serde_json::json!({ "message": msg })))
 }
 
 fn not_found(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {

@@ -26,7 +26,13 @@ export interface AppEnv {
   documentOcrDevMode: boolean;
   /** liveness provider (dev): mock a liveness result instead of calling a real vendor. */
   livenessDevMode: boolean;
+  /**
+   * Shared secret for platform-admin operations (tenant creation, tenant
+   * management). Must be a random 32+ character string. Used by
+   * PlatformAdminGuard to protect POST /v1/tenants and related endpoints.
+   */
   platformAdminSecret: string;
+  /** Account email verification (dev): log the code instead of calling a real email vendor. */
   accountEmailDevMode: boolean;
 }
 
