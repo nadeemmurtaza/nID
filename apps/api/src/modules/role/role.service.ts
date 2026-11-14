@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../core/db/prisma.service';
 import type { Account } from '@nid/db';
+import { Prisma } from '@nid/db';
 
 export interface CreateRoleDto {
   name: string;
@@ -36,7 +37,7 @@ export interface RoleInfo {
   slug: string;
   description: string | null;
   permissions: string[];
-  isBuiltIn: boolean;
+  isSystem: boolean;
   createdAt: Date;
   updatedAt: Date;
   assignmentCount: number;
@@ -72,8 +73,8 @@ export class RoleService {
         name: dto.name,
         slug,
         description: dto.description ?? null,
-        permissions: dto.permissions,
-        isBuiltIn: false,
+        permissions: dto.permissions as any,
+        isSystem: false,
       },
     });
 
@@ -89,7 +90,7 @@ export class RoleService {
 
     const roles = await this.prisma.unscoped.roleDefinition.findMany({
       where: { tenantId },
-      orderBy: { isBuiltIn: 'asc', name: 'asc' },
+      orderBy: { isSystem: 'asc', name: 'asc' },
     });
 
     const results = await Promise.all(
@@ -148,7 +149,7 @@ export class RoleService {
       throw new NotFoundException('Role not found.');
     }
 
-    if (role.isBuiltIn) {
+    if (role.isSystem) {
       throw new BadRequestException('Built-in roles cannot be modified.');
     }
 
@@ -168,7 +169,7 @@ export class RoleService {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.slug !== undefined && { slug: newSlug }),
         ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.permissions !== undefined && { permissions: dto.permissions }),
+        ...(dto.permissions !== undefined && { permissions: dto.permissions as any }),
       },
     });
 
@@ -199,7 +200,7 @@ export class RoleService {
       throw new NotFoundException('Role not found.');
     }
 
-    if (role.isBuiltIn) {
+    if (role.isSystem) {
       throw new BadRequestException('Built-in roles cannot be deleted.');
     }
 
@@ -252,10 +253,10 @@ export class RoleService {
           accountId: dto.accountId,
           roleDefinitionId: roleId,
           scope,
-          organizationId: dto.organizationId ?? null,
-          brandId: dto.brandId ?? null,
+          organizationId: dto.organizationId ?? undefined,
+          brandId: dto.brandId ?? undefined,
         },
-      },
+      } as any,
     });
 
     if (existing) {
@@ -318,18 +319,18 @@ export class RoleService {
     const assignments = await this.prisma.unscoped.roleAssignment.findMany({
       where: { accountId, tenantId },
       include: {
-        roleDefinition: {
-          select: { id: true, name: true, slug: true, permissions: true, isBuiltIn: true },
+        role: {
+          select: { id: true, name: true, slug: true, permissions: true, isSystem: true },
         },
       },
     });
 
     return assignments.map((a) => ({
       roleId: a.roleDefinitionId,
-      roleName: a.roleDefinition.name,
-      roleSlug: a.roleDefinition.slug,
-      permissions: a.roleDefinition.permissions as string[],
-      isBuiltIn: a.roleDefinition.isBuiltIn,
+      roleName: a.role.name,
+      roleSlug: a.role.slug,
+      permissions: a.role.permissions as any,
+      isSystem: a.role.isSystem,
       scope: a.scope,
       organizationId: a.organizationId,
       brandId: a.brandId,
@@ -415,8 +416,8 @@ export class RoleService {
           name: role.name,
           slug: role.slug,
           description: role.description,
-          permissions: role.permissions,
-          isBuiltIn: true,
+          permissions: role.permissions as any,
+          isSystem: true,
         },
       });
     }
@@ -465,8 +466,8 @@ export class RoleService {
       name: role.name,
       slug: role.slug,
       description: role.description,
-      permissions: role.permissions as string[],
-      isBuiltIn: role.isBuiltIn,
+      permissions: role.permissions as any,
+      isSystem: role.isSystem,
       createdAt: role.createdAt,
       updatedAt: role.updatedAt,
       assignmentCount,
@@ -499,7 +500,7 @@ export class RoleService {
       data: {
         tenantId,
         eventType,
-        payload: payloadObj,
+        payload: payloadObj as any,
         targetUrl: tenant.webhookUrl,
         status: 'PENDING',
         attempts: 0,

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../core/db/prisma.service';
 import type { Account } from '@nid/db';
+import { Prisma } from '@nid/db';
 
 export interface CreateDepartmentDto {
   name: string;
@@ -76,7 +77,7 @@ export class DepartmentService {
         tenantId,
         name: dto.name,
         slug,
-        defaultPermissions: dto.defaultPermissions ?? null,
+        ...(dto.defaultPermissions !== undefined && { defaultPermissions: dto.defaultPermissions as any }),
         icon: dto.icon ?? null,
         color: dto.color ?? null,
         inheritedFromTenant: true,
@@ -174,7 +175,7 @@ export class DepartmentService {
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.slug !== undefined && { slug: newSlug }),
-        ...(dto.defaultPermissions !== undefined && { defaultPermissions: dto.defaultPermissions }),
+        ...(dto.defaultPermissions !== undefined && { defaultPermissions: dto.defaultPermissions as any }),
         ...(dto.icon !== undefined && { icon: dto.icon }),
         ...(dto.color !== undefined && { color: dto.color }),
       },
@@ -227,10 +228,10 @@ export class DepartmentService {
           accountId: dto.accountId,
           departmentId,
           scope,
-          organizationId: dto.organizationId ?? null,
-          brandId: dto.brandId ?? null,
+          organizationId: dto.organizationId ?? undefined,
+          brandId: dto.brandId ?? undefined,
         },
-      },
+      } as any,
     });
 
     if (existing) {
@@ -389,7 +390,7 @@ export class DepartmentService {
       data: {
         tenantId,
         eventType,
-        payload: payloadObj,
+        payload: payloadObj as any,
         targetUrl: tenant.webhookUrl,
         status: 'PENDING',
         attempts: 0,

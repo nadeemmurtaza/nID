@@ -4,7 +4,7 @@
  * as the rest of the platform.  Fin Orange accent, warm cream canvas,
  * sharp 4 px geometry, solid white cards with warm borders.
  */
-import type { BrandTheme } from '@nadeemmurtaza/design-system';
+import type { BrandTheme } from '../lib/brand-theme';
 
 export const THEME: BrandTheme = {
   colors: {

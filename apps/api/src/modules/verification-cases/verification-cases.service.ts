@@ -120,7 +120,7 @@ export class VerificationCasesService {
       });
 
       await this.audit.record(tx, tenantId, {
-        actorType: actor.type,
+        actorType: actor.type === 'ACCOUNT' ? 'SYSTEM' : actor.type,
         actorId: actor.id,
         action: 'verification_case.create',
         subjectId: subject.id,

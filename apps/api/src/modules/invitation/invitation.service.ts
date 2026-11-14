@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../core/db/prisma.service';
 import type { Account } from '@nid/db';
+import { Prisma } from '@nid/db';
 
 export interface SendEmailInviteDto {
   email: string;
@@ -390,7 +391,7 @@ export class InvitationService {
       data: {
         tenantId,
         eventType,
-        payload: payloadObj,
+        payload: payloadObj as any,
         targetUrl: tenant.webhookUrl,
         status: 'PENDING',
         attempts: 0,

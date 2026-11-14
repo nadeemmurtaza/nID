@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../core/db/prisma.service';
 import { TenantsService } from '../tenants/tenants.service';
 import type { Account } from '@nid/db';
+import { Prisma } from '@nid/db';
 
 export interface CreateAccessGrantDto {
   accountId: string;
@@ -39,8 +40,7 @@ export interface AccessGrantInfo {
   partnershipPercentage: number | null;
   grantedBy: string;
   status: string;
-  createdAt: Date;
-  updatedAt: Date;
+  grantedAt: Date;
   accountPhone: string | null;
   accountEmail: string | null;
 }
@@ -91,10 +91,10 @@ export class AccessService {
         accountId_tenantId_organizationId_brandId: {
           accountId: dto.accountId,
           tenantId,
-          organizationId: dto.organizationId ?? null,
-          brandId: dto.brandId ?? null,
+          organizationId: dto.organizationId ?? undefined,
+          brandId: dto.brandId ?? undefined,
         },
-      },
+      } as any,
     });
 
     if (existing) {
@@ -127,7 +127,7 @@ export class AccessService {
 
       // If no organization specified, infer from brand
       if (!dto.organizationId && brand.organization) {
-        dto.organizationId = brand.organization.id;
+        dto.organizationId = brand.organizationId;
       }
     }
 
@@ -196,7 +196,7 @@ export class AccessService {
       }
     }
 
-    const where = {
+    const where: any = {
       tenantId,
       status: 'ACTIVE',
       ...(organizationId && { organizationId }),
@@ -210,7 +210,7 @@ export class AccessService {
           select: { phone: true, email: true },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { grantedAt: 'desc' },
     });
 
     return grants.map((g) => this.formatGrant(g));
@@ -451,7 +451,7 @@ export class AccessService {
           organizationId: null,
           brandId: null,
         },
-      },
+      } as any,
     });
 
     if (existing) {
@@ -552,7 +552,7 @@ export class AccessService {
         ...(brandId && { brandId }),
       },
       include: {
-        roleDefinition: {
+        role: {
           select: { name: true, slug: true, permissions: true },
         },
       },
@@ -581,17 +581,17 @@ export class AccessService {
     } else {
       // Collect from roles
       roleAssignments.forEach((ra) => {
-        const perms = ra.roleDefinition.permissions as string[];
+        const perms = ra.role.permissions as any;
         if (Array.isArray(perms)) {
-          perms.forEach((p) => permissions.add(p));
+          perms.forEach((p) => permissions.add(String(p)));
         }
       });
 
       // Collect from departments
       deptAssignments.forEach((da) => {
-        const perms = da.department.defaultPermissions as string[];
+        const perms = da.department.defaultPermissions as any;
         if (Array.isArray(perms)) {
-          perms.forEach((p) => permissions.add(p));
+          perms.forEach((p) => permissions.add(String(p)));
         }
       });
     }
@@ -600,7 +600,7 @@ export class AccessService {
       permissions: Array.from(permissions),
       accessType: effectiveGrant?.accessType ?? 'none',
       departments: deptAssignments.map((da) => da.department.slug),
-      roles: roleAssignments.map((ra) => ra.roleDefinition.slug),
+      roles: roleAssignments.map((ra) => ra.role.slug),
     };
   }
 
@@ -615,8 +615,7 @@ export class AccessService {
       partnershipPercentage: grant.partnershipPercentage,
       grantedBy: grant.grantedBy,
       status: grant.status,
-      createdAt: grant.createdAt,
-      updatedAt: grant.updatedAt,
+      grantedAt: grant.grantedAt,
       accountPhone: grant.account?.phone ?? null,
       accountEmail: grant.account?.email ?? null,
     };
@@ -650,7 +649,7 @@ export class AccessService {
       data: {
         tenantId,
         eventType,
-        payload: payloadObj,
+        payload: payloadObj as any,
         targetUrl: tenant.webhookUrl,
         status: 'PENDING',
         attempts: 0,
@@ -686,7 +685,7 @@ export class AccessService {
         if (response.ok) {
           await this.prisma.unscoped.outboundEvent.update({
             where: { id: outboundEventId },
-            data: { status: 'DELIVERED', deliveredAt: new Date(), attempts },
+            data: { status: 'DELIVERED', deliveredAt: new Date(), attempts: attempt },
           });
           return;
         }
@@ -695,7 +694,7 @@ export class AccessService {
         if (response.status >= 500) {
           await this.prisma.unscoped.outboundEvent.update({
             where: { id: outboundEventId },
-            data: { attempts, lastError: `HTTP ${response.status}` },
+            data: { attempts: attempt, lastError: `HTTP ${response.status}` },
           });
           await new Promise((r) => setTimeout(r, 2 ** attempt * 1000));
           continue;
@@ -704,13 +703,13 @@ export class AccessService {
         // Non-retryable error
         await this.prisma.unscoped.outboundEvent.update({
           where: { id: outboundEventId },
-          data: { status: 'FAILED', attempts, lastError: `HTTP ${response.status}` },
+          data: { status: 'FAILED', attempts: attempt, lastError: `HTTP ${response.status}` },
         });
         return;
       } catch (err: any) {
         await this.prisma.unscoped.outboundEvent.update({
           where: { id: outboundEventId },
-          data: { attempts, lastError: err.message },
+          data: { attempts: attempt, lastError: err.message },
         });
         await new Promise((r) => setTimeout(r, 2 ** attempt * 1000));
       }

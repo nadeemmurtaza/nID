@@ -7,6 +7,7 @@ import {
 import { randomBytes } from 'node:crypto';
 import { generateApiKey, hashApiKey } from '@nid/shared-types';
 import { PrismaService } from '../../core/db/prisma.service';
+import { Prisma } from '@nid/db';
 import { AuditService } from '../../core/audit/audit.service';
 import type { ActorType } from '../../core/auth/types';
 
@@ -197,7 +198,6 @@ export class TenantsService {
           select: {
             apiKeys: true,
             staff: true,
-            organizations: true,
             subjects: true,
             cases: true,
           },
@@ -232,7 +232,6 @@ export class TenantsService {
           select: {
             apiKeys: true,
             staff: true,
-            organizations: true,
             subjects: true,
             cases: true,
           },
@@ -286,7 +285,7 @@ export class TenantsService {
 
     if (actorId) {
       await this.audit.record(this.prisma.unscoped, id, {
-        actorType: 'PLATFORM_ADMIN',
+        actorType: 'SYSTEM',
         actorId,
         action: 'tenant.update',
         subjectId: id,
@@ -313,7 +312,7 @@ export class TenantsService {
       throw new NotFoundException(`Tenant ${tenantId} not found.`);
     }
 
-    const key = generateApiKey(dto.keyPrefix ?? `nid_live`);
+    const key = generateApiKey('live');
     await this.prisma.unscoped.tenantApiKey.create({
       data: {
         tenantId,
@@ -481,7 +480,7 @@ export class TenantsService {
       data: {
         tenantId,
         eventType,
-        payload: payloadObj,
+        payload: payloadObj as any,
         targetUrl: tenant.webhookUrl,
         status: 'PENDING',
         attempts: 0,
@@ -527,7 +526,7 @@ export class TenantsService {
             data: {
               status: 'DELIVERED',
               deliveredAt: new Date(),
-              attempts,
+              attempts: attempt,
             },
           });
           return;

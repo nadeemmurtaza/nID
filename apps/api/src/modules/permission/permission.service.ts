@@ -12,10 +12,10 @@ export interface PermissionEntry {
 
 export interface PermissionGroup {
   groupName: string;
-  services: PermissionService[];
+  services: PermissionServiceItem[];
 }
 
-export interface PermissionService {
+export interface PermissionServiceItem {
   serviceName: string;
   permissions: PermissionEntry[];
 }
@@ -48,9 +48,9 @@ export class PermissionService {
 
     const groups: PermissionGroup[] = [];
     for (const [groupName, services] of groupsMap) {
-      const serviceList: PermissionService[] = [];
+      const serviceList: PermissionServiceItem[] = [];
       for (const [serviceName, permissions] of services) {
-        serviceList.push({ serviceName, permissions });
+        serviceList.push({ serviceName, permissions } as PermissionServiceItem);
       }
       groups.push({ groupName, services: serviceList });
     }
@@ -62,15 +62,16 @@ export class PermissionService {
    * Get a flat list of all permissions.
    */
   async getAllPermissions(): Promise<PermissionEntry[]> {
-    return this.prisma.unscoped.permissionCatalog.findMany({
+    const entries = await this.prisma.unscoped.permissionCatalog.findMany({
       orderBy: [{ groupName: 'asc' }, { serviceName: 'asc' }, { permissionKey: 'asc' }],
-    }) as PermissionEntry[];
+    });
+    return entries as unknown as PermissionEntry[];
   }
 
   /**
    * Get permissions for a specific group.
    */
-  async getGroupPermissions(groupName: string): Promise<PermissionService[]> {
+  async getGroupPermissions(groupName: string): Promise<PermissionServiceItem[]> {
     const entries = await this.prisma.unscoped.permissionCatalog.findMany({
       where: { groupName },
       orderBy: [{ serviceName: 'asc' }, { permissionKey: 'asc' }],
@@ -84,9 +85,9 @@ export class PermissionService {
       servicesMap.get(entry.serviceName)!.push(entry as PermissionEntry);
     }
 
-    const services: PermissionService[] = [];
+    const services: PermissionServiceItem[] = [];
     for (const [serviceName, permissions] of servicesMap) {
-      services.push({ serviceName, permissions });
+      services.push({ serviceName, permissions } as PermissionServiceItem);
     }
 
     return services;

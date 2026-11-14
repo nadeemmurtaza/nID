@@ -16,5 +16,6 @@ import { TenantsService } from './tenants.service';
   imports: [AuthModule, AccountsModule, AuditModule],
   controllers: [TenantsController],
   providers: [TenantsService, PlatformAdminGuard],
+  exports: [TenantsService],
 })
 export class TenantsModule {}

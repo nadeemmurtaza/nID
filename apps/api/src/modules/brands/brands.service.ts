@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import type { Account, Brand, Organization } from '@nid/db';
+import { Prisma, PrismaClient } from '@nid/db';
 import { PrismaService } from '../../core/db/prisma.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 
@@ -118,42 +119,26 @@ export class BrandsService {
         slug,
         description: dto.description ?? null,
         bio: dto.bio ?? null,
-        logoKey: dto.logoKey ?? null,
-        primaryColor: dto.primaryColor ?? null,
-        secondaryColor: dto.secondaryColor ?? null,
         website: dto.website ?? null,
         email: dto.email ?? null,
         phone: dto.phone ?? null,
-        address: dto.address ?? null,
-        socialLinks: dto.socialLinks ?? null,
-        products: dto.products ?? null,
-        services: dto.services ?? null,
-        prices: dto.prices ?? null,
-        policies: dto.policies ?? null,
-        rules: dto.rules ?? null,
-        toneGuidelines: dto.toneGuidelines ?? null,
-        keywords: dto.keywords ?? null,
+        ...(dto.socialLinks !== undefined && { socialLinks: dto.socialLinks as any }),
+        ...(dto.products !== undefined && { products: dto.products as any }),
+        ...(dto.services !== undefined && { services: dto.services as any }),
+        ...(dto.prices !== undefined && { prices: dto.prices as any }),
+        ...(dto.policies !== undefined && { policies: dto.policies as any }),
+        ...(dto.rules !== undefined && { rules: dto.rules as any }),
+        ...(dto.toneGuidelines !== undefined && { toneGuidelines: dto.toneGuidelines as any }),
+        ...(dto.keywords !== undefined && { keywords: dto.keywords as any }),
       },
       include: {
-        organization: {
-          select: {
-            id: true,
-            legalName: true,
-            tenant: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-              },
-            },
-          },
-        },
+        organization: true,
       },
     });
 
     // Emit webhook event for brand creation (for Communicator sync)
     const webhookMessage = await this.emitWebhookEvent(
-      organization.tenantId,
+      brand.organization.tenantId,
       'brand.created',
       brand,
     );
@@ -182,20 +167,7 @@ export class BrandsService {
     const brand = await this.prisma.unscoped.brand.findUnique({
       where: { id: brandId },
       include: {
-        organization: {
-          select: {
-            id: true,
-            legalName: true,
-            tenantId: true,
-            tenant: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-              },
-            },
-          },
-        },
+        organization: true,
       },
     });
 
@@ -260,37 +232,21 @@ export class BrandsService {
         ...(dto.slug !== undefined && { slug: newSlug }),
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.bio !== undefined && { bio: dto.bio }),
-        ...(dto.logoKey !== undefined && { logoKey: dto.logoKey }),
-        ...(dto.primaryColor !== undefined && { primaryColor: dto.primaryColor }),
-        ...(dto.secondaryColor !== undefined && { secondaryColor: dto.secondaryColor }),
         ...(dto.website !== undefined && { website: dto.website }),
         ...(dto.email !== undefined && { email: dto.email }),
         ...(dto.phone !== undefined && { phone: dto.phone }),
-        ...(dto.address !== undefined && { address: dto.address }),
-        ...(dto.socialLinks !== undefined && { socialLinks: dto.socialLinks }),
-        ...(dto.products !== undefined && { products: dto.products }),
-        ...(dto.services !== undefined && { services: dto.services }),
-        ...(dto.prices !== undefined && { prices: dto.prices }),
-        ...(dto.policies !== undefined && { policies: dto.policies }),
-        ...(dto.rules !== undefined && { rules: dto.rules }),
-        ...(dto.toneGuidelines !== undefined && { toneGuidelines: dto.toneGuidelines }),
-        ...(dto.keywords !== undefined && { keywords: dto.keywords }),
+        ...(dto.socialLinks !== undefined && { socialLinks: dto.socialLinks as any }),
+        ...(dto.products !== undefined && { products: dto.products as any }),
+        ...(dto.services !== undefined && { services: dto.services as any }),
+        ...(dto.prices !== undefined && { prices: dto.prices as any }),
+        ...(dto.policies !== undefined && { policies: dto.policies as any }),
+        ...(dto.rules !== undefined && { rules: dto.rules as any }),
+        ...(dto.toneGuidelines !== undefined && { toneGuidelines: dto.toneGuidelines as any }),
+        ...(dto.keywords !== undefined && { keywords: dto.keywords as any }),
         ...(dto.active !== undefined && { active: dto.active }),
       },
       include: {
-        organization: {
-          select: {
-            id: true,
-            legalName: true,
-            tenant: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-              },
-            },
-          },
-        },
+        organization: true,
       },
     });
 
@@ -369,12 +325,6 @@ export class BrandsService {
             id: true,
             legalName: true,
             tenantId: true,
-            tenant: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
           },
         },
       },
@@ -383,7 +333,8 @@ export class BrandsService {
     const results: BrandMembership[] = [];
 
     for (const mem of memberships) {
-      if (!mem.organization) continue;
+      const org = mem.organization;
+      if (!org) continue;
 
       const brands = await this.prisma.unscoped.brand.findMany({
         where: {
@@ -402,10 +353,10 @@ export class BrandsService {
           brandId: brand.id,
           brandName: brand.name,
           brandSlug: brand.slug,
-          organizationId: mem.organization.id,
-          organizationName: mem.organization.legalName,
-          tenantId: mem.organization.tenantId,
-          tenantName: mem.organization.tenant?.name ?? '',
+          organizationId: org.id,
+          organizationName: org.legalName,
+          tenantId: org.tenantId,
+          tenantName: '',
           role: mem.role ?? (mem.isAdmin ? 'admin' : 'member'),
         });
       }
