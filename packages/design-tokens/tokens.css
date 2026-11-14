@@ -157,6 +157,18 @@
   --ease-decelerate: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
 
+  /* ---------- Fixed surfaces: deliberately theme-constant, named so
+     they're never a bare literal in a component even though their
+     value never changes with light/dark. ---------- */
+  --color-qr-backing: #ffffff; /* QR codes need a guaranteed-white
+    backing in both themes for scan reliability */
+  --color-viewfinder-bg: #000000; /* camera/photo-capture placeholder,
+    a viewfinder convention independent of app theme */
+  --color-viewfinder-overlay: rgba(0, 0, 0, 0.7); /* caption bar over
+    a captured photo, not over themed app background */
+  --color-viewfinder-fg: #ffffff; /* text/icon on top of the overlay
+    above */
+
   /* ---------- Compatibility aliases ----------
      Short names already in use across nID's apps (login-ui, profile-ui,
      verify-ui, dashboard) before this file existed. Mapped onto the

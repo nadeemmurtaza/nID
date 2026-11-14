@@ -267,7 +267,7 @@ input[type='text']:disabled {
 }
 
 .qr-wrap {
-  background: #fff;
+  background: var(--color-qr-backing);
   border-radius: 10px;
   padding: 12px;
   display: inline-block;

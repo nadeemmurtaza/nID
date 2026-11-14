@@ -9,11 +9,11 @@ own business data from another domain.
 
 See `CONVENTIONS.md` for the ecosystem-wide rules on folder layout,
 module/service naming, file naming, renaming, branches, worktrees,
-commits, and merge strategy — identical across every NEWAX repo. It
-also lists this repo's current gaps against that layout (`apps/api`
-vs. `apps/rust-api` naming by language instead of by module, the
-verification engines' location under `packages/`) so they aren't
-mistaken for the target shape.
+commits, and merge strategy — identical across every NEWAX repo. The
+2026-11-14 audit decided `apps/api` vs. `apps/rust-api`
+(`apps/rust-api` wins, `apps/api` deprecated — see
+`apps/api/README.md`) and tracked what's left to actually remove
+Prisma; see `CONVENTIONS.md`'s "Decided, migration tracked" section.
 
 See `COMMUNICATION.md` for how this repo is meant to talk to
 Communicator and the rest of the ecosystem (Module Gateway/gRPC, the
@@ -162,20 +162,25 @@ Honest status against the plan above, not papered over:
   `tonic`/`prost`/`.proto` anywhere in this repo. The plan above is
   the target for new cross-repo communication (see
   `COMMUNICATION.md`), not a description of what's running.
-- **Database: mixed compliance.** `apps/rust-api` uses SQLx +
-  PostgreSQL, as planned. **`packages/db` genuinely depends on
-  `@prisma/client` at runtime** (not just `.prisma` as modeling
-  notation — this is the real ORM, used by `apps/api` and likely
-  `apps/workflows`). This directly contradicts the "no Prisma"
-  decision and is the single biggest tech-stack gap this audit found.
-  Fixing it means either migrating `apps/api`'s database access to
-  SQLx, or retiring `apps/api` in favor of `apps/rust-api` (which
-  would also resolve the `apps/api`-vs-`apps/rust-api` dual-backend
-  gap already logged in `CONVENTIONS.md`). Both are real migrations
-  with real risk (existing access patterns, Prisma migrations already
-  applied) — not something to execute inside an audit pass. This
-  needs an explicit decision on which backend wins before anyone
-  touches it.
+- **Database: mixed compliance — decided, not yet executed.**
+  `apps/rust-api` uses SQLx + PostgreSQL, as planned. **`packages/db`
+  genuinely depends on `@prisma/client` at runtime** (not just
+  `.prisma` as modeling notation — the real ORM, used by `apps/api`,
+  `apps/workflows`, `packages/verification-providers`, and
+  `packages/billing`). This directly contradicts the "no Prisma"
+  decision and is the biggest tech-stack gap this audit found. **The
+  decision: `apps/rust-api` is canonical; `apps/api` is deprecated**
+  (see `apps/api/README.md`) — both bind the same `API_PORT` and serve
+  the same Next.js clients via `NEXT_PUBLIC_NID_API_URL`, which is
+  exactly why `apps/rust-api`'s module-by-module auth-audit work could
+  port `apps/api`'s modules one for one. What's **not** done yet:
+  route-for-route parity hasn't been verified file-by-file, and
+  `apps/workflows`/`verification-providers`/`billing` still need
+  porting off Prisma onto SQLx before `packages/db` can actually be
+  removed — real migrations touching live identity-verification
+  workflows, not something to force through as a side effect of a
+  naming audit. Don't build new features on `apps/api`; build them on
+  `apps/rust-api`.
 - **Workflow orchestration: undocumented but real.** `apps/workflows`
   depends on Temporal (`@temporalio/core-bridge`). This was never
   part of the ecosystem tech-stack plan — recorded here as a factual

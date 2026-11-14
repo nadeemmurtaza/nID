@@ -196,40 +196,52 @@ commits (design-tokens-style rollouts) use `ecosystem` as the scope.
 - **Squash merge to `main`** — one commit per shipped change in
   `main`'s history, scoped and readable without opening the PR.
 
-## Known gaps (fix opportunistically, not required to block on)
+## Resolved (2026-11-14 audit)
 
-These are real deviations from the layout in §1 as of 2026-11-14 —
-listed so nobody "fixes" them by accident while touching unrelated
-code, and so a deliberate migration (if ever done) has a checklist:
+- **Communicator**: `backend-rs/` staying one crate is **not a gap** —
+  it's correct per the modular-monolith-first ADR; it only needs to
+  split, and drop the generic `backend-rs` name, once a module
+  actually needs its own deployable. Root-level `cargo_check*.log`
+  files and one-off, hardcoded-local-path migration-fix `.ps1`
+  scripts were deleted outright (debug cruft, not reusable tooling).
+  The two genuinely reusable `.ps1` scripts and the launcher `.bat`
+  files moved to `scripts/`, with their hardcoded
+  `C:\Users\...\Downloads\...` and sibling-repo (AegisDesk) paths
+  removed. `erp-schema/` (plus its exact duplicate under
+  `backend-rs/erp-schema/`) moved to `docs/schema-reference/` with a
+  README making explicit it's modeling notation only, never a live
+  Prisma client. `src/communicator-archive/` and `python-archive/`
+  moved under a top-level `archive/`. `shopify-otp-widget/` and
+  `store-otp-widget/` are **live**, not archived (referenced from
+  `backend-rs/src/services/store_connection.rs` and
+  `docs/SHOPIFY_STORE_OTP_SETUP.md`) — promoted to their own
+  `apps/shopify-otp-widget/` and `apps/store-otp-widget/` (each is an
+  independently deployed client surface embedded on third-party
+  sites, exactly what `apps/*` is for), out from under `apps/web/`.
 
-- **Communicator**: `backend-rs/` should become `services/<module>/`
-  + `crates/<module>/` once it's split by module (it's currently one
-  monolithic crate — fine for now per the modular-monolith-first ADR,
-  but the folder name should drop the generic `backend-rs` label when
-  it splits). Root-level `cargo_check*.log` files and `.ps1` scripts
-  are prototype debugging artifacts that belong in `scripts/` (scripts)
-  or nowhere (logs) rather than the repo root. `erp-schema/*.prisma`
-  is schema-*modeling* only (not the Prisma client/ORM we ruled out in
-  the tech-stack plan) — rename the directory so that's unambiguous,
-  or migrate the models into the Rust/SQLx migration flow. `src/
-  communicator-archive/` and `frontend/shopify-otp-widget/`,
-  `frontend/store-otp-widget/` read as legacy/experimental — if they're
-  not live, they belong under a top-level `archive/`, not mixed into
-  `src/`/`frontend/`.
-- **nID**: `apps/api` (TypeScript) and `apps/rust-api` (Rust) both
-  exist — under §2's one-name rule, two backends for the same module
-  boundary need either a merge or a clearly different module name for
-  each, not a `-rust-` suffix distinguishing them by implementation
-  language. `crates/` currently holds only 3 Rust library crates (`billing`,
+## Decided, migration tracked (not yet executed)
+
+- **nID**: `apps/api` (TypeScript/NestJS + Prisma) and `apps/rust-api`
+  (Rust/SQLx) are not an open question anymore — **`apps/rust-api` is
+  canonical, `apps/api` is deprecated** (see `apps/api/README.md`).
+  They share one `API_PORT` and one client contract
+  (`NEXT_PUBLIC_NID_API_URL`), which is exactly why `apps/rust-api`'s
+  module-by-module auth audit could port `apps/api`'s modules one for
+  one. Removing `apps/api` for real needs: (1) file-by-file route
+  parity confirmed, not just the shared-contract inference above, and
+  (2) `apps/workflows`, `packages/verification-providers`, and
+  `packages/billing` ported off `packages/db`'s Prisma client onto
+  SQLx. That second part touches live identity-verification workflows
+  — a real migration with its own testing needs, not a naming-audit
+  side effect. Until it's done, don't build new features on
+  `apps/api`.
+- `crates/` currently holds only 3 Rust library crates (`billing`,
   `shared-types`, `storage`); the verification engines
   (`forensics-engine`, `liveness-engine`, `ocr-engine`,
   `verification-providers`, `workflow-contracts`) are confirmed
   TypeScript (jest + tsconfig in each), correctly under `packages/` by
   language — but they read as engines/services, not shared libraries,
   so confirm whether any should move to `apps/` or `services/` once
-  nID's backend is split by module rather than staying lumped into
-  `apps/api` + `apps/rust-api`.
-
-None of the above is being changed by this document — it only records
-the gap so a future migration PR has a true checklist instead of
-rediscovering these by hand.
+  nID's backend is actually split by module rather than staying
+  lumped into `apps/api` + `apps/rust-api`. Blocked on the same
+  migration above, not a separate decision.
