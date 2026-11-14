@@ -301,6 +301,172 @@ impl BookingService {
         Ok(())
     }
 
+    pub async fn update_availability_rule(
+        &self,
+        account_id: &str,
+        rule_id: &str,
+        req: &crate::modules::booking::dto::UpdateAvailabilityRuleRequest,
+    ) -> Result<AvailabilityRuleResponse> {
+        let mut conn = self.db.get().await?;
+
+        let profile_id = sqlx::query(
+            "SELECT id FROM profile WHERE account_id = $1 LIMIT 1",
+        )
+        .bind(account_id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .map(|r| r.get::<String, _>("id"))
+        .ok_or_else(|| anyhow!("No profile found"))?;
+
+        let mut sets = Vec::new();
+        let mut weekday_val: Option<String> = None;
+        let mut start_val: Option<String> = None;
+        let mut end_val: Option<String> = None;
+
+        if let Some(ref w) = req.weekday {
+            sets.push("weekday = $1");
+            weekday_val = Some(w.clone());
+        }
+        if let Some(ref s) = req.start_time {
+            let idx = sets.len() + 1;
+            sets.push(&format!("start_time = ${}", idx));
+            start_val = Some(s.clone());
+        }
+        if let Some(ref e) = req.end_time {
+            let idx = sets.len() + 1;
+            sets.push(&format!("end_time = ${}", idx));
+            end_val = Some(e.clone());
+        }
+
+        if sets.is_empty() {
+            return self.get_availability_rule(&profile_id, rule_id).await;
+        }
+
+        let rule: (String, String, String, String, String) = sqlx::query_as(
+            &format!(
+                "UPDATE availability_rule SET {} WHERE id = ${} AND profile_id = ${} RETURNING id, profile_id, weekday, start_time, end_time",
+                sets.join(", "),
+                sets.len() + 1,
+                sets.len() + 2,
+            ),
+        )
+        .bind(&weekday_val)
+        .bind(&start_val)
+        .bind(&end_val)
+        .bind(rule_id)
+        .bind(&profile_id)
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(|_| anyhow!("Availability rule not found"))?;
+
+        Ok(AvailabilityRuleResponse {
+            id: rule.0, profile_id: rule.1, weekday: rule.2, start_time: rule.3, end_time: rule.4,
+        })
+    }
+
+    async fn get_availability_rule(&self, profile_id: &str, rule_id: &str) -> Result<AvailabilityRuleResponse> {
+        let mut conn = self.db.get().await?;
+
+        let rule: (String, String, String, String, String) = sqlx::query_as(
+            "SELECT id, profile_id, weekday, start_time, end_time FROM availability_rule WHERE id = $1 AND profile_id = $2",
+        )
+        .bind(rule_id)
+        .bind(profile_id)
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(|_| anyhow!("Availability rule not found"))?;
+
+        Ok(AvailabilityRuleResponse {
+            id: rule.0, profile_id: rule.1, weekday: rule.2, start_time: rule.3, end_time: rule.4,
+        })
+    }
+
+    /// Compute free/busy slots for a service over a date range.
+    ///
+    /// Mirrors AvailabilityService.computeFreeSlots() in TypeScript.
+    /// Returns 30-minute slots between `from` and `to`, marking each as available or booked.
+    pub async fn compute_free_slots(
+        &self,
+        slug: &str,
+        service_id: &str,
+        from: &str,
+        to: &str,
+    ) -> Result<Vec<crate::modules::booking::dto::FreeSlotResponse>> {
+        let mut conn = self.db.get().await?;
+
+        // Verify profile is published and accepting bookings
+        let profile_id = sqlx::query(
+            "SELECT id FROM profile WHERE slug = $1 AND is_published = true AND show_booking = true LIMIT 1",
+        )
+        .bind(slug)
+        .fetch_optional(&mut *conn)
+        .await?
+        .map(|r| r.get::<String, _>("id"))
+        .ok_or_else(|| anyhow!("Profile not accepting bookings"))?;
+
+        // Verify service belongs to this profile
+        let duration_minutes: i32 = sqlx::query(
+            "SELECT duration_minutes FROM service WHERE id = $1 AND profile_id = $2 AND is_active = true",
+        )
+        .bind(service_id)
+        .bind(&profile_id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .map(|r| r.get::<i32, _>("duration_minutes"))
+        .ok_or_else(|| anyhow!("That service is not available on this profile."))?;
+
+        // Get booked time slots in the range
+        let booked: Vec<(String, String)> = sqlx::query_as(
+            "SELECT start_time, end_time FROM appointment
+             WHERE profile_id = $1 AND service_id = $2 AND status != 'CANCELLED'
+             AND start_time < $3 AND end_time > $4
+             ORDER BY start_time",
+        )
+        .bind(&profile_id)
+        .bind(service_id)
+        .bind(to)
+        .bind(from)
+        .fetch_all(&mut *conn)
+        .await?;
+
+        // Generate 30-minute slots and check against booked appointments
+        let from_dt = chrono::DateTime::<chrono::Utc>::parse_from_rfc3339(from)
+            .map_err(|_| anyhow!("Invalid 'from' timestamp"))?
+            .with_timezone(&chrono::Utc);
+        let to_dt = chrono::DateTime::<chrono::Utc>::parse_from_rfc3339(to)
+            .map_err(|_| anyhow!("Invalid 'to' timestamp"))?
+            .with_timezone(&chrono::Utc);
+
+        let mut slots = Vec::new();
+        let mut current = from_dt;
+        let slot_duration = chrono::Duration::minutes(30);
+
+        while current + slot_duration <= to_dt {
+            let slot_end = current + slot_duration;
+            let is_available = booked.iter().all(|(start, end)| {
+                let b_start = chrono::DateTime::<chrono::Utc>::parse_from_rfc3339(start)
+                    .ok()
+                    .map(|d| d.with_timezone(&chrono::Utc))
+                    .unwrap_or(current);
+                let b_end = chrono::DateTime::<chrono::Utc>::parse_from_rfc3339(end)
+                    .ok()
+                    .map(|d| d.with_timezone(&chrono::Utc))
+                    .unwrap_or(slot_end);
+                // Slot is busy if it overlaps with a booked appointment
+                !(current >= b_end || slot_end <= b_start)
+            }) && booked.iter().all(|(_, _)| true); // Simplified: all slots available if no overlap
+
+            slots.push(crate::modules::booking::dto::FreeSlotResponse {
+                start_time: current.to_rfc3339(),
+                end_time: slot_end.to_rfc3339(),
+                is_available,
+            });
+            current = slot_end;
+        }
+
+        Ok(slots)
+    }
+
     // ── Appointments ──
 
     pub async fn list_my_appointments(&self, account_id: &str) -> Result<Vec<AppointmentResponse>> {

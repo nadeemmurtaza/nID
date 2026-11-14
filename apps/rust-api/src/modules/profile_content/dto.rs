@@ -46,6 +46,42 @@ pub struct CreateSocialLinkRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdateCustomLinkRequest {
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub order: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSocialLinkRequest {
+    #[serde(default)]
+    pub platform: Option<String>,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UploadProfileImageRequest {
+    #[serde(default)]
+    pub kind: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProfileImageResponse {
+    pub id: String,
+    pub profile_id: String,
+    pub kind: String,
+    pub url: String,
+    pub content_type: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateContactMessageRequest {
     pub name: String,
     pub email: String,

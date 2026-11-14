@@ -8,9 +8,9 @@ use std::sync::Arc;
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
 use crate::modules::booking::dto::{
-    AppointmentResponse, AvailabilityRuleResponse, CreateAppointmentRequest,
-    CreateAvailabilityRuleRequest, CreateServiceRequest, MessageResponse,
-    ServiceResponse, UpdateServiceRequest,
+    AppointmentResponse, AvailabilityQueryRequest, AvailabilityRuleResponse, CreateAppointmentRequest,
+    CreateAvailabilityRuleRequest, CreateServiceRequest, FreeSlotResponse, MessageResponse,
+    ServiceResponse, UpdateAvailabilityRuleRequest, UpdateServiceRequest,
 };
 use crate::modules::booking::service::BookingService;
 
@@ -110,6 +110,19 @@ pub async fn remove_availability_rule(
     }))
 }
 
+/// PATCH /v1/profiles/me/availability-rules/:id
+pub async fn update_availability_rule(
+    Path(id): Path<String>,
+    State(state): State<Arc<BookingState>>,
+    Json(req): Json<UpdateAvailabilityRuleRequest>,
+) -> Result<Json<AvailabilityRuleResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let account_id = "account".to_string();
+    let rule = state.service.update_availability_rule(&account_id, &id, &req)
+        .await
+        .map_err(not_found)?;
+    Ok(Json(rule))
+}
+
 // ── Owner endpoints (appointments) ──
 
 /// GET /v1/profiles/me/appointments
@@ -170,6 +183,18 @@ pub async fn create_public_appointment(
         .await
         .map_err(internal_error)?;
     Ok(Json(appt))
+}
+
+/// GET /v1/profiles/:slug/availability
+pub async fn get_public_availability(
+    Path(slug): Path<String>,
+    State(state): State<Arc<BookingState>>,
+    Json(query): Json<AvailabilityQueryRequest>,
+) -> Result<Json<Vec<FreeSlotResponse>>, (StatusCode, Json<serde_json::Value>)> {
+    let slots = state.service.compute_free_slots(&slug, &query.service_id, &query.from, &query.to)
+        .await
+        .map_err(not_found)?;
+    Ok(Json(slots))
 }
 
 fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {

@@ -15,6 +15,7 @@ pub fn booking_router() -> Router<Arc<BookingState>> {
         // Owner: availability
         .route("/v1/profiles/me/availability-rules", post(handlers::create_availability_rule))
         .route("/v1/profiles/me/availability-rules", get(handlers::list_my_availability_rules))
+        .route("/v1/profiles/me/availability-rules/:id", patch(handlers::update_availability_rule))
         .route("/v1/profiles/me/availability-rules/:id", delete(handlers::remove_availability_rule))
         // Owner: appointments
         .route("/v1/profiles/me/appointments", get(handlers::list_my_appointments))
@@ -22,5 +23,6 @@ pub fn booking_router() -> Router<Arc<BookingState>> {
         .route("/v1/profiles/me/appointments/:id/cancel", post(handlers::cancel_appointment))
         // Public
         .route("/v1/profiles/:slug/services", get(handlers::list_public_services))
+        .route("/v1/profiles/:slug/availability", get(handlers::get_public_availability))
         .route("/v1/profiles/:slug/appointments", post(handlers::create_public_appointment))
 }

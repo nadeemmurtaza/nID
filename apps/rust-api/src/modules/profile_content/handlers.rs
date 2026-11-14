@@ -10,8 +10,9 @@ use crate::core::db::DbPool;
 use crate::modules::profile_content::dto::{
     BusinessHourResponse, ContactMessageResponse, CreateContactMessageRequest,
     CreateCustomLinkRequest, CreateOfferRequest, CreateSocialLinkRequest,
-    CustomLinkResponse, MessageResponse, OfferResponse, SocialLinkResponse,
-    UpsertBusinessHourRequest, UpdateOfferRequest,
+    CustomLinkResponse, MessageResponse, OfferResponse, ProfileImageResponse,
+    SocialLinkResponse, UpsertBusinessHourRequest, UpdateCustomLinkRequest,
+    UpdateOfferRequest, UpdateSocialLinkRequest,
 };
 use crate::modules::profile_content::service::ProfileContentService;
 
@@ -151,6 +152,19 @@ pub async fn remove_custom_link(
     }))
 }
 
+/// PATCH /v1/profiles/me/links/custom/:id
+pub async fn update_custom_link(
+    Path(id): Path<String>,
+    State(state): State<Arc<ProfileContentState>>,
+    Json(req): Json<UpdateCustomLinkRequest>,
+) -> Result<Json<CustomLinkResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let account_id = "account".to_string();
+    let link = state.service.update_custom_link(&account_id, &id, &req)
+        .await
+        .map_err(not_found)?;
+    Ok(Json(link))
+}
+
 // ── Social Links (owner) ──
 
 /// POST /v1/profiles/me/links/social
@@ -187,6 +201,69 @@ pub async fn remove_social_link(
         .map_err(not_found)?;
     Ok(Json(MessageResponse {
         message: "Link removed.".to_string(),
+    }))
+}
+
+/// PATCH /v1/profiles/me/links/social/:id
+pub async fn update_social_link(
+    Path(id): Path<String>,
+    State(state): State<Arc<ProfileContentState>>,
+    Json(req): Json<UpdateSocialLinkRequest>,
+) -> Result<Json<SocialLinkResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let account_id = "account".to_string();
+    let link = state.service.update_social_link(&account_id, &id, &req)
+        .await
+        .map_err(not_found)?;
+    Ok(Json(link))
+}
+
+// ── Profile Images (owner) ──
+
+/// POST /v1/profiles/me/photo (stub — file upload not yet implemented)
+pub async fn upload_photo(
+    State(state): State<Arc<ProfileContentState>>,
+) -> Result<Json<ProfileImageResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let account_id = "account".to_string();
+    let img = state.service.upload_photo(&account_id)
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(img))
+}
+
+/// POST /v1/profiles/me/images (stub — file upload not yet implemented)
+pub async fn upload_gallery_image(
+    State(state): State<Arc<ProfileContentState>>,
+) -> Result<Json<ProfileImageResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let account_id = "account".to_string();
+    let kind = "gallery".to_string();
+    let img = state.service.upload_gallery_image(&account_id, &kind)
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(img))
+}
+
+/// GET /v1/profiles/me/images
+pub async fn list_my_images(
+    State(state): State<Arc<ProfileContentState>>,
+) -> Result<Json<Vec<ProfileImageResponse>>, (StatusCode, Json<serde_json::Value>)> {
+    let account_id = "account".to_string();
+    let images = state.service.list_my_images(&account_id)
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(images))
+}
+
+/// DELETE /v1/profiles/me/images/:id
+pub async fn remove_image(
+    Path(id): Path<String>,
+    State(state): State<Arc<ProfileContentState>>,
+) -> Result<Json<MessageResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let account_id = "account".to_string();
+    state.service.remove_image(&account_id, &id)
+        .await
+        .map_err(not_found)?;
+    Ok(Json(MessageResponse {
+        message: "Image removed.".to_string(),
     }))
 }
 
@@ -260,6 +337,17 @@ pub async fn create_public_contact_message(
         .await
         .map_err(internal_error)?;
     Ok(Json(msg))
+}
+
+/// GET /v1/profiles/:slug/images
+pub async fn list_public_images(
+    Path(slug): Path<String>,
+    State(state): State<Arc<ProfileContentState>>,
+) -> Result<Json<Vec<ProfileImageResponse>>, (StatusCode, Json<serde_json::Value>)> {
+    let images = state.service.list_public_images(&slug)
+        .await
+        .map_err(not_found)?;
+    Ok(Json(images))
 }
 
 fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {

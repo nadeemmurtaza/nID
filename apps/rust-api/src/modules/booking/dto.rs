@@ -41,6 +41,30 @@ pub struct CreateAppointmentRequest {
     pub subject_email: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateAvailabilityRuleRequest {
+    #[serde(default)]
+    pub weekday: Option<String>,
+    #[serde(default)]
+    pub start_time: Option<String>,
+    #[serde(default)]
+    pub end_time: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AvailabilityQueryRequest {
+    pub service_id: String,
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FreeSlotResponse {
+    pub start_time: String,
+    pub end_time: String,
+    pub is_available: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ServiceResponse {
     pub id: String,
