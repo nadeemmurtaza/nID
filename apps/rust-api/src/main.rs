@@ -22,6 +22,7 @@ use crate::modules::organizations::{routes::organizations_router, handlers::Orga
 use crate::modules::sessions::{routes::sessions_router, handlers::SessionsState, service::SessionsService};
 use crate::modules::brands::{routes::brands_router, handlers::BrandsState, service::BrandsService};
 use crate::modules::profiles::{routes::profiles_router, handlers::ProfilesState, service::ProfilesService};
+use crate::modules::organization_profiles::{routes::organization_profiles_router, handlers::OrganizationProfilesState, service::OrganizationProfilesService};
 use crate::modules::access::{routes::access_router, handlers::AccessState, service::AccessService};
 use crate::modules::roles::{routes::roles_router, handlers::RolesState, service::RolesService};
 use crate::modules::permissions::{routes::permissions_router, handlers::PermissionsState, service::PermissionsService};
@@ -32,6 +33,7 @@ use crate::modules::account_verification::{routes::account_verification_router, 
 use crate::modules::oauth::{routes::oauth_router, handlers::OAuthState, service::OAuthService};
 use crate::modules::booking::{routes::booking_router, handlers::BookingState, service::BookingService};
 use crate::modules::profile_content::{routes::profile_content_router, handlers::ProfileContentState, service::ProfileContentService};
+use crate::modules::health::health_router;
 
 /// Application state shared across all request handlers.
 pub struct AppState {
@@ -66,6 +68,10 @@ fn build_router(state: AppState) -> Router {
     });
     let profiles_state = Arc::new(ProfilesState {
         service: ProfilesService::new(state.db.clone(), state.env.clone()),
+    });
+    let org_profiles_state = Arc::new(OrganizationProfilesState {
+        service: OrganizationProfilesService::new(state.db.clone(), state.env.clone()),
+        env: state.env.clone(),
     });
     let access_state = Arc::new(AccessState {
         service: AccessService::new(state.db.clone(), state.env.clone()),
@@ -109,6 +115,7 @@ fn build_router(state: AppState) -> Router {
     });
 
     Router::new()
+        .merge(health_router())
         .merge(accounts_router().with_state(accounts_state))
         .merge(tenants_router().with_state(tenants_state))
         .merge(subjects_router().with_state(subjects_state))
@@ -117,6 +124,7 @@ fn build_router(state: AppState) -> Router {
         .merge(sessions_router().with_state(sessions_state))
         .merge(brands_router().with_state(brands_state))
         .merge(profiles_router().with_state(profiles_state))
+        .merge(organization_profiles_router().with_state(org_profiles_state))
         .merge(access_router().with_state(access_state))
         .merge(roles_router().with_state(roles_state))
         .merge(permissions_router().with_state(permissions_state))
