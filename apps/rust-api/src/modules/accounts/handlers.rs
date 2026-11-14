@@ -2,13 +2,12 @@
 //!
 //! Mirrors `apps/api/src/modules/accounts/accounts.controller.ts`.
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
 
-use crate::core::db::DbPool;
-use crate::core::config::AppEnv;
+use crate::core::auth::session::AccountSession;
 use crate::modules::accounts::dto::{
     AcceptedResponse, AccountResponse, StartOtpRequest, VerifyOtpRequest, VerifyOtpResponse,
     StartEmailVerificationRequest, VerifyEmailRequest,
@@ -48,38 +47,38 @@ pub async fn verify_otp(
 
 /// GET /v1/accounts/me
 pub async fn me(
-    Path(account_id): Path<String>,
+    account: AccountSession,
     State(state): State<Arc<AccountsState>>,
 ) -> Result<Json<AccountResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account = state
+    let acct = state
         .service
-        .get_account(&account_id)
+        .get_account(&account.id)
         .await
         .map_err(internal_error)?;
-    Ok(Json(account.into()))
+    Ok(Json(acct.into()))
 }
 
-/// POST /v1/accounts/me/logout
+/// POST /v1/accounts/me/logout — revokes only this one session.
 pub async fn logout(
-    Path(token_hash): Path<String>,
+    account: AccountSession,
     State(state): State<Arc<AccountsState>>,
 ) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
     state
         .service
-        .revoke_session(&token_hash)
+        .revoke_session(&account.session_token_hash)
         .await
         .map_err(internal_error)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// POST /v1/accounts/me/logout-all
+/// POST /v1/accounts/me/logout-all — revokes every session on this account.
 pub async fn logout_all(
-    Path(account_id): Path<String>,
+    account: AccountSession,
     State(state): State<Arc<AccountsState>>,
 ) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
     state
         .service
-        .revoke_all_sessions(&account_id)
+        .revoke_all_sessions(&account.id)
         .await
         .map_err(internal_error)?;
     Ok(StatusCode::NO_CONTENT)
@@ -87,13 +86,13 @@ pub async fn logout_all(
 
 /// POST /v1/accounts/me/email/start
 pub async fn start_email_verification(
-    Path(account_id): Path<String>,
+    account: AccountSession,
     State(state): State<Arc<AccountsState>>,
     Json(req): Json<StartEmailVerificationRequest>,
 ) -> Result<Json<AcceptedResponse>, (StatusCode, Json<serde_json::Value>)> {
     state
         .service
-        .start_email_verification(&account_id, &req.email)
+        .start_email_verification(&account.id, &req.email)
         .await
         .map_err(internal_error)?;
     Ok(Json(AcceptedResponse { accepted: true }))
@@ -101,16 +100,16 @@ pub async fn start_email_verification(
 
 /// POST /v1/accounts/me/email/verify
 pub async fn verify_email(
-    Path(account_id): Path<String>,
+    account: AccountSession,
     State(state): State<Arc<AccountsState>>,
     Json(req): Json<VerifyEmailRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account = state
+    let acct = state
         .service
-        .verify_email(&account_id, &req.code)
+        .verify_email(&account.id, &req.code)
         .await
         .map_err(internal_error)?;
-    Ok(Json(account))
+    Ok(Json(acct))
 }
 
 /// Convert anyhow error to HTTP error response

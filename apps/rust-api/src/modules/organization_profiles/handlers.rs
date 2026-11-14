@@ -7,6 +7,7 @@ use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
 
+use crate::core::auth::session::AccountSession;
 use crate::modules::organization_profiles::dto::{
     CreateOrgGrantRequest, CreateOrgProfileRequest, OrgProfileFieldGrantResponse,
     OrgProfileResponse, UpdateOrgProfileRequest,
@@ -39,15 +40,14 @@ fn error_response(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
 
 /// POST /v1/organizations/:id/profile
 pub async fn create(
+    account: AccountSession,
     Path(organization_id): Path<String>,
     State(state): State<Arc<OrganizationProfilesState>>,
     AxumJson(body): AxumJson<CreateOrgProfileRequest>,
 ) -> Result<Json<OrgProfileResponse>, (StatusCode, Json<serde_json::Value>)> {
-    // Account ID would come from the session extractor in production
-    let account_id = String::from("TODO-session-extractor");
     let profile = state
         .service
-        .create_for_organization(&account_id, &organization_id, &body)
+        .create_for_organization(&account.id, &organization_id, &body)
         .await
         .map_err(error_response)?;
     Ok(Json(profile))
@@ -55,13 +55,13 @@ pub async fn create(
 
 /// GET /v1/organizations/:id/profile
 pub async fn get(
+    account: AccountSession,
     Path(organization_id): Path<String>,
     State(state): State<Arc<OrganizationProfilesState>>,
 ) -> Result<Json<OrgProfileResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = String::from("TODO-session-extractor");
     let profile = state
         .service
-        .get_for_organization(&account_id, &organization_id)
+        .get_for_organization(&account.id, &organization_id)
         .await
         .map_err(error_response)?;
     Ok(Json(profile))
@@ -69,14 +69,14 @@ pub async fn get(
 
 /// PATCH /v1/organizations/:id/profile
 pub async fn update(
+    account: AccountSession,
     Path(organization_id): Path<String>,
     State(state): State<Arc<OrganizationProfilesState>>,
     AxumJson(body): AxumJson<UpdateOrgProfileRequest>,
 ) -> Result<Json<OrgProfileResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = String::from("TODO-session-extractor");
     let profile = state
         .service
-        .update_for_organization(&account_id, &organization_id, &body)
+        .update_for_organization(&account.id, &organization_id, &body)
         .await
         .map_err(error_response)?;
     Ok(Json(profile))
@@ -84,14 +84,14 @@ pub async fn update(
 
 /// POST /v1/organizations/:id/profile/grants
 pub async fn create_grant(
+    account: AccountSession,
     Path(organization_id): Path<String>,
     State(state): State<Arc<OrganizationProfilesState>>,
     AxumJson(body): AxumJson<CreateOrgGrantRequest>,
 ) -> Result<Json<OrgProfileFieldGrantResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = String::from("TODO-session-extractor");
     let grant = state
         .service
-        .create_grant_for_organization(&account_id, &organization_id, &body)
+        .create_grant_for_organization(&account.id, &organization_id, &body)
         .await
         .map_err(error_response)?;
     Ok(Json(grant))
@@ -99,13 +99,13 @@ pub async fn create_grant(
 
 /// GET /v1/organizations/:id/profile/grants
 pub async fn list_grants(
+    account: AccountSession,
     Path(organization_id): Path<String>,
     State(state): State<Arc<OrganizationProfilesState>>,
 ) -> Result<Json<Vec<OrgProfileFieldGrantResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = String::from("TODO-session-extractor");
     let grants = state
         .service
-        .list_grants_for_organization(&account_id, &organization_id)
+        .list_grants_for_organization(&account.id, &organization_id)
         .await
         .map_err(error_response)?;
     Ok(Json(grants))
@@ -113,13 +113,13 @@ pub async fn list_grants(
 
 /// DELETE /v1/organizations/:id/profile/grants/:grantId
 pub async fn revoke_grant(
+    account: AccountSession,
     Path((organization_id, grant_id)): Path<(String, String)>,
     State(state): State<Arc<OrganizationProfilesState>>,
 ) -> Result<Json<OrgProfileFieldGrantResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let account_id = String::from("TODO-session-extractor");
     let grant = state
         .service
-        .revoke_grant_for_organization(&account_id, &organization_id, &grant_id)
+        .revoke_grant_for_organization(&account.id, &organization_id, &grant_id)
         .await
         .map_err(error_response)?;
     Ok(Json(grant))

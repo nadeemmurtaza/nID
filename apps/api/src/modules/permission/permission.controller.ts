@@ -3,6 +3,7 @@ import { AccountSessionGuard } from '../../core/auth/account-session.guard';
 import { PermissionService } from './permission.service';
 
 @Controller('v1/permissions')
+@UseGuards(AccountSessionGuard)
 export class PermissionController {
   constructor(private readonly permission: PermissionService) {}
 

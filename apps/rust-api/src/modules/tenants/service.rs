@@ -2,13 +2,9 @@
 //!
 //! Mirrors `apps/api/src/modules/tenants/tenants.service.ts`.
 
-use anyhow::{anyhow, Context, Result};
-use chrono::Utc;
-use deadpool_postgres::Object;
+use anyhow::{anyhow, Result};
 use nid_shared_types::{generate_api_key, sha256_hex};
-use rand::Rng;
 use sqlx::{FromRow, Row};
-use tracing::info;
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
@@ -43,7 +39,7 @@ impl TenantsService {
 
     /// Get the current tenant (tenant-self endpoint)
     pub async fn get_self(&self, tenant_id: &str, actor_type: &str) -> Result<TenantSelfResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
         let tenant: TenantRow = sqlx::query_as(
             "SELECT id, name, slug, data_residency_region, webhook_url, billing_webhook_url, created_at, updated_at FROM tenant WHERE id = $1",
         )
@@ -67,7 +63,7 @@ impl TenantsService {
 
     /// List all tenants this account is staff of
     pub async fn get_memberships_for_account(&self, account_id: &str) -> Result<Vec<TenantMembership>> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
         let rows = sqlx::query(
             r#"
             SELECT t.id as tenant_id, t.name as tenant_name, t.slug as tenant_slug, m.role
@@ -96,12 +92,16 @@ impl TenantsService {
 
     /// Create a new tenant (platform-admin)
     pub async fn create(&self, name: &str, slug: &str, data_residency_region: Option<&str>, webhook_url: Option<&str>, billing_webhook_url: Option<&str>, initial_staff_account_id: Option<&str>) -> Result<CreatedTenantResponse> {
-        // Validate slug
-        if !slug.is_match(r"^[a-z0-9][a-z0-9-]{2,63}$") {
+        // Validate slug: 3-64 chars, starts with a lowercase alphanumeric,
+        // the rest lowercase alphanumeric or hyphens.
+        let valid_slug = (3..=64).contains(&slug.len())
+            && slug.chars().next().is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+            && slug.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if !valid_slug {
             return Err(anyhow!("Slug must be 3-64 lowercase alphanumeric characters or hyphens"));
         }
 
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
 
         // Check duplicate slug
         let existing: Option<(String,)> = sqlx::query_as("SELECT id FROM tenant WHERE slug = $1")
@@ -113,9 +113,8 @@ impl TenantsService {
         }
 
         // Generate webhook secrets
-        let mut rng = rand::thread_rng();
-        let webhook_secret: String = (0..64).map(|_| rng.gen_range(b'0'..=b'f') as char).collect();
-        let billing_webhook_secret: String = (0..64).map(|_| rng.gen_range(b'0'..=b'f') as char).collect();
+        let webhook_secret = nid_shared_types::generate_session_token().plaintext;
+        let billing_webhook_secret = nid_shared_types::generate_session_token().plaintext;
 
         let region = data_residency_region.unwrap_or("global");
 
@@ -171,7 +170,7 @@ impl TenantsService {
 
     /// List all tenants (platform-admin)
     pub async fn list_all(&self) -> Result<Vec<TenantWithCounts>> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
         let rows = sqlx::query(
             r#"
             SELECT t.id, t.name, t.slug, t.data_residency_region, t.webhook_url, t.billing_webhook_url,
@@ -207,7 +206,7 @@ impl TenantsService {
 
     /// Get tenant by ID
     pub async fn get_by_id(&self, id: &str) -> Result<TenantWithCounts> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
         let row = sqlx::query(
             r#"
             SELECT t.id, t.name, t.slug, t.data_residency_region, t.webhook_url, t.billing_webhook_url,
@@ -243,10 +242,10 @@ impl TenantsService {
 
     /// Update tenant
     pub async fn update(&self, id: &str, name: Option<&str>, data_residency_region: Option<&str>, webhook_url: Option<Option<&str>>, billing_webhook_url: Option<Option<&str>>) -> Result<TenantResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
 
         // Check tenant exists
-        let existing: TenantRow = sqlx::query_as(
+        let _existing: TenantRow = sqlx::query_as(
             "SELECT id, name, slug, data_residency_region, webhook_url, billing_webhook_url, created_at, updated_at FROM tenant WHERE id = $1",
         )
         .bind(id)
@@ -287,7 +286,7 @@ impl TenantsService {
 
     /// Create an API key for a tenant
     pub async fn create_api_key(&self, tenant_id: &str, scopes: Option<Vec<String>>, rate_limit: Option<i32>) -> Result<NewApiKeyResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
 
         // Check tenant exists
         let exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM tenant WHERE id = $1)")
@@ -328,7 +327,7 @@ impl TenantsService {
 
     /// List API keys for a tenant
     pub async fn list_api_keys(&self, tenant_id: &str) -> Result<Vec<ApiKeyResponse>> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
         let rows = sqlx::query(
             r#"
             SELECT id, key_prefix, scopes, rate_limit_per_minute, revoked_at, created_at
@@ -355,7 +354,7 @@ impl TenantsService {
 
     /// Revoke an API key
     pub async fn revoke_api_key(&self, tenant_id: &str, api_key_id: &str) -> Result<()> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
         sqlx::query("UPDATE tenant_api_key SET revoked_at = NOW() WHERE id = $1 AND tenant_id = $2")
             .bind(api_key_id)
             .bind(tenant_id)
@@ -366,7 +365,7 @@ impl TenantsService {
 
     /// Invite a staff member to a tenant
     pub async fn invite_staff(&self, tenant_id: &str, account_id: &str, role: &str) -> Result<StaffMemberResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
 
         // Check tenant exists
         let tenant_exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM tenant WHERE id = $1)")
@@ -422,7 +421,7 @@ impl TenantsService {
 
     /// List staff members of a tenant
     pub async fn list_staff(&self, tenant_id: &str) -> Result<Vec<StaffMemberResponse>> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
         let rows = sqlx::query(
             r#"
             SELECT m.id, m.account_id, m.role, a.phone, a.phone_verified_at
@@ -448,7 +447,7 @@ impl TenantsService {
 
     /// Remove a staff member from a tenant
     pub async fn remove_staff(&self, tenant_id: &str, account_id: &str) -> Result<()> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
         sqlx::query("DELETE FROM tenant_staff_membership WHERE tenant_id = $1 AND account_id = $2")
             .bind(tenant_id)
             .bind(account_id)

@@ -7,8 +7,8 @@ use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
 
+use crate::core::auth::session::AccountSession;
 use crate::core::config::AppEnv;
-use crate::core::db::DbPool;
 use crate::modules::roles::dto::{
     AssignRoleRequest, CreateRoleRequest, MessageResponse, RoleAssignmentResponse,
     RoleResponse, UpdateRoleRequest,
@@ -21,6 +21,7 @@ pub struct RolesState {
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RolesQuery {
     #[serde(default)]
     pub tenant_id: String,
@@ -28,11 +29,12 @@ pub struct RolesQuery {
 
 /// POST /v1/roles
 pub async fn create(
+    account: AccountSession,
     Query(query): Query<RolesQuery>,
     State(state): State<Arc<RolesState>>,
     Json(req): Json<CreateRoleRequest>,
 ) -> Result<Json<RoleResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let role = state.service.create_role(&query.tenant_id, &req)
+    let role = state.service.create_role(&account.id, &query.tenant_id, &req)
         .await
         .map_err(internal_error)?;
     Ok(Json(role))
@@ -40,10 +42,11 @@ pub async fn create(
 
 /// GET /v1/roles
 pub async fn list(
+    account: AccountSession,
     Query(query): Query<RolesQuery>,
     State(state): State<Arc<RolesState>>,
 ) -> Result<Json<Vec<RoleResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let roles = state.service.list_roles(&query.tenant_id)
+    let roles = state.service.list_roles(&account.id, &query.tenant_id)
         .await
         .map_err(internal_error)?;
     Ok(Json(roles))
@@ -51,11 +54,12 @@ pub async fn list(
 
 /// GET /v1/roles/:id
 pub async fn get(
+    account: AccountSession,
     Path(id): Path<String>,
     Query(query): Query<RolesQuery>,
     State(state): State<Arc<RolesState>>,
 ) -> Result<Json<RoleResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let role = state.service.get_role(&query.tenant_id, &id)
+    let role = state.service.get_role(&account.id, &query.tenant_id, &id)
         .await
         .map_err(not_found)?;
     Ok(Json(role))
@@ -63,12 +67,13 @@ pub async fn get(
 
 /// PATCH /v1/roles/:id
 pub async fn update(
+    account: AccountSession,
     Path(id): Path<String>,
     Query(query): Query<RolesQuery>,
     State(state): State<Arc<RolesState>>,
     Json(req): Json<UpdateRoleRequest>,
 ) -> Result<Json<RoleResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let role = state.service.update_role(&query.tenant_id, &id, &req)
+    let role = state.service.update_role(&account.id, &query.tenant_id, &id, &req)
         .await
         .map_err(not_found)?;
     Ok(Json(role))
@@ -76,11 +81,12 @@ pub async fn update(
 
 /// DELETE /v1/roles/:id
 pub async fn delete(
+    account: AccountSession,
     Path(id): Path<String>,
     Query(query): Query<RolesQuery>,
     State(state): State<Arc<RolesState>>,
 ) -> Result<Json<MessageResponse>, (StatusCode, Json<serde_json::Value>)> {
-    state.service.delete_role(&query.tenant_id, &id)
+    state.service.delete_role(&account.id, &query.tenant_id, &id)
         .await
         .map_err(not_found)?;
     Ok(Json(MessageResponse {
@@ -90,12 +96,13 @@ pub async fn delete(
 
 /// POST /v1/roles/:id/assign
 pub async fn assign(
+    account: AccountSession,
     Path(id): Path<String>,
     Query(query): Query<RolesQuery>,
     State(state): State<Arc<RolesState>>,
     Json(req): Json<AssignRoleRequest>,
 ) -> Result<Json<RoleAssignmentResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let assignment = state.service.assign_role(&query.tenant_id, &id, &req)
+    let assignment = state.service.assign_role(&account.id, &query.tenant_id, &id, &req)
         .await
         .map_err(internal_error)?;
     Ok(Json(assignment))
@@ -103,11 +110,12 @@ pub async fn assign(
 
 /// DELETE /v1/roles/:id/assign/:accountId
 pub async fn remove_assignment(
-    Path((id, account_id)): Path<(String, String)>,
+    account: AccountSession,
+    Path((id, target_account_id)): Path<(String, String)>,
     Query(query): Query<RolesQuery>,
     State(state): State<Arc<RolesState>>,
 ) -> Result<Json<MessageResponse>, (StatusCode, Json<serde_json::Value>)> {
-    state.service.remove_role_assignment(&query.tenant_id, &id, &account_id)
+    state.service.remove_role_assignment(&account.id, &query.tenant_id, &id, &target_account_id)
         .await
         .map_err(not_found)?;
     Ok(Json(MessageResponse {
@@ -117,24 +125,30 @@ pub async fn remove_assignment(
 
 /// GET /v1/roles/account/:accountId
 pub async fn get_account_roles(
-    Path(account_id): Path<String>,
+    account: AccountSession,
+    Path(target_account_id): Path<String>,
     Query(query): Query<RolesQuery>,
     State(state): State<Arc<RolesState>>,
 ) -> Result<Json<Vec<RoleAssignmentResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let roles = state.service.get_account_roles(&query.tenant_id, &account_id)
+    let roles = state.service.get_account_roles(&account.id, &query.tenant_id, &target_account_id)
         .await
         .map_err(internal_error)?;
     Ok(Json(roles))
 }
 
 fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
-    tracing::error!(error = %err, "Internal error");
-    let status = if err.to_string().contains("already") {
+    let msg = err.to_string();
+    let status = if msg.contains("already") {
         StatusCode::CONFLICT
+    } else if msg.contains("Only tenant owners") || msg.contains("do not have access") {
+        StatusCode::FORBIDDEN
+    } else if msg.contains("cannot be modified") || msg.contains("cannot be deleted") {
+        StatusCode::BAD_REQUEST
     } else {
+        tracing::error!(error = %err, "Internal error");
         StatusCode::INTERNAL_SERVER_ERROR
     };
-    (status, Json(serde_json::json!({ "message": err.to_string() })))
+    (status, Json(serde_json::json!({ "message": msg })))
 }
 
 fn not_found(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {

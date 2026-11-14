@@ -7,6 +7,6 @@ pub mod money;
 pub mod ledger;
 pub mod status;
 
-pub use money::{Money, Currency};
+pub use money::Currency;
 pub use ledger::{LedgerEntry, LedgerEntryType};
 pub use status::{SubscriptionStatus, BillingPeriod};

@@ -65,7 +65,7 @@ export class PermissionService {
     const entries = await this.prisma.unscoped.permissionCatalog.findMany({
       orderBy: [{ groupName: 'asc' }, { serviceName: 'asc' }, { permissionKey: 'asc' }],
     });
-    return entries as unknown as PermissionEntry[];
+    return entries as PermissionEntry[];
   }
 
   /**

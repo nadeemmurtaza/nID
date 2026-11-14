@@ -34,7 +34,7 @@ pub async fn read_file_with_limit(
     field_name: &str,
     max_size: u64,
 ) -> Result<UploadedFile> {
-    let mut found_field: Option<(axum::extract::MultipartData, String, String)> = None;
+    let mut found: Option<(Vec<u8>, String, String)> = None;
 
     while let Some(field) = multipart.next_field().await.context("Failed to read multipart field")? {
         let name = field.name()
@@ -42,21 +42,20 @@ pub async fn read_file_with_limit(
             .unwrap_or_default();
 
         if name == field_name {
-            if let Some(filename) = field.file_name() {
+            if let Some(filename) = field.file_name().map(|s| s.to_string()) {
                 let content_type = field.content_type()
                     .map(|m| m.to_string())
                     .unwrap_or_else(|| "application/octet-stream".to_string());
 
-                found_field = Some((field, filename, content_type));
+                let buffer = read_field_bytes(field, max_size).await?;
+                found = Some((buffer, filename, content_type));
                 break;
             }
         }
     }
 
-    let (field, filename, content_type) = found_field
+    let (buffer, filename, content_type) = found
         .ok_or_else(|| anyhow!("No file uploaded — expected multipart field \"{}\"", field_name))?;
-
-    let buffer = read_field_bytes(field, max_size).await?;
 
     Ok(UploadedFile {
         buffer,
@@ -80,7 +79,7 @@ pub async fn read_multiple_files(
             .unwrap_or_default();
 
         if name == field_name {
-            if let Some(filename) = field.file_name() {
+            if let Some(filename) = field.file_name().map(|s| s.to_string()) {
                 let content_type = field.content_type()
                     .map(|m| m.to_string())
                     .unwrap_or_else(|| "application/octet-stream".to_string());
@@ -109,7 +108,7 @@ pub async fn read_multiple_files(
 
 /// Read the bytes from a multipart field, enforcing a size limit.
 async fn read_field_bytes(
-    mut field: axum::extract::MultipartData,
+    mut field: axum::extract::multipart::Field<'_>,
     max_size: u64,
 ) -> Result<Vec<u8>> {
     let mut buffer = Vec::new();

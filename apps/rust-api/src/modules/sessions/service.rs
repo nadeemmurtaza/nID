@@ -71,7 +71,7 @@ impl SessionsService {
 
     /// Resolve a session token to the session row.
     async fn resolve(&self, token: &str) -> Result<VerificationSessionRow> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
         let token_hash = sha256_hex(token);
 
         let session: VerificationSessionRow = sqlx::query_as(
@@ -95,10 +95,10 @@ impl SessionsService {
     /// so apps/verify-ui can determine the current step.
     pub async fn get_status(&self, token: &str) -> Result<SessionStatusResponse> {
         let session = self.resolve(token).await?;
-        let conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
         // Set tenant context for RLS
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&session.tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -131,6 +131,7 @@ impl SessionsService {
         .await
         .map_err(|_| anyhow!("Subject not found"))?;
 
+        conn.commit().await?;
         Ok(SessionStatusResponse {
             case_id: session.case_id,
             status: kase.status,
@@ -159,8 +160,8 @@ impl SessionsService {
     /// and signals the Temporal workflow. Mirrors SessionsService.submitDocument() in TypeScript.
     pub async fn submit_document(&self, token: &str, file: UploadedFile) -> Result<AcceptedResponse> {
         let session = self.resolve(token).await?;
-        let conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1")
+        let mut conn = self.db.inner().begin().await?;
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&session.tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -201,7 +202,7 @@ impl SessionsService {
 
         // Record audit log
         sqlx::query(
-            "INSERT INTO audit_log (tenant_id, actor_type, actor_id, action, subject_id, case_id, metadata, created_at)
+            "INSERT INTO audit_log_entry (tenant_id, actor_type, actor_id, action, subject_id, case_id, metadata, created_at)
              VALUES ($1, 'SUBJECT', $2, 'verification_case.submit_document', $3, $4, $5, $6)",
         )
         .bind(&session.tenant_id)
@@ -223,6 +224,7 @@ impl SessionsService {
         // TODO: signal Temporal workflow with document URL
         // TODO: store file bytes via storage driver
 
+        conn.commit().await?;
         Ok(AcceptedResponse { accepted: true })
     }
 
@@ -232,8 +234,8 @@ impl SessionsService {
     /// the Temporal workflow. Mirrors SessionsService.submitLiveness() in TypeScript.
     pub async fn submit_liveness(&self, token: &str, files: Vec<UploadedFile>) -> Result<AcceptedResponse> {
         let session = self.resolve(token).await?;
-        let conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1")
+        let mut conn = self.db.inner().begin().await?;
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&session.tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -280,6 +282,7 @@ impl SessionsService {
         // TODO: signal Temporal workflow with frame URLs
         // TODO: store frame bytes via storage driver
 
+        conn.commit().await?;
         Ok(AcceptedResponse { accepted: true })
     }
 
@@ -293,8 +296,8 @@ impl SessionsService {
         }
 
         let session = self.resolve(token).await?;
-        let conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1")
+        let mut conn = self.db.inner().begin().await?;
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&session.tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -344,6 +347,7 @@ impl SessionsService {
         // TODO: signal Temporal workflow with document URL
         // TODO: store file bytes via storage driver
 
+        conn.commit().await?;
         Ok(AcceptedResponse { accepted: true })
     }
 
@@ -382,8 +386,8 @@ impl SessionsService {
         payload: &serde_json::Value,
     ) -> Result<AcceptedResponse> {
         let session = self.resolve(token).await?;
-        let conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1")
+        let mut conn = self.db.inner().begin().await?;
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&session.tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -404,7 +408,7 @@ impl SessionsService {
         // Record audit log entry
         let now = chrono::Utc::now();
         sqlx::query(
-            "INSERT INTO audit_log (tenant_id, actor_type, actor_id, action, subject_id, case_id, metadata, created_at)
+            "INSERT INTO audit_log_entry (tenant_id, actor_type, actor_id, action, subject_id, case_id, metadata, created_at)
              VALUES ($1, 'SUBJECT', $2, $3, $4, $5, $6, $7)",
         )
         .bind(&session.tenant_id)
@@ -425,6 +429,7 @@ impl SessionsService {
             "Method submission — Temporal signaling not yet implemented"
         );
 
+        conn.commit().await?;
         Ok(AcceptedResponse { accepted: true })
     }
 }

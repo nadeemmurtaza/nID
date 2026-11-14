@@ -1,11 +1,17 @@
 //! Brands handlers.
+//!
+//! Mirrors `apps/api/src/modules/brands/brands.controller.ts`.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
 
-use crate::modules::brands::dto::{BrandMembershipResponse, BrandResponse, CreateBrandRequest, MessageResponse, UpdateBrandRequest};
+use crate::core::auth::session::AccountSession;
+use crate::modules::brands::dto::{
+    BrandMembershipResponse, BrandResponse, CreateBrandRequest, ListBrandsQuery, MessageResponse,
+    UpdateBrandRequest,
+};
 use crate::modules::brands::service::BrandsService;
 
 pub struct BrandsState {
@@ -16,6 +22,10 @@ fn error_response(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
     let msg = err.to_string();
     let status = if msg.contains("not found") {
         StatusCode::NOT_FOUND
+    } else if msg.contains("already exists") {
+        StatusCode::CONFLICT
+    } else if msg.contains("not an admin") || msg.contains("not a member") {
+        StatusCode::FORBIDDEN
     } else {
         tracing::error!(error = %err, "Internal error");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -23,64 +33,62 @@ fn error_response(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
     (status, Json(serde_json::json!({ "message": msg })))
 }
 
+/// POST /v1/brands
 pub async fn create(
-    Path((tenant_id, api_key_id)): Path<(String, String)>,
+    account: AccountSession,
     State(state): State<Arc<BrandsState>>,
     Json(req): Json<CreateBrandRequest>,
 ) -> Result<Json<BrandResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let brand = state.service.create(&tenant_id, &api_key_id, &req).await.map_err(error_response)?;
+    let brand = state.service.create(&account.id, &req).await.map_err(error_response)?;
     Ok(Json(brand))
 }
 
-pub async fn list_all(
-    Path(tenant_id): Path<String>,
+/// GET /v1/brands?organizationId=...
+pub async fn list(
+    account: AccountSession,
+    Query(query): Query<ListBrandsQuery>,
     State(state): State<Arc<BrandsState>>,
 ) -> Result<Json<Vec<BrandResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let brands = state.service.list_all(&tenant_id).await.map_err(error_response)?;
+    let brands = state.service.list(&account.id, &query.organization_id).await.map_err(error_response)?;
     Ok(Json(brands))
 }
 
-pub async fn get_by_slug(
-    Path((tenant_id, slug)): Path<(String, String)>,
-    State(state): State<Arc<BrandsState>>,
-) -> Result<Json<BrandResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let brand = state.service.get_by_slug(&tenant_id, &slug).await.map_err(error_response)?;
-    Ok(Json(brand))
-}
-
-/// GET /v1/brands/:tenantId/:id — get by ID
+/// GET /v1/brands/:id
 pub async fn get_by_id(
-    Path((tenant_id, id)): Path<(String, String)>,
+    account: AccountSession,
+    Path(id): Path<String>,
     State(state): State<Arc<BrandsState>>,
 ) -> Result<Json<BrandResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let brand = state.service.get_by_id(&tenant_id, &id).await.map_err(error_response)?;
+    let brand = state.service.get_by_id(&account.id, &id).await.map_err(error_response)?;
     Ok(Json(brand))
 }
 
-/// PATCH /v1/brands/:tenantId/:apiKeyId/:id — update a brand
+/// PATCH /v1/brands/:id
 pub async fn update(
-    Path((tenant_id, api_key_id, id)): Path<(String, String, String)>,
+    account: AccountSession,
+    Path(id): Path<String>,
     State(state): State<Arc<BrandsState>>,
     Json(req): Json<UpdateBrandRequest>,
 ) -> Result<Json<BrandResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let brand = state.service.update(&tenant_id, &api_key_id, &id, &req).await.map_err(error_response)?;
+    let brand = state.service.update(&account.id, &id, &req).await.map_err(error_response)?;
     Ok(Json(brand))
 }
 
-/// DELETE /v1/brands/:tenantId/:apiKeyId/:id — deactivate a brand
+/// DELETE /v1/brands/:id
 pub async fn remove(
-    Path((tenant_id, api_key_id, id)): Path<(String, String, String)>,
+    account: AccountSession,
+    Path(id): Path<String>,
     State(state): State<Arc<BrandsState>>,
 ) -> Result<Json<MessageResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let msg = state.service.remove(&tenant_id, &api_key_id, &id).await.map_err(error_response)?;
+    let msg = state.service.remove(&account.id, &id).await.map_err(error_response)?;
     Ok(Json(msg))
 }
 
-/// GET /v1/brands/my-memberships/:accountId — list brands the account works with
+/// GET /v1/brands/my-memberships
 pub async fn list_my_memberships(
-    Path(account_id): Path<String>,
+    account: AccountSession,
     State(state): State<Arc<BrandsState>>,
 ) -> Result<Json<Vec<BrandMembershipResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    let memberships = state.service.list_my_memberships(&account_id).await.map_err(error_response)?;
+    let memberships = state.service.list_my_memberships(&account.id).await.map_err(error_response)?;
     Ok(Json(memberships))
 }

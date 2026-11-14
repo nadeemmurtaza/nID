@@ -23,7 +23,8 @@ pub async fn request_tracing(req: Request, next: Next) -> Response {
     let method = req.method().clone();
     let uri = req.uri().clone();
 
-    let span = Span::current().record("request_id", &request_id);
+    let span = Span::current();
+    span.record("request_id", &request_id);
 
     let _guard = span.enter();
     let start = std::time::Instant::now();
@@ -36,7 +37,7 @@ pub async fn request_tracing(req: Request, next: Next) -> Response {
     // Add request ID to response headers
     res.headers_mut().insert(
         REQUEST_ID_HEADER,
-        request_id.parse().unwrap_or_default(),
+        request_id.parse().unwrap_or_else(|_| axum::http::HeaderValue::from_static("unknown")),
     );
 
     // Log at different levels based on status

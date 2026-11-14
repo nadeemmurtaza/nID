@@ -1,7 +1,7 @@
 //! Profile content service — business logic for profile content operations.
 
 use anyhow::{anyhow, Result};
-use sqlx::{FromRow, Row};
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::core::config::AppEnv;
@@ -22,30 +22,26 @@ impl ProfileContentService {
         Self { db, env }
     }
 
-    fn get_profile_id(&self, account_id: &str) -> impl std::future::Future<Output = Result<String>> + '_ {
-        async move {
-            let mut conn = self.db.get().await?;
-            let profile_id = sqlx::query("SELECT id FROM profile WHERE account_id = $1 LIMIT 1")
-                .bind(account_id)
-                .fetch_optional(&mut *conn)
-                .await?
-                .map(|r| r.get::<String, _>("id"))
-                .ok_or_else(|| anyhow!("No profile found for this account"))?;
-            Ok(profile_id)
-        }
+    async fn get_profile_id(&self, account_id: &str) -> Result<String> {
+        let mut conn = self.db.get().await?;
+        let profile_id = sqlx::query("SELECT id FROM profile WHERE account_id = $1 LIMIT 1")
+            .bind(account_id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .map(|r| r.get::<String, _>("id"))
+            .ok_or_else(|| anyhow!("No profile found for this account"))?;
+        Ok(profile_id)
     }
 
-    fn get_published_profile_id(&self, slug: &str) -> impl std::future::Future<Output = Result<String>> + '_ {
-        async move {
-            let mut conn = self.db.get().await?;
-            let profile_id = sqlx::query("SELECT id FROM profile WHERE slug = $1 AND is_published = true LIMIT 1")
-                .bind(slug)
-                .fetch_optional(&mut *conn)
-                .await?
-                .map(|r| r.get::<String, _>("id"))
-                .ok_or_else(|| anyhow!("No published profile at this URL"))?;
-            Ok(profile_id)
-        }
+    async fn get_published_profile_id(&self, slug: &str) -> Result<String> {
+        let mut conn = self.db.get().await?;
+        let profile_id = sqlx::query("SELECT id FROM profile WHERE slug = $1 AND is_published = true LIMIT 1")
+            .bind(slug)
+            .fetch_optional(&mut *conn)
+            .await?
+            .map(|r| r.get::<String, _>("id"))
+            .ok_or_else(|| anyhow!("No published profile at this URL"))?;
+        Ok(profile_id)
     }
 
     // ── Offers ──
@@ -111,17 +107,17 @@ impl ProfileContentService {
         let mut active_val: Option<bool> = None;
 
         if let Some(ref t) = req.title {
-            sets.push("title = $1");
+            sets.push("title = $1".to_string());
             title_val = Some(t.clone());
         }
         if req.price_minor.is_some() {
             let idx = sets.len() + 1;
-            sets.push(&format!("price_minor = ${}", idx));
+            sets.push(format!("price_minor = ${}", idx));
             price_val = req.price_minor;
         }
         if req.is_active.is_some() {
             let idx = sets.len() + 1;
-            sets.push(&format!("is_active = ${}", idx));
+            sets.push(format!("is_active = ${}", idx));
             active_val = req.is_active;
         }
 
@@ -327,17 +323,17 @@ impl ProfileContentService {
         let mut order_val: Option<i32> = None;
 
         if let Some(ref l) = req.label {
-            sets.push("label = $1");
+            sets.push("label = $1".to_string());
             label_val = Some(l.clone());
         }
         if let Some(ref u) = req.url {
             let idx = sets.len() + 1;
-            sets.push(&format!("url = ${}", idx));
+            sets.push(format!("url = ${}", idx));
             url_val = Some(u.clone());
         }
         if req.order.is_some() {
             let idx = sets.len() + 1;
-            sets.push(&format!("r#order = ${}", idx));
+            sets.push(format!("r#order = ${}", idx));
             order_val = req.order;
         }
 
@@ -460,17 +456,17 @@ impl ProfileContentService {
         let mut url_val: Option<String> = None;
 
         if let Some(ref p) = req.platform {
-            sets.push("platform = $1");
+            sets.push("platform = $1".to_string());
             platform_val = Some(p.clone());
         }
         if let Some(ref u) = req.username {
             let idx = sets.len() + 1;
-            sets.push(&format!("username = ${}", idx));
+            sets.push(format!("username = ${}", idx));
             username_val = Some(u.clone());
         }
         if req.url.is_some() {
             let idx = sets.len() + 1;
-            sets.push(&format!("url = ${}", idx));
+            sets.push(format!("url = ${}", idx));
             url_val = req.url.clone();
         }
 

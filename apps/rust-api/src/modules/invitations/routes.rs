@@ -11,5 +11,5 @@ pub fn invitations_router() -> Router<Arc<InvitationsState>> {
         .route("/v1/invitations/username", post(handlers::send_username_invite))
         .route("/v1/invitations/accept", post(handlers::accept_invitation))
         .route("/v1/invitations", get(handlers::list))
-        .route("/v1/invitations/:id", delete(handlers::revoke))
+        .route("/v1/invitations/{id}", delete(handlers::revoke))
 }

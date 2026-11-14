@@ -10,5 +10,5 @@ pub fn account_verification_router() -> Router<Arc<AccountVerificationState>> {
         .route("/v1/accounts/me/verification", get(handlers::get_status))
         .route("/v1/accounts/me/verification/cases", post(handlers::create_case))
         .route("/v1/accounts/me/verification/cases", get(handlers::list_cases))
-        .route("/v1/accounts/me/verification/cases/:id", get(handlers::get_case))
+        .route("/v1/accounts/me/verification/cases/{id}", get(handlers::get_case))
 }

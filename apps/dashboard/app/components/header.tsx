@@ -3,7 +3,13 @@
 import type { Tenant } from '../../lib/api-client';
 import { Logomark } from './logomark';
 
-export function Header({ tenant, onLogout }: { tenant: Tenant; onLogout: () => void }) {
+export function Header({
+  tenant,
+  onLogout,
+}: {
+  tenant: Pick<Tenant, 'name'> & Partial<Pick<Tenant, 'signedInAs'>>;
+  onLogout: () => void;
+}) {
   return (
     <header className="app-header">
       <div className="header-identity">

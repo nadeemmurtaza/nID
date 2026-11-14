@@ -2,15 +2,13 @@
 //!
 //! Mirrors `apps/api/src/modules/organizations/organizations.service.ts`.
 
-use anyhow::{anyhow, Context, Result};
-use chrono::Utc;
-use deadpool_postgres::Object;
+use anyhow::{anyhow, Result};
 use sqlx::{FromRow, Row};
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
 use crate::modules::organizations::dto::{
-    BeneficialOwnerResponse, MembershipResponse, MessageResponse, OrganizationResponse,
+    BeneficialOwnerResponse, MembershipResponse, OrganizationResponse,
 };
 
 #[derive(Debug, Clone, FromRow)]
@@ -56,8 +54,8 @@ impl OrganizationsService {
         api_key_id: &str,
         req: &crate::modules::organizations::dto::CreateOrganizationRequest,
     ) -> Result<OrganizationResponse> {
-        let conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1").bind(tenant_id).execute(&mut *conn).await?;
+        let mut conn = self.db.inner().begin().await?;
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)").bind(tenant_id).execute(&mut *conn).await?;
 
         // Verify subject exists and is ORGANIZATION type
         let subject_type: String = sqlx::query_scalar(
@@ -100,12 +98,13 @@ impl OrganizationsService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(org))
     }
 
     pub async fn list_all(&self, tenant_id: &str) -> Result<Vec<OrganizationResponse>> {
-        let conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1").bind(tenant_id).execute(&mut *conn).await?;
+        let mut conn = self.db.inner().begin().await?;
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)").bind(tenant_id).execute(&mut *conn).await?;
 
         let rows: Vec<OrganizationRow> = sqlx::query_as(
             "SELECT id, tenant_id, subject_id, legal_name, registration_number, country_code, address, created_at, updated_at FROM organization ORDER BY created_at DESC",
@@ -113,12 +112,13 @@ impl OrganizationsService {
         .fetch_all(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(rows.into_iter().map(Self::row_to_response).collect())
     }
 
     pub async fn get_by_id(&self, tenant_id: &str, org_id: &str) -> Result<OrganizationResponse> {
-        let conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1").bind(tenant_id).execute(&mut *conn).await?;
+        let mut conn = self.db.inner().begin().await?;
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)").bind(tenant_id).execute(&mut *conn).await?;
 
         let org: OrganizationRow = sqlx::query_as(
             "SELECT id, tenant_id, subject_id, legal_name, registration_number, country_code, address, created_at, updated_at FROM organization WHERE id = $1",
@@ -128,12 +128,13 @@ impl OrganizationsService {
         .await
         .map_err(|_| anyhow!("Organization not found"))?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(org))
     }
 
     pub async fn list_memberships(&self, tenant_id: &str, org_id: &str) -> Result<Vec<MembershipResponse>> {
-        let conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1").bind(tenant_id).execute(&mut *conn).await?;
+        let mut conn = self.db.inner().begin().await?;
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)").bind(tenant_id).execute(&mut *conn).await?;
 
         // Verify org exists
         let exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM organization WHERE id = $1)")
@@ -172,6 +173,7 @@ impl OrganizationsService {
             })
             .collect();
 
+        conn.commit().await?;
         Ok(memberships)
     }
 
@@ -182,8 +184,8 @@ impl OrganizationsService {
         phone: &str,
         role: &str,
     ) -> Result<MembershipResponse> {
-        let conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1").bind(tenant_id).execute(&mut *conn).await?;
+        let mut conn = self.db.inner().begin().await?;
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)").bind(tenant_id).execute(&mut *conn).await?;
 
         // Verify org exists
         let exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM organization WHERE id = $1)")
@@ -209,6 +211,7 @@ impl OrganizationsService {
         .fetch_one(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(MembershipResponse {
             id: membership.0,
             tenant_id: membership.1,
@@ -223,8 +226,8 @@ impl OrganizationsService {
     }
 
     pub async fn list_beneficial_owners(&self, tenant_id: &str, org_id: &str) -> Result<Vec<BeneficialOwnerResponse>> {
-        let conn = self.db.get().await?;
-        sqlx::query("SET app.tenant_id = $1").bind(tenant_id).execute(&mut *conn).await?;
+        let mut conn = self.db.inner().begin().await?;
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)").bind(tenant_id).execute(&mut *conn).await?;
 
         let rows = sqlx::query(
             r#"
@@ -250,12 +253,47 @@ impl OrganizationsService {
             })
             .collect();
 
+        conn.commit().await?;
         Ok(owners)
     }
 
     // ── Account-session endpoints (mirrors TypeScript OrganizationsController) ──
 
     /// List organizations the account is an active member of — mirrors listMyMemberships().
+    /// Authorizes an Account to act as an ACTIVE admin of an Organization.
+    /// Mirrors `organizations.service.ts`'s `requireActiveAdmin()`.
+    /// Returns the membership's tenant_id, used by callers (e.g. BrandsService) for webhook emission.
+    pub async fn require_active_admin(&self, organization_id: &str, account_id: &str) -> Result<String> {
+        let mut conn = self.db.get().await?;
+        let tenant_id: Option<String> = sqlx::query_scalar(
+            "SELECT tenant_id FROM organization_membership WHERE organization_id = $1 AND account_id = $2 AND status = 'ACTIVE' AND is_admin = true",
+        )
+        .bind(organization_id)
+        .bind(account_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        tenant_id.ok_or_else(|| anyhow!("This account is not an admin of this organization."))
+    }
+
+    /// Authorizes an Account to act as an ACTIVE member (not necessarily admin) of an Organization.
+    /// Mirrors `organizations.service.ts`'s `requireActiveMember()`.
+    pub async fn require_active_member(&self, organization_id: &str, account_id: &str) -> Result<()> {
+        let mut conn = self.db.get().await?;
+        let membership: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM organization_membership WHERE organization_id = $1 AND account_id = $2 AND status = 'ACTIVE'",
+        )
+        .bind(organization_id)
+        .bind(account_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        if membership.is_none() {
+            return Err(anyhow!("This account is not a member of this organization."));
+        }
+        Ok(())
+    }
+
     pub async fn list_my_memberships(&self, account_id: &str) -> Result<Vec<OrganizationResponse>> {
         let mut conn = self.db.get().await?;
 

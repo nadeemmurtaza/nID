@@ -19,12 +19,12 @@ pub fn sha256_hex(input: &str) -> String {
 /// expected value one byte at a time. Mismatched lengths return false
 /// immediately (safe: length itself isn't the secret).
 pub fn constant_time_equal_hex(a: &str, b: &str) -> bool {
-    let buf_a = hex::decode(a).ok()?;
-    let buf_b = hex::decode(b).ok()?;
+    let (Ok(buf_a), Ok(buf_b)) = (hex::decode(a), hex::decode(b)) else {
+        return false;
+    };
     if buf_a.len() != buf_b.len() {
         return false;
     }
-    use std::cmp::Ordering;
     let mut result = 0u8;
     for (x, y) in buf_a.iter().zip(buf_b.iter()) {
         result |= x ^ y;

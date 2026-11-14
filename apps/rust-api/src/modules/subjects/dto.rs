@@ -12,6 +12,7 @@ pub enum SubjectType {
 
 /// Request body for POST /v1/subjects
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateSubjectRequest {
     pub r#type: SubjectType,
     #[serde(default)]
@@ -44,6 +45,7 @@ pub struct CreateSubjectRequest {
 
 /// Subject in API responses
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubjectResponse {
     pub id: String,
     pub tenant_id: String,
@@ -69,6 +71,7 @@ pub struct SubjectResponse {
 
 /// Badge for a single ClaimType (strongest APPROVED case)
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BadgeResponse {
     pub claim_type: String,
     pub level: String,
@@ -78,6 +81,7 @@ pub struct BadgeResponse {
 
 /// Badges response: one badge per ClaimType
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BadgesResponse {
     pub subject_id: String,
     pub badges: Vec<BadgeResponse>,
@@ -85,6 +89,7 @@ pub struct BadgesResponse {
 
 /// Attribute badge for a single AttributeType
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AttributeBadgeResponse {
     pub attribute: String,
     pub level: String,
@@ -95,6 +100,7 @@ pub struct AttributeBadgeResponse {
 
 /// Attribute badges response: one badge per AttributeType
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AttributeBadgesResponse {
     pub subject_id: String,
     pub badges: Vec<AttributeBadgeResponse>,

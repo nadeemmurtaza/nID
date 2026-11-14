@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SendEmailInviteRequest {
     pub email: String,
     #[serde(default)]
@@ -18,6 +19,7 @@ pub struct SendEmailInviteRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SendUsernameInviteRequest {
     pub username: String,
     #[serde(default)]
@@ -33,6 +35,7 @@ pub struct SendUsernameInviteRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AcceptInvitationRequest {
     pub invitation_id: String,
 }
@@ -52,6 +55,7 @@ pub enum InvitationStatus {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InvitationResponse {
     pub id: String,
     pub tenant_id: String,
@@ -70,6 +74,7 @@ pub struct InvitationResponse {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MessageResponse {
     pub message: String,
 }

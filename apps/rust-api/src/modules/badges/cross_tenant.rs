@@ -28,7 +28,7 @@ impl CrossTenantBadgesService {
     /// Reads from the denormalized phone_badge_evidence table instead of
     /// joining Subject/VerificationCase across tenants.
     pub async fn get_badges_for_phone(&self, phone: &str) -> Result<Vec<Badge>> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.get().await?;
 
         let rows = sqlx::query(
             "SELECT claim_type, level, verified_at, case_id FROM phone_badge_evidence WHERE phone = $1 ORDER BY level DESC, verified_at DESC",

@@ -1,0 +1,24 @@
+-- @updatedAt in Prisma is applied by Prisma Client at the application
+-- layer only -- it creates no DB-level default or trigger. Any raw SQL
+-- INSERT that omits updatedAt (as the Rust backend's do) fails NOT NULL.
+-- This is additive and inert for Prisma's own writes, which always
+-- supply updatedAt explicitly and so never hit this default.
+
+ALTER TABLE "Tenant" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "VerificationPolicy" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Subject" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Organization" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "VerificationCase" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Account" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Profile" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Service" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Appointment" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "BillingService" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "BillingAccount" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Subscription" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Invoice" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "PaymentIntent" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Refund" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Brand" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Department" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "RoleDefinition" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;

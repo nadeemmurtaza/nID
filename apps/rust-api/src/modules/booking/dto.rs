@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateServiceRequest {
     pub name: String,
     pub duration_minutes: i32,
@@ -13,6 +14,7 @@ pub struct CreateServiceRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateServiceRequest {
     #[serde(default)]
     pub name: Option<String>,
@@ -25,6 +27,7 @@ pub struct UpdateServiceRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateAvailabilityRuleRequest {
     pub weekday: String,
     pub start_time: String,
@@ -32,6 +35,7 @@ pub struct CreateAvailabilityRuleRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateAppointmentRequest {
     pub service_id: String,
     pub start_time: String,
@@ -42,6 +46,7 @@ pub struct CreateAppointmentRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateAvailabilityRuleRequest {
     #[serde(default)]
     pub weekday: Option<String>,
@@ -52,6 +57,7 @@ pub struct UpdateAvailabilityRuleRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AvailabilityQueryRequest {
     pub service_id: String,
     pub from: String,
@@ -59,6 +65,7 @@ pub struct AvailabilityQueryRequest {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FreeSlotResponse {
     pub start_time: String,
     pub end_time: String,
@@ -66,6 +73,7 @@ pub struct FreeSlotResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServiceResponse {
     pub id: String,
     pub profile_id: String,
@@ -78,6 +86,7 @@ pub struct ServiceResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AvailabilityRuleResponse {
     pub id: String,
     pub profile_id: String,
@@ -87,6 +96,7 @@ pub struct AvailabilityRuleResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AppointmentResponse {
     pub id: String,
     pub profile_id: String,
@@ -99,6 +109,7 @@ pub struct AppointmentResponse {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MessageResponse {
     pub message: String,
 }

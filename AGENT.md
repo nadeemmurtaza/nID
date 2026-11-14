@@ -98,11 +98,12 @@ Canonical token file: `packages/design-tokens/tokens.css` (package
 `@import "@newax/design-tokens/tokens.css";` at the top of each app's
 `app/globals.css`. Same palette, typography, spacing, layout, radius,
 elevation and motion tokens as every other NEWAX repo — Communicator's
-`frontend/src/styles/newax-tokens.css` is the identical copy. Until
-`core-newax` hosts this as a real shared package (the correct
-long-term home, per this ecosystem's "build once, reuse everywhere"
-rule), the file is duplicated byte-for-byte across repos: edit one,
-copy to the others, never fork the values. The file also defines
+`packages/design-tokens/tokens.css` is the identical copy, same
+package name (`@newax/design-tokens`), same folder. Until `core-newax`
+hosts this as a real shared package (the correct long-term home, per
+this ecosystem's "build once, reuse everywhere" rule), the package is
+duplicated byte-for-byte across repos: edit one, copy to the others,
+never fork the values. The file also defines
 compatibility aliases (`--bg`, `--fg`, `--accent`, etc.) so the short
 variable names already used across these four apps keep resolving
 without a rewrite — new code should read the canonical `--color-*`,

@@ -6,12 +6,10 @@
 //! after the DB transaction commits; the Rust version will do the same once
 //! Temporal Rust SDK is integrated.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use chrono::Utc;
-use deadpool_postgres::Object;
-use nid_shared_types::{generate_session_token, sha256_hex};
+use nid_shared_types::generate_session_token;
 use sqlx::{FromRow, Row};
-use tracing::info;
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
@@ -138,10 +136,10 @@ impl VerificationCasesService {
         api_key_id: &str,
         req: &crate::modules::verification_cases::dto::CreateVerificationCaseRequest,
     ) -> Result<CreatedCaseResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
         // Set tenant context for RLS
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -161,7 +159,7 @@ impl VerificationCasesService {
         }
 
         // Verify subject exists
-        let subject: SubjectSummaryRow = sqlx::query_as(
+        let _subject: SubjectSummaryRow = sqlx::query_as(
             "SELECT id, given_name, family_name, email, phone FROM subject WHERE id = $1",
         )
         .bind(&req.subject_id)
@@ -248,6 +246,7 @@ impl VerificationCasesService {
 
         let hosted_url = format!("{}/session/{}", self.env.verify_ui_url, session.plaintext);
 
+        conn.commit().await?;
         Ok(CreatedCaseResponse {
             id: updated.id,
             tenant_id: updated.tenant_id,
@@ -271,10 +270,10 @@ impl VerificationCasesService {
         actor_type: &str,
         actor_id: &str,
     ) -> Result<Vec<VerificationCaseWithSubject>> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
         // Set tenant context for RLS
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -333,6 +332,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(cases)
     }
 
@@ -344,10 +344,10 @@ impl VerificationCasesService {
         actor_id: &str,
         case_id: &str,
     ) -> Result<VerificationCaseWithAttempts> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
         // Set tenant context for RLS
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -392,6 +392,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(VerificationCaseWithAttempts {
             id: kase.id,
             tenant_id: kase.tenant_id,
@@ -421,10 +422,10 @@ impl VerificationCasesService {
         decision: &str,
         reason: Option<&str>,
     ) -> Result<VerificationCaseResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
         // Set tenant context for RLS
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -484,6 +485,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(Self::case_to_response(kase))
     }
 
@@ -495,10 +497,10 @@ impl VerificationCasesService {
         case_id: &str,
         code: &str,
     ) -> Result<MessageResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
         // Set tenant context for RLS
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -547,6 +549,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(MessageResponse {
             message: "OTP code submitted for verification".to_string(),
         })
@@ -561,10 +564,10 @@ impl VerificationCasesService {
         method: &str,
         reported_value: &str,
     ) -> Result<MessageResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
         // Set tenant context for RLS
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -605,6 +608,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(MessageResponse {
             message: format!("Self-reported value submitted for {}", method),
         })
@@ -620,10 +624,10 @@ impl VerificationCasesService {
         decision: &str,
         notes: Option<&str>,
     ) -> Result<MessageResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
         // Set tenant context for RLS
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -664,6 +668,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(MessageResponse {
             message: format!("Agent attestation submitted for {}", method),
         })
@@ -678,10 +683,10 @@ impl VerificationCasesService {
         method: &str,
         code: &str,
     ) -> Result<MessageResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
         // Set tenant context for RLS
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -722,6 +727,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(MessageResponse {
             message: format!("Code submitted for {}", method),
         })
@@ -737,10 +743,10 @@ impl VerificationCasesService {
         latitude: f64,
         longitude: f64,
     ) -> Result<MessageResponse> {
-        let conn = self.db.get().await?;
+        let mut conn = self.db.inner().begin().await?;
 
         // Set tenant context for RLS
-        sqlx::query("SET app.tenant_id = $1")
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
@@ -781,6 +787,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(MessageResponse {
             message: format!("Location submitted for {}", method),
         })

@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateOfferRequest {
     pub title: String,
     pub price_minor: i64,
@@ -12,6 +13,7 @@ pub struct CreateOfferRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateOfferRequest {
     #[serde(default)]
     pub title: Option<String>,
@@ -22,6 +24,7 @@ pub struct UpdateOfferRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpsertBusinessHourRequest {
     pub start_time: String,
     pub end_time: String,
@@ -30,6 +33,7 @@ pub struct UpsertBusinessHourRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateCustomLinkRequest {
     pub label: String,
     pub url: String,
@@ -38,6 +42,7 @@ pub struct CreateCustomLinkRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateSocialLinkRequest {
     pub platform: String,
     pub username: String,
@@ -46,6 +51,7 @@ pub struct CreateSocialLinkRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateCustomLinkRequest {
     #[serde(default)]
     pub label: Option<String>,
@@ -56,6 +62,7 @@ pub struct UpdateCustomLinkRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateSocialLinkRequest {
     #[serde(default)]
     pub platform: Option<String>,
@@ -66,12 +73,14 @@ pub struct UpdateSocialLinkRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UploadProfileImageRequest {
     #[serde(default)]
     pub kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProfileImageResponse {
     pub id: String,
     pub profile_id: String,
@@ -82,6 +91,7 @@ pub struct ProfileImageResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateContactMessageRequest {
     pub name: String,
     pub email: String,
@@ -89,6 +99,7 @@ pub struct CreateContactMessageRequest {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OfferResponse {
     pub id: String,
     pub profile_id: String,
@@ -100,6 +111,7 @@ pub struct OfferResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BusinessHourResponse {
     pub id: String,
     pub profile_id: String,
@@ -110,6 +122,7 @@ pub struct BusinessHourResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CustomLinkResponse {
     pub id: String,
     pub profile_id: String,
@@ -119,6 +132,7 @@ pub struct CustomLinkResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SocialLinkResponse {
     pub id: String,
     pub profile_id: String,
@@ -128,6 +142,7 @@ pub struct SocialLinkResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ContactMessageResponse {
     pub id: String,
     pub profile_id: String,
@@ -139,6 +154,7 @@ pub struct ContactMessageResponse {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MessageResponse {
     pub message: String,
 }

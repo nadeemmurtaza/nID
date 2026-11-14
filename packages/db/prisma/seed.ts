@@ -10,6 +10,8 @@ import { createPrismaClient } from '../src/index';
 async function main(): Promise<void> {
   const prisma = createPrismaClient();
 
+  await seedPlatformTenant(prisma);
+
   for (const slug of ['tenant-a', 'tenant-b']) {
     const tenant = await prisma.tenant.upsert({
       where: { slug },
@@ -324,6 +326,7 @@ async function main(): Promise<void> {
     }
   }
 
+  await seedCommunicatorClient(prisma);
   await seedDemoProfile(prisma);
 
   await prisma.$disconnect();
@@ -339,6 +342,52 @@ async function main(): Promise<void> {
  * PhoneBadgeEvidence's schema comment. Safe to run more than once: every
  * step upserts or checks-then-creates by its own natural key.
  */
+
+/**
+ * The Tenant row apps/api/src/modules/account-verification/account-verification.service.ts
+ * hardcodes as PLATFORM_TENANT_ID ('nid-platform') — Subject/VerificationCase
+ * rows created through the self-service "Verification Center" flow (an
+ * Account acting for itself, not any tenant's API key) need a real Tenant
+ * to satisfy the RLS/foreign-key model every other row in this schema
+ * uses, even though nID itself is the party asking. Upserts by the fixed
+ * id so it is idempotent and the id account-verification.service.ts
+ * depends on never drifts.
+ */
+async function seedPlatformTenant(prisma: ReturnType<typeof createPrismaClient>): Promise<void> {
+  const tenant = await prisma.tenant.upsert({
+    where: { id: 'nid-platform' },
+    update: {},
+    create: { id: 'nid-platform', name: 'nID (Platform)', slug: 'nid-platform' },
+  });
+
+  // The two SelfServicePolicy names apps/profile-ui's Verification Center
+  // (owner-api.ts's SelfServicePolicy type) lets an already phone-verified
+  // Account run against itself — no otp_sms step, unlike a tenant's own
+  // policies above, since AccountSessionGuard already proved phone control.
+  await prisma.verificationPolicy.upsert({
+    where: { tenantId_name: { tenantId: tenant.id, name: 'identity' } },
+    update: { claimType: 'IDENTITY', level: 'DOCUMENT_VERIFIED' },
+    create: {
+      tenantId: tenant.id,
+      name: 'identity',
+      methods: ['document_ocr', 'liveness'],
+      claimType: 'IDENTITY',
+      level: 'DOCUMENT_VERIFIED',
+    },
+  });
+
+  await prisma.verificationPolicy.upsert({
+    where: { tenantId_name: { tenantId: tenant.id, name: 'cnic-phone-link' } },
+    update: { claimType: 'IDENTITY', level: 'REGISTRY_VERIFIED' },
+    create: {
+      tenantId: tenant.id,
+      name: 'cnic-phone-link',
+      methods: ['estamp_registry'],
+      claimType: 'IDENTITY',
+      level: 'REGISTRY_VERIFIED',
+    },
+  });
+}
 
 /**
  * The real "Login with nID" relying-party registration for Communicator
