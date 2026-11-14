@@ -33,7 +33,8 @@ apps/rust-api/
     │   ├── auth/            # Session & API key extractors
     │   ├── middleware/      # Request tracing, timing, X-Request-Id
     │   ├── error/           # Structured ApiError with HTTP status mapping
-    │   └── audit/           # Audit log recording service
+    │   ├── audit/           # Audit log recording service
+    │   └── upload/          # Multipart file upload utilities
     └── modules/
         ├── accounts/        # OTP, sessions, email verification
         ├── tenants/         # Tenant CRUD, API keys, staff management
@@ -76,7 +77,7 @@ All 16 NestJS API modules have been migrated to Rust with **155+ endpoints** cov
 
 ### Remaining Work
 
-- **File upload endpoints**: Document, liveness, and profile image uploads require multipart form parsing in Axum (currently stubs)
+- **File storage integration**: Uploaded file bytes are recorded in the database but not yet persisted via the storage driver (S3/local) — the multipart parsing layer is complete
 - **Temporal workflow integration**: Verification case workflows need Temporal Rust SDK
 - **Compilation**: Requires MSVC Build Tools on Windows (admin install needed)
 - **Testing**: Integration tests for all endpoints

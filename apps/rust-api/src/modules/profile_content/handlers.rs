@@ -1,12 +1,13 @@
 //! HTTP handlers for profile content endpoints.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, State, Multipart};
 use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
+use crate::core::upload::read_single_file;
 use crate::modules::profile_content::dto::{
     BusinessHourResponse, ContactMessageResponse, CreateContactMessageRequest,
     CreateCustomLinkRequest, CreateOfferRequest, CreateSocialLinkRequest,
@@ -219,24 +220,28 @@ pub async fn update_social_link(
 
 // ── Profile Images (owner) ──
 
-/// POST /v1/profiles/me/photo (stub — file upload not yet implemented)
+/// POST /v1/profiles/me/photo
 pub async fn upload_photo(
     State(state): State<Arc<ProfileContentState>>,
+    multipart: Multipart,
 ) -> Result<Json<ProfileImageResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let file = read_single_file(multipart, "file").await.map_err(internal_error)?;
     let account_id = "account".to_string();
-    let img = state.service.upload_photo(&account_id)
+    let img = state.service.upload_photo(&account_id, file)
         .await
         .map_err(internal_error)?;
     Ok(Json(img))
 }
 
-/// POST /v1/profiles/me/images (stub — file upload not yet implemented)
+/// POST /v1/profiles/me/images
 pub async fn upload_gallery_image(
     State(state): State<Arc<ProfileContentState>>,
+    multipart: Multipart,
 ) -> Result<Json<ProfileImageResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let file = read_single_file(multipart, "file").await.map_err(internal_error)?;
     let account_id = "account".to_string();
     let kind = "gallery".to_string();
-    let img = state.service.upload_gallery_image(&account_id, &kind)
+    let img = state.service.upload_gallery_image(&account_id, &kind, file)
         .await
         .map_err(internal_error)?;
     Ok(Json(img))

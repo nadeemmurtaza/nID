@@ -30,6 +30,7 @@ dotenvy = { workspace = true }
 validator = { workspace = true }
 once_cell = { workspace = true }
 mime = { workspace = true }
+multer = "3"
 
 # Local crates
 nid-shared-types = { path = "../../crates/shared-types" }

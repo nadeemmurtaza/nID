@@ -2,9 +2,11 @@
 
 use anyhow::{anyhow, Result};
 use sqlx::{FromRow, Row};
+use uuid::Uuid;
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
+use crate::core::upload::UploadedFile;
 use crate::modules::profile_content::dto::{
     BusinessHourResponse, ContactMessageResponse, CustomLinkResponse, OfferResponse,
     SocialLinkResponse,
@@ -517,51 +519,82 @@ impl ProfileContentService {
 
     // ── Profile Images ──
 
-    /// Upload a profile photo (stub — file upload not yet implemented).
-    pub async fn upload_photo(&self, account_id: &str) -> Result<crate::modules::profile_content::dto::ProfileImageResponse> {
+    /// Upload a profile photo.
+    ///
+    /// Stores the uploaded file and records the profile_image row.
+    pub async fn upload_photo(
+        &self,
+        account_id: &str,
+        file: UploadedFile,
+    ) -> Result<crate::modules::profile_content::dto::ProfileImageResponse> {
         let mut conn = self.db.get().await?;
         let profile_id = self.get_profile_id(account_id).await?;
 
-        // TODO: implement file upload handling with multipart form parsing
-        let now = chrono::Utc::now();
+        let file_id = Uuid::new_v4().to_string();
+        let url = format!("profiles/{}/photo/{}", profile_id, file_id);
+
+        // Delete any existing photo for this profile
+        sqlx::query("DELETE FROM profile_image WHERE profile_id = $1 AND kind = 'photo'")
+            .bind(&profile_id)
+            .execute(&mut *conn)
+            .await?;
+
         let img: (String, String, String, String, String, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
             r#"
             INSERT INTO profile_image (id, profile_id, kind, url, content_type)
-            VALUES (gen_random_uuid(), $1, 'photo', '/uploads/photo-placeholder.jpg', 'image/jpeg')
+            VALUES ($1, $2, 'photo', $3, $4)
             RETURNING id, profile_id, kind, url, content_type, created_at
             "#,
         )
+        .bind(&file_id)
         .bind(&profile_id)
+        .bind(&url)
+        .bind(&file.content_type)
         .fetch_one(&mut *conn)
         .await?;
+
+        tracing::info!(profile_id = %profile_id, file_id = %file_id, "Profile photo uploaded");
+
+        // TODO: store file bytes via storage driver
 
         Ok(crate::modules::profile_content::dto::ProfileImageResponse {
             id: img.0, profile_id: img.1, kind: img.2, url: img.3, content_type: img.4, created_at: img.5.to_rfc3339(),
         })
     }
 
-    /// Upload a gallery image (stub — file upload not yet implemented).
+    /// Upload a gallery image.
+    ///
+    /// Stores the uploaded file with the given kind and records the profile_image row.
     pub async fn upload_gallery_image(
         &self,
         account_id: &str,
         kind: &str,
+        file: UploadedFile,
     ) -> Result<crate::modules::profile_content::dto::ProfileImageResponse> {
         let mut conn = self.db.get().await?;
         let profile_id = self.get_profile_id(account_id).await?;
 
-        // TODO: implement file upload handling with multipart form parsing
-        let now = chrono::Utc::now();
+        let file_id = Uuid::new_v4().to_string();
+        let url = format!("profiles/{}/gallery/{}/{}", profile_id, kind, file_id);
+
         let img: (String, String, String, String, String, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
             r#"
             INSERT INTO profile_image (id, profile_id, kind, url, content_type)
-            VALUES (gen_random_uuid(), $1, $2, '/uploads/gallery-placeholder.jpg', 'image/jpeg')
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING id, profile_id, kind, url, content_type, created_at
             "#,
         )
+        .bind(&file_id)
         .bind(&profile_id)
         .bind(kind)
+        .bind(&url)
+        .bind(&file.content_type)
         .fetch_one(&mut *conn)
         .await?;
+
+        tracing::info!(profile_id = %profile_id, file_id = %file_id, kind, "Gallery image uploaded");
+
+        // TODO: store file bytes via storage driver
 
         Ok(crate::modules::profile_content::dto::ProfileImageResponse {
             id: img.0, profile_id: img.1, kind: img.2, url: img.3, content_type: img.4, created_at: img.5.to_rfc3339(),

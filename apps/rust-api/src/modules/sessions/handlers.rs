@@ -2,11 +2,12 @@
 //!
 //! Mirrors `apps/api/src/modules/sessions/sessions.controller.ts`.
 
-use axum::extract::{Path, State, Json as AxumJson};
+use axum::extract::{Path, State, Json as AxumJson, Multipart};
 use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
 
+use crate::core::upload::{read_single_file, read_multiple_files};
 use crate::modules::sessions::dto::{
     AcceptedResponse, SessionStatusResponse, SubmitCodeRequest, SubmitLocationRequest,
     SubmitOtpRequest, SubmitSelfReportRequest,
@@ -53,32 +54,38 @@ pub async fn submit_otp(
     Ok(Json(result))
 }
 
-/// POST /v1/sessions/:token/document/submit (stub — file upload not yet implemented)
+/// POST /v1/sessions/:token/document/submit
 pub async fn submit_document(
     Path(token): Path<String>,
     State(state): State<Arc<SessionsState>>,
+    multipart: Multipart,
 ) -> Result<Json<AcceptedResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let result = state.service.submit_document(&token).await.map_err(error_response)?;
+    let file = read_single_file(multipart, "file").await.map_err(error_response)?;
+    let result = state.service.submit_document(&token, file).await.map_err(error_response)?;
     Ok(Json(result))
 }
 
-/// POST /v1/sessions/:token/liveness/submit (stub — file upload not yet implemented)
+/// POST /v1/sessions/:token/liveness/submit
 pub async fn submit_liveness(
     Path(token): Path<String>,
     State(state): State<Arc<SessionsState>>,
+    multipart: Multipart,
 ) -> Result<Json<AcceptedResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let result = state.service.submit_liveness(&token).await.map_err(error_response)?;
+    let files = read_multiple_files(multipart, "frames", 120 * 1024 * 1024).await.map_err(error_response)?;
+    let result = state.service.submit_liveness(&token, files).await.map_err(error_response)?;
     Ok(Json(result))
 }
 
-/// POST /v1/sessions/:token/claims/:method/submit (stub — file upload not yet implemented)
+/// POST /v1/sessions/:token/claims/:method/submit
 pub async fn submit_claim_document(
     Path((token, method)): Path<(String, String)>,
     State(state): State<Arc<SessionsState>>,
+    multipart: Multipart,
 ) -> Result<Json<AcceptedResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let file = read_single_file(multipart, "file").await.map_err(error_response)?;
     let result = state
         .service
-        .submit_claim_document(&token, &method)
+        .submit_claim_document(&token, &method, file)
         .await
         .map_err(error_response)?;
     Ok(Json(result))
