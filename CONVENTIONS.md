@@ -47,6 +47,14 @@ only ships one client surface still uses `apps/<name>/`, not a bare
 `frontend/` — the directory name should say what the app *is*
 (`apps/dashboard`), not that it's "the frontend."
 
+**JS/TS package manager: pnpm, no exception.** Every repo's `apps/*`
+and `packages/*` install through pnpm workspaces
+(`pnpm-workspace.yaml` at the repo root, `workspace:*` for internal
+deps) — never npm or yarn. One lockfile at the repo root
+(`pnpm-lock.yaml`), never a per-app lockfile. See the ecosystem tech
+stack plan's "Package manager" section in `CLAUDE.md`/`AGENT.md` for
+why.
+
 ## 2. Module naming — one name, five places
 
 Every bounded module (the same boundary `ECOSYSTEM.md`'s ownership

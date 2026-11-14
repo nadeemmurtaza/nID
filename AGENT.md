@@ -126,6 +126,27 @@ without a rewrite — new code should read the canonical `--color-*`,
   choice and was considered and rejected here specifically because
   runtime efficiency outranks speed-to-market for this project.
 
+#### Package manager: pnpm, everywhere, no exception
+
+Both repos' JS/TS tooling runs on **pnpm workspaces** (`pnpm-workspace.yaml`
+at the repo root, `apps/*` + `packages/*`), not npm. This repo already
+used pnpm; Communicator used npm and has been converted to match:
+
+- **Lowest RAM/disk, by construction:** pnpm keeps one global
+  content-addressable store and hard-links packages into each
+  `node_modules`, instead of npm's copy-per-project. Less disk churn,
+  less duplicate install garbage across `apps/*`/`packages/*`.
+- **No phantom dependencies:** pnpm's non-flat `node_modules` means
+  code can only import what its own `package.json` actually declares
+  — a correctness property npm's flat hoisting doesn't give you.
+- **Real monorepo primitives:** `workspace:*` protocol, `pnpm -r
+  --filter`, and content-addressable linking are built for exactly
+  the `apps/*` + `packages/*` shape both repos use — npm workspaces
+  support the shape but not the efficiency.
+- Keep using `pnpm install` / `pnpm -r --filter` here, same as always
+  — this section exists so the choice (and why Communicator now
+  matches it) is recorded once, ecosystem-wide.
+
 ### Why this combination and not the obvious alternatives
 
 - **Not Prisma** — wrong language ecosystem for a Rust backend, and its
