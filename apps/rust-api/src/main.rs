@@ -22,6 +22,16 @@ use crate::modules::organizations::{routes::organizations_router, handlers::Orga
 use crate::modules::sessions::{routes::sessions_router, handlers::SessionsState, service::SessionsService};
 use crate::modules::brands::{routes::brands_router, handlers::BrandsState, service::BrandsService};
 use crate::modules::profiles::{routes::profiles_router, handlers::ProfilesState, service::ProfilesService};
+use crate::modules::access::{routes::access_router, handlers::AccessState, service::AccessService};
+use crate::modules::roles::{routes::roles_router, handlers::RolesState, service::RolesService};
+use crate::modules::permissions::{routes::permissions_router, handlers::PermissionsState, service::PermissionsService};
+use crate::modules::departments::{routes::departments_router, handlers::DepartmentsState, service::DepartmentsService};
+use crate::modules::invitations::{routes::invitations_router, handlers::InvitationsState, service::InvitationsService};
+use crate::modules::tenant_staff::{routes::tenant_staff_router, handlers::TenantStaffState, service::TenantStaffService};
+use crate::modules::account_verification::{routes::account_verification_router, handlers::AccountVerificationState, service::AccountVerificationService};
+use crate::modules::oauth::{routes::oauth_router, handlers::OAuthState, service::OAuthService};
+use crate::modules::booking::{routes::booking_router, handlers::BookingState, service::BookingService};
+use crate::modules::profile_content::{routes::profile_content_router, handlers::ProfileContentState, service::ProfileContentService};
 
 /// Application state shared across all request handlers.
 pub struct AppState {
@@ -57,6 +67,46 @@ fn build_router(state: AppState) -> Router {
     let profiles_state = Arc::new(ProfilesState {
         service: ProfilesService::new(state.db.clone(), state.env.clone()),
     });
+    let access_state = Arc::new(AccessState {
+        service: AccessService::new(state.db.clone(), state.env.clone()),
+        env: state.env.clone(),
+    });
+    let roles_state = Arc::new(RolesState {
+        service: RolesService::new(state.db.clone(), state.env.clone()),
+        env: state.env.clone(),
+    });
+    let permissions_state = Arc::new(PermissionsState {
+        service: PermissionsService::new(state.db.clone(), state.env.clone()),
+        env: state.env.clone(),
+    });
+    let departments_state = Arc::new(DepartmentsState {
+        service: DepartmentsService::new(state.db.clone(), state.env.clone()),
+        env: state.env.clone(),
+    });
+    let invitations_state = Arc::new(InvitationsState {
+        service: InvitationsService::new(state.db.clone(), state.env.clone()),
+        env: state.env.clone(),
+    });
+    let tenant_staff_state = Arc::new(TenantStaffState {
+        service: TenantStaffService::new(state.db.clone(), state.env.clone()),
+        env: state.env.clone(),
+    });
+    let account_verification_state = Arc::new(AccountVerificationState {
+        service: AccountVerificationService::new(state.db.clone(), state.env.clone()),
+        env: state.env.clone(),
+    });
+    let oauth_state = Arc::new(OAuthState {
+        service: OAuthService::new(state.db.clone(), state.env.clone()),
+        env: state.env.clone(),
+    });
+    let booking_state = Arc::new(BookingState {
+        service: BookingService::new(state.db.clone(), state.env.clone()),
+        env: state.env.clone(),
+    });
+    let profile_content_state = Arc::new(ProfileContentState {
+        service: ProfileContentService::new(state.db.clone(), state.env.clone()),
+        env: state.env.clone(),
+    });
 
     Router::new()
         .merge(accounts_router().with_state(accounts_state))
@@ -67,6 +117,16 @@ fn build_router(state: AppState) -> Router {
         .merge(sessions_router().with_state(sessions_state))
         .merge(brands_router().with_state(brands_state))
         .merge(profiles_router().with_state(profiles_state))
+        .merge(access_router().with_state(access_state))
+        .merge(roles_router().with_state(roles_state))
+        .merge(permissions_router().with_state(permissions_state))
+        .merge(departments_router().with_state(departments_state))
+        .merge(invitations_router().with_state(invitations_state))
+        .merge(tenant_staff_router().with_state(tenant_staff_state))
+        .merge(account_verification_router().with_state(account_verification_state))
+        .merge(oauth_router().with_state(oauth_state))
+        .merge(booking_router().with_state(booking_state))
+        .merge(profile_content_router().with_state(profile_content_state))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
