@@ -193,7 +193,7 @@ button:disabled {
 }
 
 .dot.pending {
-  background: #d9a441;
+  background: var(--warn);
 }
 .dot.success {
   background: var(--success);

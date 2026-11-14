@@ -287,7 +287,7 @@ textarea:focus {
 
 .btn-danger {
   background: var(--danger);
-  color: #ffffff;
+  color: var(--color-on-negative);
   border-color: var(--danger);
 }
 
@@ -301,7 +301,7 @@ textarea:focus {
 
 .btn-success {
   background: var(--success);
-  color: #ffffff;
+  color: var(--color-on-positive);
   border-color: var(--success);
 }
 
@@ -603,7 +603,7 @@ tbody tr:hover {
   border-radius: 8px;
   border: none;
   background: var(--success);
-  color: #fff;
+  color: var(--color-on-positive);
   cursor: pointer;
   margin-bottom: 8px;
 }
@@ -641,7 +641,7 @@ tbody tr:hover {
   border-radius: 8px;
   border: none;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
   cursor: pointer;
   text-decoration: none;
   display: inline-block;
@@ -659,7 +659,7 @@ tbody tr:hover {
   border-radius: 6px;
   border: none;
   background: var(--danger);
-  color: #fff;
+  color: var(--color-on-negative);
   cursor: pointer;
 }
 
@@ -850,7 +850,7 @@ tbody tr:hover {
 
 .login-mode-toggle button.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
   border-color: var(--accent);
 }
 
