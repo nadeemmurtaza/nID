@@ -7,9 +7,15 @@
 mod core;
 mod modules;
 
+use axum::http::{HeaderName, HeaderValue, Method};
 use axum::{Router, middleware, Extension};
 use std::sync::Arc;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::{
+    cors::{AllowOrigin, CorsLayer},
+    set_header::SetResponseHeaderLayer,
+    trace::TraceLayer,
+};
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::core::middleware::request_tracing;
@@ -142,8 +148,64 @@ fn build_router(state: AppState) -> Router {
         .layer(Extension(state.db.clone()))
         .layer(Extension(state.env.clone()))
         .layer(middleware::from_fn(request_tracing))
-        .layer(CorsLayer::permissive())
+        .layer(build_cors_layer(&state.env))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("x-content-type-options"),
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("x-frame-options"),
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("referrer-policy"),
+            HeaderValue::from_static("same-origin"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("strict-transport-security"),
+            HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("content-security-policy"),
+            HeaderValue::from_static("default-src 'none'; frame-ancestors 'none'"),
+        ))
+        .layer({
+            // Per-IP rate limit (SECURITY_RULES.md item 5 /
+            // PRODUCTION_READINESS_RULES.md item 7): 10 req/s sustained,
+            // bursts up to 30. Per-user limits on top of this would need a
+            // custom key extractor keyed on the auth token rather than the
+            // peer IP; not yet implemented -- this covers the per-IP half.
+            let config = std::sync::Arc::new(
+                GovernorConfigBuilder::default()
+                    .per_second(10)
+                    .burst_size(30)
+                    .finish()
+                    .expect("valid governor rate-limit config"),
+            );
+            GovernorLayer::new(config)
+        })
         .layer(TraceLayer::new_for_http())
+}
+
+/// Explicit CORS allowlist (SECURITY_RULES.md item 8) -- never
+/// `CorsLayer::permissive()`. Origins come from `ALLOWED_ORIGINS`
+/// (see `AppEnv::load`), never a wildcard.
+fn build_cors_layer(env: &AppEnv) -> CorsLayer {
+    let origins: Vec<HeaderValue> = env
+        .allowed_origins
+        .iter()
+        .filter_map(|o| HeaderValue::from_str(o).ok())
+        .collect();
+
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list(origins))
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::ACCEPT,
+        ])
+        .allow_credentials(true)
 }
 
 /// Bootstrap the API server.

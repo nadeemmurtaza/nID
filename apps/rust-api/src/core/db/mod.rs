@@ -21,8 +21,22 @@ impl DbPool {
     }
 
     /// Create a new connection pool from a PostgreSQL connection string.
+    ///
+    /// Sized deliberately (PRODUCTION_READINESS_RULES.md item 10 --
+    /// never an unconfigured default pool): `DB_POOL_MAX_CONNECTIONS`
+    /// overrides the default of 20, with a 5s acquire timeout so a
+    /// request fails fast instead of queuing forever when the pool is
+    /// exhausted.
     pub async fn connect(database_url: &str) -> Result<Self> {
-        let pool = PgPoolOptions::new().connect(database_url).await?;
+        let max_connections: u32 = std::env::var("DB_POOL_MAX_CONNECTIONS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20);
+        let pool = PgPoolOptions::new()
+            .max_connections(max_connections)
+            .acquire_timeout(std::time::Duration::from_secs(5))
+            .connect(database_url)
+            .await?;
         Ok(Self { pool })
     }
 
