@@ -1,25 +1,51 @@
-//! Permissions service — reads the permission catalog.
+//! Permissions service -- gRPC client for `svc-permissions`.
+//!
+//! The business logic moved to `crates/permissions`, served by
+//! `services/permissions` (see CONVENTIONS.md's crates/services split;
+//! this is nID's pilot module). This client keeps the same public shape
+//! (`PermissionsService::new`, `get_catalog`/`get_all_permissions`/
+//! `get_group_permissions`) so `handlers.rs` needed zero changes.
 
-use anyhow::Result;
-use sqlx::{FromRow, Row};
+use anyhow::{anyhow, Result};
+use newax_proto::permissions::v1::{
+    permissions_service_client::PermissionsServiceClient, Empty, GroupRequest, PermissionCatalogEntry as ProtoEntry,
+    PermissionGroup as ProtoGroup,
+};
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
 use crate::modules::permissions::dto::{PermissionCatalogEntry, PermissionGroup};
 
-#[derive(Debug, Clone, FromRow)]
-pub struct PermissionRow {
-    pub id: String,
-    pub group_name: String,
-    pub service_name: String,
-    pub permission_key: String,
-    pub label: String,
-    pub description: Option<String>,
+pub struct PermissionsService {
+    #[allow(dead_code)]
+    db: DbPool,
+    #[allow(dead_code)]
+    env: AppEnv,
 }
 
-pub struct PermissionsService {
-    db: DbPool,
-    env: AppEnv,
+fn entry_from_proto(e: ProtoEntry) -> PermissionCatalogEntry {
+    PermissionCatalogEntry {
+        id: e.id,
+        group_name: e.group_name,
+        service_name: e.service_name,
+        permission_key: e.permission_key,
+        label: e.label,
+        description: e.description,
+    }
+}
+
+fn group_from_proto(g: ProtoGroup) -> PermissionGroup {
+    PermissionGroup {
+        group_name: g.group_name,
+        permissions: g.permissions.into_iter().map(entry_from_proto).collect(),
+    }
+}
+
+async fn client() -> Result<PermissionsServiceClient<tonic::transport::Channel>> {
+    let url = std::env::var("PERMISSIONS_SERVICE_URL").unwrap_or_else(|_| "http://127.0.0.1:50071".to_string());
+    PermissionsServiceClient::connect(url)
+        .await
+        .map_err(|e| anyhow!("permissions service unreachable: {e}"))
 }
 
 impl PermissionsService {
@@ -27,66 +53,21 @@ impl PermissionsService {
         Self { db, env }
     }
 
-    fn row_to_entry(row: PermissionRow) -> PermissionCatalogEntry {
-        PermissionCatalogEntry {
-            id: row.id,
-            group_name: row.group_name,
-            service_name: row.service_name,
-            permission_key: row.permission_key,
-            label: row.label,
-            description: row.description,
-        }
-    }
-
     pub async fn get_catalog(&self) -> Result<Vec<PermissionGroup>> {
-        let mut conn = self.db.get().await?;
-
-        let rows: Vec<PermissionRow> = sqlx::query_as(
-            "SELECT id, group_name, service_name, permission_key, label, description FROM permission_catalog ORDER BY group_name, service_name, permission_key",
-        )
-        .fetch_all(&mut *conn)
-        .await?;
-
-        let mut groups: std::collections::HashMap<String, PermissionGroup> = std::collections::HashMap::new();
-        for row in rows {
-            let group_name = row.group_name.clone();
-            groups
-                .entry(group_name.clone())
-                .or_insert_with(|| PermissionGroup {
-                    group_name,
-                    permissions: Vec::new(),
-                })
-                .permissions
-                .push(Self::row_to_entry(row));
-        }
-
-        let mut result: Vec<PermissionGroup> = groups.into_values().collect();
-        result.sort_by(|a, b| a.group_name.cmp(&b.group_name));
-        Ok(result)
+        let mut c = client().await?;
+        let resp = c.get_catalog(Empty {}).await?.into_inner();
+        Ok(resp.groups.into_iter().map(group_from_proto).collect())
     }
 
     pub async fn get_all_permissions(&self) -> Result<Vec<PermissionCatalogEntry>> {
-        let mut conn = self.db.get().await?;
-
-        let rows: Vec<PermissionRow> = sqlx::query_as(
-            "SELECT id, group_name, service_name, permission_key, label, description FROM permission_catalog ORDER BY group_name, service_name, permission_key",
-        )
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(rows.into_iter().map(Self::row_to_entry).collect())
+        let mut c = client().await?;
+        let resp = c.get_all(Empty {}).await?.into_inner();
+        Ok(resp.entries.into_iter().map(entry_from_proto).collect())
     }
 
     pub async fn get_group_permissions(&self, group_name: &str) -> Result<Vec<PermissionCatalogEntry>> {
-        let mut conn = self.db.get().await?;
-
-        let rows: Vec<PermissionRow> = sqlx::query_as(
-            "SELECT id, group_name, service_name, permission_key, label, description FROM permission_catalog WHERE group_name = $1 ORDER BY service_name, permission_key",
-        )
-        .bind(group_name)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(rows.into_iter().map(Self::row_to_entry).collect())
+        let mut c = client().await?;
+        let resp = c.get_group(GroupRequest { group_name: group_name.to_string() }).await?.into_inner();
+        Ok(resp.entries.into_iter().map(entry_from_proto).collect())
     }
 }

@@ -196,40 +196,127 @@ commits (design-tokens-style rollouts) use `ecosystem` as the scope.
 - **Squash merge to `main`** — one commit per shipped change in
   `main`'s history, scoped and readable without opening the PR.
 
-## Known gaps (fix opportunistically, not required to block on)
+## Resolved (2026-11-14 audit)
 
-These are real deviations from the layout in §1 as of 2026-11-14 —
-listed so nobody "fixes" them by accident while touching unrelated
-code, and so a deliberate migration (if ever done) has a checklist:
+- **Communicator**: `backend-rs/` staying one crate is **not a gap** —
+  it's correct per the modular-monolith-first ADR; it only needs to
+  split, and drop the generic `backend-rs` name, once a module
+  actually needs its own deployable. Root-level `cargo_check*.log`
+  files and one-off, hardcoded-local-path migration-fix `.ps1`
+  scripts were deleted outright (debug cruft, not reusable tooling).
+  The two genuinely reusable `.ps1` scripts and the launcher `.bat`
+  files moved to `scripts/`, with their hardcoded
+  `C:\Users\...\Downloads\...` and sibling-repo (AegisDesk) paths
+  removed. `erp-schema/` (plus its exact duplicate under
+  `backend-rs/erp-schema/`) moved to `docs/schema-reference/` with a
+  README making explicit it's modeling notation only, never a live
+  Prisma client. `src/communicator-archive/` and `python-archive/`
+  moved under a top-level `archive/`. `shopify-otp-widget/` and
+  `store-otp-widget/` are **live**, not archived (referenced from
+  `backend-rs/src/services/store_connection.rs` and
+  `docs/SHOPIFY_STORE_OTP_SETUP.md`) — promoted to their own
+  `apps/shopify-otp-widget/` and `apps/store-otp-widget/` (each is an
+  independently deployed client surface embedded on third-party
+  sites, exactly what `apps/*` is for), out from under `apps/web/`.
 
-- **Communicator**: `backend-rs/` should become `services/<module>/`
-  + `crates/<module>/` once it's split by module (it's currently one
-  monolithic crate — fine for now per the modular-monolith-first ADR,
-  but the folder name should drop the generic `backend-rs` label when
-  it splits). Root-level `cargo_check*.log` files and `.ps1` scripts
-  are prototype debugging artifacts that belong in `scripts/` (scripts)
-  or nowhere (logs) rather than the repo root. `erp-schema/*.prisma`
-  is schema-*modeling* only (not the Prisma client/ORM we ruled out in
-  the tech-stack plan) — rename the directory so that's unambiguous,
-  or migrate the models into the Rust/SQLx migration flow. `src/
-  communicator-archive/` and `frontend/shopify-otp-widget/`,
-  `frontend/store-otp-widget/` read as legacy/experimental — if they're
-  not live, they belong under a top-level `archive/`, not mixed into
-  `src/`/`frontend/`.
-- **nID**: `apps/api` (TypeScript) and `apps/rust-api` (Rust) both
-  exist — under §2's one-name rule, two backends for the same module
-  boundary need either a merge or a clearly different module name for
-  each, not a `-rust-` suffix distinguishing them by implementation
-  language. `crates/` currently holds only 3 Rust library crates (`billing`,
+## Module separation is mandatory for all new work (strict rule, 2026-11-15)
+
+This is no longer "the plan" or "the target shape" — it's a standing
+rule, binding on every future change in every NEWAX repo, the same
+way §1–10 above are:
+
+1. **New backend capability = new crate + new service, from the
+   first line of code.** Nothing new gets added to `backend-rs`'s or
+   `apps/rust-api`'s top-level `src/routes`/`src/services`/`src/modules`
+   as a shortcut "for now." Scaffold `crates/<module>/` (business
+   logic) and `services/<module>/` (the `tonic` binary) per §2's
+   one-name rule before writing the first handler. The ~87 modules
+   still inside the two monoliths are a migration backlog, not a
+   template to keep copying.
+2. **Module-to-module calls are always `tonic` + Protobuf, never a
+   direct function call across a module boundary once the callee has
+   its own crate.** This holds whether the caller is in the same repo
+   or a different one. See `COMMUNICATION.md`'s "two distinct roles"
+   section — this is Role 1, and it is not optional infrastructure to
+   bolt on later. A module still living in the monolith may call
+   another in-monolith module directly (that's the modular-monolith
+   ADR, unchanged); the moment either side has its own service, the
+   call is gRPC, full stop.
+3. **The edge gateway is Pingora** (Cloudflare's Rust proxy
+   framework), not Envoy, not a hand-rolled reverse proxy — see
+   `COMMUNICATION.md`'s Role 2. It terminates TLS, load-balances, and
+   routes incoming gRPC streams to the right backend service. Envoy
+   is a deliberate, requested exception for a specific gap, never a
+   default.
+4. **Every `.proto` contract is reviewed like a public API**, because
+   it is one the moment a second caller exists — a breaking field
+   change needs the same care as a breaking REST response shape
+   change, more so once another repo depends on it.
+5. **No new interim shortcuts without flagging them the way the
+   current one is flagged.** The direct-`127.0.0.1:<port>`-dial used
+   by the three pilot services (see below) is an explicitly named,
+   explicitly temporary stand-in for Pingora — written down as such
+   in `COMMUNICATION.md`, not left for someone to mistake for the
+   real thing. Any future shortcut gets the same treatment: named,
+   dated, and tied to what it's standing in for.
+
+## crates/services split: in progress, tracked here (2026-11-15)
+
+The pattern in §3 is now proven working, not just specified — three
+real modules split so far, each a standalone `tonic` gRPC service
+with its old monolith route handlers reduced to a thin client, each
+verified with `cargo check --workspace`:
+
+| Module | Repo | Crate | Service | Port |
+|---|---|---|---|---|
+| kb-documents | Communicator | `crates/kb-documents` | `services/kb-documents` | 50061 |
+| system-health | Communicator | `crates/system-health` | `services/system-health` | 50062 |
+| permissions | nID | `crates/permissions` | `services/permissions` | 50071 |
+
+Remaining: **~68 more modules in Communicator's `backend-rs`**
+(70 routes/90 services, 142k lines total) and **~19 more in nID's
+`apps/rust-api`**. This is not a mechanical find-and-replace — each
+module needs its cross-module Rust calls identified and either kept
+in-process (if it stays in the monolith) or turned into a gRPC call
+(if both sides split). Low-coupling modules (zero
+`crate::services::`/`crate::modules::` cross-references, confirmed by
+grep before converting) go fastest; most of nID's remaining modules
+(sessions, tenants, organizations, oauth, etc.) call each other
+directly today and need that coupling mapped out before they can
+split safely. Convert and verify one module at a time, commit each
+once `cargo check --workspace` is clean — never a batch no one
+checked compiles.
+
+**Known shortcut, flagged, not to copy into cross-repo code:** split
+services are currently dialed by a hardcoded `127.0.0.1:<port>` URL
+(env-overridable), no mTLS, no service discovery — a stand-in for the
+real `core-newax` Module Gateway from `COMMUNICATION.md`, acceptable
+*within* one repo for now, never a substitute for the gateway once
+nID and Communicator actually need to call each other.
+
+## Decided, migration tracked (not yet executed)
+
+- **nID**: `apps/api` (TypeScript/NestJS + Prisma) and `apps/rust-api`
+  (Rust/SQLx) are not an open question anymore — **`apps/rust-api` is
+  canonical, `apps/api` is deprecated** (see `apps/api/README.md`).
+  They share one `API_PORT` and one client contract
+  (`NEXT_PUBLIC_NID_API_URL`), which is exactly why `apps/rust-api`'s
+  module-by-module auth audit could port `apps/api`'s modules one for
+  one. Removing `apps/api` for real needs: (1) file-by-file route
+  parity confirmed, not just the shared-contract inference above, and
+  (2) `apps/workflows`, `packages/verification-providers`, and
+  `packages/billing` ported off `packages/db`'s Prisma client onto
+  SQLx. That second part touches live identity-verification workflows
+  — a real migration with its own testing needs, not a naming-audit
+  side effect. Until it's done, don't build new features on
+  `apps/api`.
+- `crates/` currently holds only 3 Rust library crates (`billing`,
   `shared-types`, `storage`); the verification engines
   (`forensics-engine`, `liveness-engine`, `ocr-engine`,
   `verification-providers`, `workflow-contracts`) are confirmed
   TypeScript (jest + tsconfig in each), correctly under `packages/` by
   language — but they read as engines/services, not shared libraries,
   so confirm whether any should move to `apps/` or `services/` once
-  nID's backend is split by module rather than staying lumped into
-  `apps/api` + `apps/rust-api`.
-
-None of the above is being changed by this document — it only records
-the gap so a future migration PR has a true checklist instead of
-rediscovering these by hand.
+  nID's backend is actually split by module rather than staying
+  lumped into `apps/api` + `apps/rust-api`. Blocked on the same
+  migration above, not a separate decision.

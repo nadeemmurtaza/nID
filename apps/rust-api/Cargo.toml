@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+# gRPC clients for modules split out into services/ -- see crates/proto
+tonic = "0.12"
+newax-proto = { path = "../../crates/proto" }
+
 # Workspace
 axum = { workspace = true }
 tower = { workspace = true }

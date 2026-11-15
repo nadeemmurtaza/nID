@@ -303,7 +303,7 @@ p.lead {
 .action-btn.whatsapp {
   background: var(--whatsapp);
   border-color: var(--whatsapp);
-  color: #fff;
+  color: var(--color-on-whatsapp);
 }
 
 .action-item {
@@ -620,7 +620,7 @@ button {
 .btn-icon.btn-danger {
   background: var(--danger);
   border-color: var(--danger);
-  color: #fff;
+  color: var(--color-on-negative);
 }
 
 .btn-icon.btn-danger:not(:disabled):hover {

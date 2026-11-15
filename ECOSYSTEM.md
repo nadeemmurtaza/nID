@@ -33,6 +33,21 @@ through the Module Gateway (synchronous calls) or the event bus
 to add an HTTP call from this repo straight to another repo's API, stop:
 register the call through the gateway instead, or publish/subscribe an event.
 
+The Module Gateway is two distinct roles, not one piece of software: the
+module-to-module contract itself is **gRPC via `tonic` + Protobuf** (every
+call, same-repo or cross-repo, once either side has its own service), and
+the edge in front of it — TLS termination, load balancing, routing each
+incoming gRPC stream to the right backend — runs on **Pingora**
+(Cloudflare's Rust proxy framework), not Envoy, for the same reason every
+other piece of this stack is Rust: lower RAM, same allocator/operational
+story as everything behind it. Envoy is a deliberate, requested exception
+for a specific gap (e.g. an xDS need Pingora doesn't cover), never a
+default. See each repo's `COMMUNICATION.md` for the full detail and
+`CONVENTIONS.md` for the strict rule that every new module gets its own
+crate + service from the first line, not a shortcut into an existing
+monolith. (This file is meant to sync from `core-newax` — this addition
+should land there too once that repo is reachable, not just here.)
+
 ## Identity: nID is the one login
 
 **nID is the single identity provider for the whole ecosystem** — login,

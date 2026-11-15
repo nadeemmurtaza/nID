@@ -50,6 +50,7 @@
   --color-ink: var(--newax-ink-900);
   --color-ink-muted: var(--newax-ink-700);
   --color-ink-faint: var(--newax-oat-300);
+  --color-ink-pressed: #000000;
 
   --color-accent: var(--newax-orange-500);
   --color-accent-hover: var(--newax-orange-600);
@@ -63,6 +64,15 @@
   --color-warning-soft: rgba(179, 128, 26, 0.1);
   --color-info: #6a4fc4;
   --color-info-soft: rgba(106, 79, 196, 0.1);
+
+  /* Text/icon colour placed on top of a solid status surface
+     (buttons/badges using --color-positive, --color-negative, or the
+     --whatsapp brand colour below). These stay white in both themes
+     because those surfaces stay vividly saturated in both themes —
+     unlike --color-on-accent, which does need to flip with the theme. */
+  --color-on-positive: #ffffff;
+  --color-on-negative: #ffffff;
+  --color-on-whatsapp: #ffffff;
 
   --color-chart-blue: var(--newax-blue-500);
   --color-chart-green: var(--newax-green-500);
@@ -147,6 +157,18 @@
   --ease-decelerate: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
 
+  /* ---------- Fixed surfaces: deliberately theme-constant, named so
+     they're never a bare literal in a component even though their
+     value never changes with light/dark. ---------- */
+  --color-qr-backing: #ffffff; /* QR codes need a guaranteed-white
+    backing in both themes for scan reliability */
+  --color-viewfinder-bg: #000000; /* camera/photo-capture placeholder,
+    a viewfinder convention independent of app theme */
+  --color-viewfinder-overlay: rgba(0, 0, 0, 0.7); /* caption bar over
+    a captured photo, not over themed app background */
+  --color-viewfinder-fg: #ffffff; /* text/icon on top of the overlay
+    above */
+
   /* ---------- Compatibility aliases ----------
      Short names already in use across nID's apps (login-ui, profile-ui,
      verify-ui, dashboard) before this file existed. Mapped onto the
@@ -194,6 +216,7 @@
     --color-ink: #f5f3ef;
     --color-ink-muted: #b6b0a6;
     --color-ink-faint: #7a756c;
+    --color-ink-pressed: #ffffff;
 
     --color-accent: #ff6b1f;
     --color-accent-hover: #ff8a4c;

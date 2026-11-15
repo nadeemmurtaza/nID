@@ -149,7 +149,7 @@ input[type='text']:disabled {
   border-radius: 8px;
   border: none;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
   cursor: pointer;
   transition:
     background-color 0.15s,
@@ -267,7 +267,7 @@ input[type='text']:disabled {
 }
 
 .qr-wrap {
-  background: #fff;
+  background: var(--color-qr-backing);
   border-radius: 10px;
   padding: 12px;
   display: inline-block;
