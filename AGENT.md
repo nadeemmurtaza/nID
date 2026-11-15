@@ -46,3 +46,14 @@ Doherty/Postel's/Jakob's laws and hit-area/frequency-of-use rules) —
 identical across every NEWAX repo, same binding status as
 `CONVENTIONS.md`. Read it before building or editing any interactive
 UI, alongside the anti-patterns section above.
+
+See `COMPLIANCE_AND_ACCESSIBILITY_RULES.md` for 18 binding legal,
+anti-dark-pattern, and accessibility requirements (Privacy Policy,
+Terms of Service, consent banner, form data-minimization audits,
+third-party SDK audits, no dark patterns/hidden fees/fake reviews/
+unsupported claims, alt text, color contrast, keyboard navigation,
+business details, age/parental consent, unsubscribe links, font/image
+licensing, data deletion requests) — identical across every NEWAX
+repo. These are launch blockers, not nice-to-haves; read it before
+any surface that collects data, sends email, charges money, or
+renders UI is considered shippable.
