@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package newax.departments.v1;
+
+service DepartmentsService {
+  rpc CreateDepartment(CreateDepartmentRequest) returns (DepartmentResponse);
+  rpc ListDepartments(TenantScopedRequest) returns (DepartmentsResponse);
+  rpc GetDepartment(DepartmentIdRequest) returns (DepartmentResponse);
+  rpc UpdateDepartment(UpdateDepartmentRequest) returns (DepartmentResponse);
+  rpc AssignDepartment(AssignDepartmentRequest) returns (DepartmentAssignmentResponse);
+  rpc RemoveDepartmentAssignment(RemoveAssignmentRequest) returns (Empty);
+  rpc GetAccountDepartments(AccountDepartmentsRequest) returns (DepartmentAssignmentsResponse);
+}
+
+message Empty {}
+
+message TenantScopedRequest {
+  string account_id = 1;
+  string tenant_id = 2;
+}
+
+message DepartmentIdRequest {
+  string account_id = 1;
+  string tenant_id = 2;
+  string department_id = 3;
+}
+
+message CreateDepartmentRequest {
+  string account_id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  string slug = 4;
+  optional string default_permissions_json = 5;
+  optional string icon = 6;
+  optional string color = 7;
+}
+
+message UpdateDepartmentRequest {
+  string account_id = 1;
+  string tenant_id = 2;
+  string department_id = 3;
+  optional string name = 4;
+  optional string default_permissions_json = 5;
+  optional string icon = 6;
+  bool icon_set = 7;
+  optional string color = 8;
+  bool color_set = 9;
+}
+
+message AssignDepartmentRequest {
+  string account_id = 1;
+  string tenant_id = 2;
+  string department_id = 3;
+  string target_account_id = 4;
+  optional string organization_id = 5;
+  optional string brand_id = 6;
+  optional string scope = 7;
+}
+
+message RemoveAssignmentRequest {
+  string account_id = 1;
+  string tenant_id = 2;
+  string department_id = 3;
+  string target_account_id = 4;
+}
+
+message AccountDepartmentsRequest {
+  string account_id = 1;
+  string tenant_id = 2;
+  string target_account_id = 3;
+}
+
+message DepartmentResponse {
+  string id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  string slug = 4;
+  optional string default_permissions_json = 5;
+  optional string icon = 6;
+  optional string color = 7;
+  bool inherited_from_tenant = 8;
+  string created_at = 9;
+  string updated_at = 10;
+}
+
+message DepartmentsResponse {
+  repeated DepartmentResponse departments = 1;
+}
+
+message DepartmentAssignmentResponse {
+  string id = 1;
+  string account_id = 2;
+  string department_id = 3;
+  string tenant_id = 4;
+  optional string organization_id = 5;
+  optional string brand_id = 6;
+  string scope = 7;
+  string created_at = 8;
+}
+
+message DepartmentAssignmentsResponse {
+  repeated DepartmentAssignmentResponse assignments = 1;
+}

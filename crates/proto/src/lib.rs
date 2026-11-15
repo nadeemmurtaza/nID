@@ -9,3 +9,9 @@ pub mod tenant_staff {
         tonic::include_proto!("newax.tenant_staff.v1");
     }
 }
+
+pub mod departments {
+    pub mod v1 {
+        tonic::include_proto!("newax.departments.v1");
+    }
+}
