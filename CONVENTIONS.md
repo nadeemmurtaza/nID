@@ -269,7 +269,7 @@ discipline, and a final checklist) — this section is just the live
 tracking table and status summary, not the how-to.
 
 The pattern in §3 is now proven working, not just specified —
-twenty real modules split so far, each a standalone `tonic` gRPC
+twenty-one real modules split so far, each a standalone `tonic` gRPC
 service
 with its old monolith route handlers reduced to a thin client, each
 verified with `cargo check --workspace`:
@@ -296,6 +296,7 @@ verified with `cargo check --workspace`:
 | unified-analytics | Communicator | `crates/unified_analytics` | `services/unified_analytics` | 50078 |
 | invitations | nID | `crates/invitations` | `services/invitations` | 50079 |
 | oauth | nID | `crates/oauth` | `services/oauth` | 50080 |
+| accounts | nID | `crates/accounts` | `services/accounts` | 50081 |
 
 `reply-integration` is the one case so far where a split module had
 genuine in-process coupling from elsewhere in the monolith
@@ -306,7 +307,7 @@ crate directly as a library, not by routing an internal monolith call
 through gRPC.
 
 Remaining: **~56 more modules in Communicator's `backend-rs`**
-(70 routes/90 services, 142k lines total) and **~13 more in nID's
+(70 routes/90 services, 142k lines total) and **~12 more in nID's
 `apps/rust-api`**. This is not a mechanical find-and-replace — each
 module needs its cross-module Rust calls identified and either kept
 in-process (if it stays in the monolith) or turned into a gRPC call
