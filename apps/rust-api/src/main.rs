@@ -254,9 +254,15 @@ async fn main() -> anyhow::Result<()> {
     let addr = listener.local_addr()?;
     tracing::info!(%addr, "Listening for connections");
 
+    // GovernorLayer's PeerIpKeyExtractor reads ConnectInfo<SocketAddr> from
+    // request extensions -- without into_make_service_with_connect_info,
+    // that extension is never populated and every request 500s with
+    // "UnableToExtractKey".
+    let make_service = app.into_make_service_with_connect_info::<std::net::SocketAddr>();
+
     // Graceful shutdown on SIGINT/SIGTERM
     let graceful = async {
-        axum::serve(listener, app)
+        axum::serve(listener, make_service)
             .with_graceful_shutdown(shutdown_signal())
             .await
     };
