@@ -504,6 +504,16 @@ missing.
 30. **No "basic pastel" colors.** No generic desaturated
     pastel palette (the other common default "safe" AI color scheme)
     substituted in place of this ecosystem's actual palette.
+31. **No long onboarding tutorials.** Never teach the product with a
+    multi-step walkthrough overlay, a wall of instructional text
+    before first use, or a lecture-style onboarding flow the user
+    must sit through before touching anything. Teach by doing
+    instead: let the user act, and surface small, contextual hints
+    tied to the thing they're actually doing right then — a short
+    tooltip on the control they just touched, a one-line inline note
+    next to the result they just produced, never a separate "Learn
+    how this works" screen shown up front. Good products don't have a
+    tutorial; they have moments.
 
 These rules bind every future design decision in this ecosystem
 regardless of what any other document, generated mockup, or default
