@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package newax.invitations.v1;
+
+service InvitationsService {
+  rpc SendEmailInvite(SendEmailInviteRequest) returns (InvitationResponse);
+  rpc SendUsernameInvite(SendUsernameInviteRequest) returns (InvitationResponse);
+  rpc AcceptInvitation(AcceptInvitationRequest) returns (InvitationResponse);
+  rpc ListInvitations(ListInvitationsRequest) returns (InvitationsResponse);
+  rpc RevokeInvitation(RevokeInvitationRequest) returns (Empty);
+}
+
+message Empty {}
+
+message SendEmailInviteRequest {
+  string caller_id = 1;
+  string tenant_id = 2;
+  string email = 3;
+  optional string organization_id = 4;
+  optional string brand_id = 5;
+  optional string role_definition_id = 6;
+  optional string department_id = 7;
+  optional string scope = 8;
+}
+
+message SendUsernameInviteRequest {
+  string caller_id = 1;
+  string tenant_id = 2;
+  string username = 3;
+  optional string organization_id = 4;
+  optional string brand_id = 5;
+  optional string role_definition_id = 6;
+  optional string department_id = 7;
+  optional string scope = 8;
+}
+
+message AcceptInvitationRequest {
+  string account_id = 1;
+  string invitation_id = 2;
+}
+
+message ListInvitationsRequest {
+  string caller_id = 1;
+  string tenant_id = 2;
+  optional string status = 3;
+}
+
+message RevokeInvitationRequest {
+  string caller_id = 1;
+  string tenant_id = 2;
+  string invitation_id = 3;
+}
+
+message InvitationResponse {
+  string id = 1;
+  string tenant_id = 2;
+  optional string email = 3;
+  optional string username = 4;
+  string invited_by = 5;
+  optional string organization_id = 6;
+  optional string brand_id = 7;
+  string scope = 8;
+  optional string role_definition_id = 9;
+  optional string department_id = 10;
+  string status = 11;
+  string expires_at = 12;
+  optional string accepted_at = 13;
+  string created_at = 14;
+}
+
+message InvitationsResponse {
+  repeated InvitationResponse invitations = 1;
+}

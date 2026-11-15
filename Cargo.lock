@@ -1184,6 +1184,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 
 [[package]]
+name = "newax-account-verification"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "sqlx",
+]
+
+[[package]]
+name = "newax-departments"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+]
+
+[[package]]
+name = "newax-invitations"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "sqlx",
+]
+
+[[package]]
 name = "newax-permissions"
 version = "0.1.0"
 dependencies = [
@@ -1199,6 +1230,16 @@ dependencies = [
  "prost",
  "tonic",
  "tonic-build",
+]
+
+[[package]]
+name = "newax-subjects"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "sqlx",
 ]
 
 [[package]]
@@ -2196,12 +2237,77 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
+name = "svc-account-verification"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-account-verification",
+ "prost",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "svc-departments"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-departments",
+ "prost",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "svc-invitations"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-invitations",
+ "prost",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "svc-permissions"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "dotenvy",
  "newax-permissions",
+ "prost",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "svc-subjects"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-subjects",
  "prost",
  "sqlx",
  "tokio",

@@ -1,65 +1,84 @@
-//! Subjects service — business logic for subject operations.
+//! Subjects service -- gRPC client for `svc-subjects`.
 //!
-//! Mirrors `apps/api/src/modules/subjects/subjects.service.ts`.
+//! Business logic moved to `crates/subjects`, served by `services/subjects`
+//! (see CONVENTIONS.md's crates/services split). Same public shape so
+//! `handlers.rs` needed zero changes.
 
 use anyhow::{anyhow, Result};
-use sqlx::{FromRow, Row};
+use newax_proto::subjects::v1::{
+    subjects_service_client::SubjectsServiceClient, CreateRequest as GrpcCreateRequest, GetBadgesRequest, GetByIdRequest,
+};
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
 use crate::modules::subjects::dto::{
-    AttributeBadgeResponse, AttributeBadgesResponse, BadgeResponse, BadgesResponse,
-    SubjectResponse, SubjectType,
+    AttributeBadgeResponse, AttributeBadgesResponse, BadgeResponse, BadgesResponse, CreateSubjectRequest, SubjectResponse,
+    SubjectType,
 };
 
-/// Subject row from database
-#[derive(Debug, Clone, FromRow)]
-pub struct SubjectRow {
-    pub id: String,
-    pub tenant_id: String,
-    pub external_ref: Option<String>,
-    pub r#type: String,
-    pub given_name: Option<String>,
-    pub family_name: Option<String>,
-    pub email: Option<String>,
-    pub phone: Option<String>,
-    pub date_of_birth: Option<chrono::DateTime<chrono::Utc>>,
-    pub national_id_number: Option<String>,
-    pub address_line1: Option<String>,
-    pub address_line2: Option<String>,
-    pub city: Option<String>,
-    pub region: Option<String>,
-    pub country_code: Option<String>,
-    pub latitude: Option<f64>,
-    pub longitude: Option<f64>,
-    pub account_id: Option<String>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-}
-
-/// Approved case evidence for badge ranking
-#[derive(Debug, Clone)]
-pub struct RankableEvidence {
-    pub claim_type: String,
-    pub level: String,
-    pub verified_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub case_id: Option<String>,
-}
-
-/// Attribute evidence for attribute badge ranking
-#[derive(Debug, Clone)]
-pub struct RankableAttributeEvidence {
-    pub attribute: String,
-    pub level: String,
-    pub verified_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub case_id: Option<String>,
-    pub method: String,
-}
-
-/// Subjects service
 pub struct SubjectsService {
+    #[allow(dead_code)]
     db: DbPool,
+    #[allow(dead_code)]
     env: AppEnv,
+}
+
+fn subject_from_proto(s: newax_proto::subjects::v1::SubjectResponse) -> SubjectResponse {
+    SubjectResponse {
+        id: s.id,
+        tenant_id: s.tenant_id,
+        external_ref: s.external_ref,
+        r#type: s.r#type,
+        given_name: s.given_name,
+        family_name: s.family_name,
+        email: s.email,
+        phone: s.phone,
+        date_of_birth: s.date_of_birth,
+        national_id_number: s.national_id_number,
+        address_line1: s.address_line1,
+        address_line2: s.address_line2,
+        city: s.city,
+        region: s.region,
+        country_code: s.country_code,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        account_id: s.account_id,
+        created_at: s.created_at,
+        updated_at: s.updated_at,
+    }
+}
+
+fn badges_from_proto(b: newax_proto::subjects::v1::BadgesResponse) -> BadgesResponse {
+    BadgesResponse {
+        subject_id: b.subject_id,
+        badges: b
+            .badges
+            .into_iter()
+            .map(|e| BadgeResponse { claim_type: e.claim_type, level: e.level, verified_at: e.verified_at, case_id: e.case_id })
+            .collect(),
+    }
+}
+
+fn attribute_badges_from_proto(b: newax_proto::subjects::v1::AttributeBadgesResponse) -> AttributeBadgesResponse {
+    AttributeBadgesResponse {
+        subject_id: b.subject_id,
+        badges: b
+            .badges
+            .into_iter()
+            .map(|e| AttributeBadgeResponse {
+                attribute: e.attribute,
+                level: e.level,
+                verified_at: e.verified_at,
+                case_id: e.case_id,
+                method: e.method,
+            })
+            .collect(),
+    }
+}
+
+async fn client() -> Result<SubjectsServiceClient<tonic::transport::Channel>> {
+    let url = std::env::var("SUBJECTS_SERVICE_URL").unwrap_or_else(|_| "http://127.0.0.1:50077".to_string());
+    SubjectsServiceClient::connect(url).await.map_err(|e| anyhow!("subjects service unreachable: {e}"))
 }
 
 impl SubjectsService {
@@ -67,146 +86,54 @@ impl SubjectsService {
         Self { db, env }
     }
 
-    /// Convert SubjectRow to SubjectResponse
-    fn row_to_response(row: SubjectRow) -> SubjectResponse {
-        SubjectResponse {
-            id: row.id,
-            tenant_id: row.tenant_id,
-            external_ref: row.external_ref,
-            r#type: row.r#type,
-            given_name: row.given_name,
-            family_name: row.family_name,
-            email: row.email,
-            phone: row.phone,
-            date_of_birth: row.date_of_birth.map(|d| d.to_rfc3339()),
-            national_id_number: row.national_id_number,
-            address_line1: row.address_line1,
-            address_line2: row.address_line2,
-            city: row.city,
-            region: row.region,
-            country_code: row.country_code,
-            latitude: row.latitude,
-            longitude: row.longitude,
-            account_id: row.account_id,
-            created_at: row.created_at.to_rfc3339(),
-            updated_at: row.updated_at.to_rfc3339(),
-        }
-    }
-
-    /// Create a new subject
     pub async fn create(
         &self,
         tenant_id: &str,
         api_key_id: &str,
-        req: &crate::modules::subjects::dto::CreateSubjectRequest,
+        req: &CreateSubjectRequest,
     ) -> Result<SubjectResponse> {
-        let mut conn = self.db.inner().begin().await?;
-
-        // Set tenant context for RLS
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-            .bind(tenant_id)
-            .execute(&mut *conn)
-            .await?;
-
+        let mut c = client().await?;
         let type_str = match &req.r#type {
             SubjectType::Person => "PERSON".to_string(),
             SubjectType::Organization => "ORGANIZATION".to_string(),
         };
-
-        let subject: SubjectRow = sqlx::query_as(
-            r#"
-            INSERT INTO subject (id, tenant_id, external_ref, type, given_name, family_name, email, phone, date_of_birth, address_line1, address_line2, city, region, country_code, latitude, longitude)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-            RETURNING id, tenant_id, external_ref, type, given_name, family_name, email, phone, date_of_birth, national_id_number, address_line1, address_line2, city, region, country_code, latitude, longitude, account_id, created_at, updated_at
-            "#,
-        )
-        .bind(tenant_id)
-        .bind(&req.external_ref)
-        .bind(type_str)
-        .bind(&req.given_name)
-        .bind(&req.family_name)
-        .bind(&req.email)
-        .bind(&req.phone)
-        .bind(req.date_of_birth.as_ref().and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok().map(|nd| nd.and_time(chrono::NaiveTime::MIN))))
-        .bind(&req.address_line1)
-        .bind(&req.address_line2)
-        .bind(&req.city)
-        .bind(&req.region)
-        .bind(&req.country_code)
-        .bind(req.latitude)
-        .bind(req.longitude)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        // If phone and date_of_birth are set, create a self-attested PhoneBadgeEvidence
-        if subject.phone.is_some() && subject.date_of_birth.is_some() {
-            let phone = subject.phone.clone().unwrap();
-            sqlx::query(
-                r#"
-                INSERT INTO phone_badge_evidence (id, phone, tenant_id, subject_id, claim_type, level, verified_at)
-                VALUES (gen_random_uuid(), $1, $2, $3, 'DATE_OF_BIRTH', 'SELF_ATTESTED', NULL)
-                "#,
-            )
-            .bind(&phone)
-            .bind(tenant_id)
-            .bind(&subject.id)
-            .execute(&mut *conn)
-            .await?;
-        }
-
-        // Audit log
-        sqlx::query(
-            r#"
-            INSERT INTO audit_log_entry (id, tenant_id, actor_type, actor_id, action, subject_id, metadata)
-            VALUES (gen_random_uuid(), $1, 'API_KEY', $2, 'subject.create', $3, NULL)
-            "#,
-        )
-        .bind(tenant_id)
-        .bind(api_key_id)
-        .bind(&subject.id)
-        .execute(&mut *conn)
-        .await?;
-
-        conn.commit().await?;
-        Ok(Self::row_to_response(subject))
+        let resp = c
+            .create(GrpcCreateRequest {
+                tenant_id: tenant_id.to_string(),
+                api_key_id: api_key_id.to_string(),
+                r#type: type_str,
+                external_ref: req.external_ref.clone(),
+                given_name: req.given_name.clone(),
+                family_name: req.family_name.clone(),
+                email: req.email.clone(),
+                phone: req.phone.clone(),
+                date_of_birth: req.date_of_birth.clone(),
+                address_line1: req.address_line1.clone(),
+                address_line2: req.address_line2.clone(),
+                city: req.city.clone(),
+                region: req.region.clone(),
+                country_code: req.country_code.clone(),
+                latitude: req.latitude,
+                longitude: req.longitude,
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(subject_from_proto(resp.into_inner()))
     }
 
-    /// Get subject by ID
     pub async fn get_by_id(&self, tenant_id: &str, api_key_id: &str, subject_id: &str) -> Result<SubjectResponse> {
-        let mut conn = self.db.inner().begin().await?;
-
-        // Set tenant context for RLS
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-            .bind(tenant_id)
-            .execute(&mut *conn)
-            .await?;
-
-        let subject: SubjectRow = sqlx::query_as(
-            "SELECT id, tenant_id, external_ref, type, given_name, family_name, email, phone, date_of_birth, national_id_number, address_line1, address_line2, city, region, country_code, latitude, longitude, account_id, created_at, updated_at FROM subject WHERE id = $1",
-        )
-        .bind(subject_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Subject not found"))?;
-
-        // Audit log
-        sqlx::query(
-            r#"
-            INSERT INTO audit_log_entry (id, tenant_id, actor_type, actor_id, action, subject_id, metadata)
-            VALUES (gen_random_uuid(), $1, 'API_KEY', $2, 'subject.read', $3, NULL)
-            "#,
-        )
-        .bind(tenant_id)
-        .bind(api_key_id)
-        .bind(&subject.id)
-        .execute(&mut *conn)
-        .await?;
-
-        conn.commit().await?;
-        Ok(Self::row_to_response(subject))
+        let mut c = client().await?;
+        let resp = c
+            .get_by_id(GetByIdRequest {
+                tenant_id: tenant_id.to_string(),
+                api_key_id: api_key_id.to_string(),
+                subject_id: subject_id.to_string(),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(subject_from_proto(resp.into_inner()))
     }
 
-    /// Get badges for a subject — one badge per ClaimType (strongest APPROVED case)
     pub async fn get_badges(
         &self,
         tenant_id: &str,
@@ -214,86 +141,19 @@ impl SubjectsService {
         actor_id: &str,
         subject_id: &str,
     ) -> Result<BadgesResponse> {
-        let mut conn = self.db.inner().begin().await?;
-
-        // Set tenant context for RLS
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-            .bind(tenant_id)
-            .execute(&mut *conn)
-            .await?;
-
-        // Verify subject exists
-        let subject: SubjectRow = sqlx::query_as(
-            "SELECT id, tenant_id, external_ref, type, given_name, family_name, email, phone, date_of_birth, national_id_number, address_line1, address_line2, city, region, country_code, latitude, longitude, account_id, created_at, updated_at FROM subject WHERE id = $1",
-        )
-        .bind(subject_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Subject not found"))?;
-
-        // Get all APPROVED cases ordered by level DESC (strongest first)
-        let rows = sqlx::query(
-            "SELECT id, claim_type, level, resolved_at FROM verification_case WHERE subject_id = $1 AND status = 'APPROVED' ORDER BY level DESC, resolved_at DESC",
-        )
-        .bind(subject_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        let mut evidence: Vec<RankableEvidence> = rows
-            .into_iter()
-            .map(|row| RankableEvidence {
-                claim_type: row.get::<String, _>("claim_type"),
-                level: row.get::<String, _>("level"),
-                verified_at: row.get::<Option<chrono::DateTime<chrono::Utc>>, _>("resolved_at"),
-                case_id: Some(row.get::<String, _>("id")),
+        let mut c = client().await?;
+        let resp = c
+            .get_badges(GetBadgesRequest {
+                tenant_id: tenant_id.to_string(),
+                actor_type: actor_type.to_string(),
+                actor_id: actor_id.to_string(),
+                subject_id: subject_id.to_string(),
             })
-            .collect();
-
-        // Append self-attested DATE_OF_BIRTH if subject has date_of_birth but no APPROVED case for it
-        if subject.date_of_birth.is_some() {
-            evidence.push(RankableEvidence {
-                claim_type: "DATE_OF_BIRTH".to_string(),
-                level: "SELF_ATTESTED".to_string(),
-                verified_at: None,
-                case_id: None,
-            });
-        }
-
-        // Pick strongest per claim type (first occurrence wins since we sorted DESC)
-        let mut seen = std::collections::HashSet::new();
-        let badges: Vec<BadgeResponse> = evidence
-            .into_iter()
-            .filter(|e| seen.insert(e.claim_type.clone()))
-            .map(|e| BadgeResponse {
-                claim_type: e.claim_type,
-                level: e.level,
-                verified_at: e.verified_at.map(|d| d.to_rfc3339()),
-                case_id: e.case_id,
-            })
-            .collect();
-
-        // Audit log
-        sqlx::query(
-            r#"
-            INSERT INTO audit_log_entry (id, tenant_id, actor_type, actor_id, action, subject_id, metadata)
-            VALUES (gen_random_uuid(), $1, $2, $3, 'subject.badges_read', $4, NULL)
-            "#,
-        )
-        .bind(tenant_id)
-        .bind(actor_type)
-        .bind(actor_id)
-        .bind(&subject.id)
-        .execute(&mut *conn)
-        .await?;
-
-        conn.commit().await?;
-        Ok(BadgesResponse {
-            subject_id: subject.id,
-            badges,
-        })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(badges_from_proto(resp.into_inner()))
     }
 
-    /// Get attribute badges for a subject — one badge per AttributeType
     pub async fn get_attribute_badges(
         &self,
         tenant_id: &str,
@@ -301,74 +161,16 @@ impl SubjectsService {
         actor_id: &str,
         subject_id: &str,
     ) -> Result<AttributeBadgesResponse> {
-        let mut conn = self.db.inner().begin().await?;
-
-        // Set tenant context for RLS
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-            .bind(tenant_id)
-            .execute(&mut *conn)
-            .await?;
-
-        // Verify subject exists
-        let subject: SubjectRow = sqlx::query_as(
-            "SELECT id, tenant_id, external_ref, type, given_name, family_name, email, phone, date_of_birth, national_id_number, address_line1, address_line2, city, region, country_code, latitude, longitude, account_id, created_at, updated_at FROM subject WHERE id = $1",
-        )
-        .bind(subject_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Subject not found"))?;
-
-        // Get all verified attributes ordered by level DESC (strongest first)
-        let rows = sqlx::query(
-            "SELECT attribute, level, verified_at, case_id, method FROM verified_attribute WHERE subject_id = $1 ORDER BY level DESC, verified_at DESC",
-        )
-        .bind(subject_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        let evidence: Vec<RankableAttributeEvidence> = rows
-            .into_iter()
-            .map(|row| RankableAttributeEvidence {
-                attribute: row.get::<String, _>("attribute"),
-                level: row.get::<String, _>("level"),
-                verified_at: row.get::<Option<chrono::DateTime<chrono::Utc>>, _>("verified_at"),
-                case_id: Some(row.get::<String, _>("case_id")),
-                method: row.get::<String, _>("method"),
+        let mut c = client().await?;
+        let resp = c
+            .get_attribute_badges(GetBadgesRequest {
+                tenant_id: tenant_id.to_string(),
+                actor_type: actor_type.to_string(),
+                actor_id: actor_id.to_string(),
+                subject_id: subject_id.to_string(),
             })
-            .collect();
-
-        // Pick strongest per attribute (first occurrence wins since we sorted DESC)
-        let mut seen = std::collections::HashSet::new();
-        let badges: Vec<AttributeBadgeResponse> = evidence
-            .into_iter()
-            .filter(|e| seen.insert(e.attribute.clone()))
-            .map(|e| AttributeBadgeResponse {
-                attribute: e.attribute,
-                level: e.level,
-                verified_at: e.verified_at.map(|d| d.to_rfc3339()),
-                case_id: e.case_id,
-                method: e.method,
-            })
-            .collect();
-
-        // Audit log
-        sqlx::query(
-            r#"
-            INSERT INTO audit_log_entry (id, tenant_id, actor_type, actor_id, action, subject_id, metadata)
-            VALUES (gen_random_uuid(), $1, $2, $3, 'subject.attribute_badges_read', $4, NULL)
-            "#,
-        )
-        .bind(tenant_id)
-        .bind(actor_type)
-        .bind(actor_id)
-        .bind(&subject.id)
-        .execute(&mut *conn)
-        .await?;
-
-        conn.commit().await?;
-        Ok(AttributeBadgesResponse {
-            subject_id: subject.id,
-            badges,
-        })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(attribute_badges_from_proto(resp.into_inner()))
     }
 }

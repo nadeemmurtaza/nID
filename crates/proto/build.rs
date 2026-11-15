@@ -1,6 +1,10 @@
 const PROTOS: &[&str] = &[
     "../../proto/nid/permissions/v1/permissions.proto",
     "../../proto/nid/tenant_staff/v1/tenant_staff.proto",
+    "../../proto/nid/departments/v1/departments.proto",
+    "../../proto/nid/account_verification/v1/account_verification.proto",
+    "../../proto/nid/subjects/v1/subjects.proto",
+    "../../proto/nid/invitations/v1/invitations.proto",
 ];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

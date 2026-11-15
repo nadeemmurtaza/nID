@@ -262,8 +262,15 @@ way §1–10 above are:
 
 ## crates/services split: in progress, tracked here (2026-11-15)
 
-The pattern in §3 is now proven working, not just specified — three
-real modules split so far, each a standalone `tonic` gRPC service
+**See `MODULE_SPLIT_PLAYBOOK.md` for the full step-by-step procedure**
+(required reading list, folder layout, naming, proto/crate/service
+file contents, how to rewrite the monolith side, verification, commit
+discipline, and a final checklist) — this section is just the live
+tracking table and status summary, not the how-to.
+
+The pattern in §3 is now proven working, not just specified —
+nineteen real modules split so far, each a standalone `tonic` gRPC
+service
 with its old monolith route handlers reduced to a thin client, each
 verified with `cargo check --workspace`:
 
@@ -271,10 +278,34 @@ verified with `cargo check --workspace`:
 |---|---|---|---|---|
 | kb-documents | Communicator | `crates/kb-documents` | `services/kb-documents` | 50061 |
 | system-health | Communicator | `crates/system-health` | `services/system-health` | 50062 |
+| embed-widget | Communicator | `crates/embed-widget` | `services/embed-widget` | 50063 |
+| help-center | Communicator | `crates/help-center` | `services/help-center` | 50064 |
+| scheduled-tasks | Communicator | `crates/scheduled-tasks` | `services/scheduled-tasks` | 50065 |
+| monitoring | Communicator | `crates/monitoring` | `services/monitoring` | 50066 |
+| conversation-search | Communicator | `crates/conversation_search` | `services/conversation_search` | 50067 |
+| reply-integration | Communicator | `crates/reply_integration` | `services/reply_integration` | 50068 |
+| cx-qa-scoring | Communicator | `crates/cx_qa_scoring` | `services/cx_qa_scoring` | 50069 |
+| tone-of-voice | Communicator | `crates/tone_of_voice` | `services/tone_of_voice` | 50070 |
 | permissions | nID | `crates/permissions` | `services/permissions` | 50071 |
+| tenant-staff | nID | `crates/tenant-staff` | `services/tenant-staff` | 50072 |
+| departments | nID | `crates/departments` | `services/departments` | 50073 |
+| ab-testing | Communicator | `crates/ab_testing` | `services/ab_testing` | 50074 |
+| account-verification | nID | `crates/account_verification` | `services/account_verification` | 50075 |
+| compliance-dashboard | Communicator | `crates/compliance_dashboard` | `services/compliance_dashboard` | 50076 |
+| subjects | nID | `crates/subjects` | `services/subjects` | 50077 |
+| unified-analytics | Communicator | `crates/unified_analytics` | `services/unified_analytics` | 50078 |
+| invitations | nID | `crates/invitations` | `services/invitations` | 50079 |
 
-Remaining: **~68 more modules in Communicator's `backend-rs`**
-(70 routes/90 services, 142k lines total) and **~19 more in nID's
+`reply-integration` is the one case so far where a split module had
+genuine in-process coupling from elsewhere in the monolith
+(`backend-rs/src/services/reply_engine.rs` called
+`ReplyIntegrationService` directly, not through a route): resolved by
+having `reply_engine.rs` depend on the new `newax-reply-integration`
+crate directly as a library, not by routing an internal monolith call
+through gRPC.
+
+Remaining: **~56 more modules in Communicator's `backend-rs`**
+(70 routes/90 services, 142k lines total) and **~14 more in nID's
 `apps/rust-api`**. This is not a mechanical find-and-replace — each
 module needs its cross-module Rust calls identified and either kept
 in-process (if it stays in the monolith) or turned into a gRPC call
@@ -286,6 +317,15 @@ directly today and need that coupling mapped out before they can
 split safely. Convert and verify one module at a time, commit each
 once `cargo check --workspace` is clean — never a batch no one
 checked compiles.
+
+**Not every module is a split candidate.** nID's
+`apps/rust-api/src/modules/badges` is a pure shared library (badge-
+ranking helpers + `CrossTenantBadgesService`) used in-process by
+`profiles/service.rs`, with no routes/handlers of its own. Converting
+it to a standalone gRPC service would be wrong — it belongs inlined,
+not behind a network call. Skip modules like this; look for the
+dto/handlers/routes/service shape (or Communicator's routes+services
+pair) before starting one.
 
 **Known shortcut, flagged, not to copy into cross-repo code:** split
 services are currently dialed by a hardcoded `127.0.0.1:<port>` URL
