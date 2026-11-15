@@ -2,7 +2,7 @@
 //!
 //! Mounts all /v1/accounts/* routes under the Axum router.
 
-use axum::{Router, routing::{get, post}};
+use axum::{Router, routing::{get, post, delete}};
 use std::sync::Arc;
 
 use super::handlers::{self, AccountsState};
@@ -17,4 +17,5 @@ pub fn accounts_router() -> Router<Arc<AccountsState>> {
         .route("/v1/accounts/me/logout-all", post(handlers::logout_all))
         .route("/v1/accounts/me/email/start", post(handlers::start_email_verification))
         .route("/v1/accounts/me/email/verify", post(handlers::verify_email))
+        .route("/v1/accounts/me", delete(handlers::delete_account))
 }

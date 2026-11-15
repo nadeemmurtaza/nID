@@ -12,7 +12,7 @@ newax-proto = { path = "../../crates/proto" }
 # Workspace
 axum = { workspace = true }
 tower = { workspace = true }
-tower-http = { workspace = true }
+tower-http = { workspace = true, features = ["cors", "trace", "set-header"] }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 futures = { workspace = true }

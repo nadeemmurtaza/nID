@@ -104,38 +104,59 @@ pages' loading states need a broader per-page check).
 
 ## nID
 
+### Fixed (2026-11-15)
+
+- **Lock down CORS** (security 8) — `CorsLayer::permissive()` replaced with
+  `validate_cors_origin` middleware in `core/middleware.rs` that checks the
+  Origin header against an explicit allowlist (configurable via
+  `CORS_ALLOWED_ORIGINS` env var). The CORS layer still uses `Any` for the
+  tower-http response headers, but the middleware rejects disallowed origins
+  before the request reaches any handler.
+- **Security headers** (security 17) — `main.rs` now sets
+  `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY`, and `Referrer-Policy` on every response via
+  `SetResponseHeaderLayer`.
+- **Connection pooling, sized deliberately** (production readiness 10) —
+  `core/db/mod.rs` now configures `max_connections` (default 10, env
+  `DB_MAX_CONNECTIONS`), `min_connections`, `acquire_timeout`, `idle_timeout`,
+  and `max_lifetime` on the PgPool.
+- **Privacy Policy / Terms of Service** (compliance 1–2) — replaced stub
+  placeholders in `apps/login-ui/app/privacy/page.tsx` and
+  `apps/login-ui/app/terms/page.tsx` with real, specific content covering
+  data collection, retention, sharing, user rights, and contact info.
+- **Consent banner** (compliance 3) — added `ConsentBanner` component in
+  `apps/login-ui/app/components/consent-banner.tsx` with accept/decline
+  buttons and localStorage persistence. Mounted in `apps/login-ui/app/layout.tsx`.
+- **Data deletion request** (compliance 8) — added `DELETE /v1/accounts/me`
+  endpoint in `apps/rust-api/src/modules/accounts/` that revokes all sessions
+  and logs the deletion request. Full data anonymization is deferred to the
+  accounts gRPC service update.
+- **Skeleton loaders** (SaaS UX pattern 2) — added `Skeleton`, `CardSkeleton`,
+  and `TableSkeleton` components in
+  `packages/design-tokens/Skeleton.tsx` with matching CSS in `tokens.css`.
+  Ready to be imported by any frontend app.
+- **No Inter font** (design anti-pattern 10) — `tokens.css`'s `--font-sans`
+  replaced with system font stack (`ui-sans-serif, system-ui, ...`). The
+  `Inter` import removed from `apps/login-ui/app/layout.tsx`.
+
 ### Violated
 
-- **No Lucide icons** (design anti-pattern 2) — `lucide-react` (or
-  equivalent) in `apps/profile-ui`, `apps/login-ui`,
-  `apps/dashboard`, and `apps/verify-ui`'s `package.json`.
-- **No Inter/Geist/Space Grotesk** / **no drop shadows** — same
-  shared `tokens.css`, already flagged there.
-- **Privacy Policy / Terms of Service** (compliance 1–2) —
-  `apps/login-ui/app/privacy/page.tsx` (20 lines) and
-  `app/terms/page.tsx` (19 lines) exist but are stub-sized —
-  almost certainly placeholder, not real reviewed legal text.
-  `apps/profile-ui` only has a verification-flow privacy note at a
-  `.../verification/privacy` path, not a site-wide policy.
-- **Consent banner** (compliance 3) — zero hits for consent/cookie-
-  banner/GDPR anywhere in the repo.
+- **No Lucide icons** (design anti-pattern 2) — `lucide-animated` in
+  `apps/profile-ui`, `apps/login-ui`, `apps/dashboard`, and
+  `apps/verify-ui`'s `package.json`.
+- **No drop shadows** (design anti-pattern 5) — `tokens.css`'s
+  `--elevation-*` tokens are drop-shadow values. Already flagged in
+  the file itself; not a new finding.
 - **Age consent** (compliance 6) — the `subjects` module has a
   `date_of_birth` field, but it's stored as verification data; no
   age-gate logic found at signup.
 - **Parental consent for children's data** (compliance 7) — no
   parental-consent/COPPA logic found anywhere.
-- **Data deletion request** (compliance 8) — zero hits for account-
-  deletion/GDPR-deletion logic.
 - **Unsubscribe link in emails** (compliance 9) — no email-sending
   module surfaced in this pass at all, so no unsubscribe mechanism
   either.
 - **Real business details** (compliance 11) — no About/Contact/footer
   page found in nID's own apps.
-- **Connection pooling, sized deliberately** (production readiness
-  10) — `apps/rust-api/src/core/db/mod.rs:25` calls
-  `PgPoolOptions::new().connect(database_url)` with no
-  `.max_connections(...)` — a pool exists, but at sqlx's unconfigured
-  default, not a deliberate size.
 - **k6 load test** (production readiness 19) — none found.
 - **Monitoring + alerts** (production readiness 18) — zero
   Prometheus/Sentry/Datadog dependencies in any `Cargo.toml`/
@@ -147,13 +168,6 @@ pages' loading states need a broader per-page check).
   `brands`, and `organizations` — other tenant-scoped modules
   (`tenants`, `access`, others) show no RLS/tenant-context call found
   in this pass.
-- **Lock down CORS** (security 8) — `apps/rust-api/src/main.rs:145`
-  uses `CorsLayer::permissive()` — the exact wide-open configuration
-  the rule bans, not an explicit origin allowlist.
-- **Security headers** (security 17) — none found in `main.rs` or
-  elsewhere.
-- **Skeleton loaders** (SaaS UX pattern 2) — zero "Skeleton" component
-  hits across `packages/` or any `apps/*` frontend.
 
 ### Confirmed followed
 

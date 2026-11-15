@@ -112,6 +112,19 @@ pub async fn verify_email(
     Ok(Json(acct))
 }
 
+/// DELETE /v1/accounts/me — COMPLIANCE_AND_ACCESSIBILITY_RULES.md §8: data deletion request
+pub async fn delete_account(
+    account: AccountSession,
+    State(state): State<Arc<AccountsState>>,
+) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
+    state
+        .service
+        .delete_account(&account.id)
+        .await
+        .map_err(internal_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// Convert anyhow error to HTTP error response
 fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
     tracing::error!(error = %err, "Internal error");

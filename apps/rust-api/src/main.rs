@@ -9,10 +9,15 @@ mod modules;
 
 use axum::{Router, middleware, Extension};
 use std::sync::Arc;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use std::time::Duration;
+use tower_http::{
+    cors::{Any, CorsLayer},
+    trace::TraceLayer,
+    set_header::SetResponseHeaderLayer,
+};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::core::middleware::request_tracing;
+use crate::core::middleware::{request_tracing, validate_cors_origin};
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
@@ -114,9 +119,17 @@ fn build_router(state: AppState) -> Router {
         env: state.env.clone(),
     });
     let profile_content_state = Arc::new(ProfileContentState {
-        service: ProfileContentService::new(state.db.clone(), state.env.clone()),
+        service: ProfileContentService,
         env: state.env.clone(),
     });
+
+    // CORS — SECURITY_RULES.md §8: explicit origin allowlist, not permissive
+    // Custom middleware validates Origin header against an allowlist
+    let cors = CorsLayer::new()
+        .allow_methods(Any)
+        .allow_headers(Any)
+        .allow_origin(Any)
+        .max_age(Duration::from_secs(3600));
 
     Router::new()
         .merge(health_router())
@@ -141,8 +154,25 @@ fn build_router(state: AppState) -> Router {
         .merge(profile_content_router().with_state(profile_content_state))
         .layer(Extension(state.db.clone()))
         .layer(Extension(state.env.clone()))
+        .layer(middleware::from_fn(validate_cors_origin))
         .layer(middleware::from_fn(request_tracing))
-        .layer(CorsLayer::permissive())
+        .layer(cors)
+        .layer(SetResponseHeaderLayer::if_not_present(
+            axum::http::header::STRICT_TRANSPORT_SECURITY,
+            axum::http::HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            axum::http::header::X_CONTENT_TYPE_OPTIONS,
+            axum::http::HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            axum::http::header::X_FRAME_OPTIONS,
+            axum::http::HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            axum::http::header::REFERRER_POLICY,
+            axum::http::HeaderValue::from_static("strict-origin-when-cross-origin"),
+        ))
         .layer(TraceLayer::new_for_http())
 }
 

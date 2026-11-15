@@ -90,10 +90,12 @@
   --color-chart-lime: var(--newax-lime-500);
   --color-chart-orange: #fe4c02;
 
-  /* ---------- Typography ---------- */
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
-    Helvetica, Arial, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* ---------- Typography ----------
+     CONVENTIONS.md rule 10: Inter/Geist/Space Grotesk are banned.
+     Using system font stack — no external font dependency. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    Helvetica, Arial, 'Noto Sans', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
 
   --text-xs: 0.75rem; /* 12px */
   --text-sm: 0.875rem; /* 14px */
@@ -254,4 +256,46 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* ---------- Skeleton loader ----------
+   CONVENTIONS.md design anti-pattern rule 21: never ship without skeleton loaders.
+   Used by packages/design-tokens/Skeleton.tsx. */
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.skeleton {
+  background: var(--color-surface-elevated);
+  border-radius: var(--radius-sm);
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  min-height: 1rem;
+}
+
+.skeleton-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.skeleton-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skeleton-table-row {
+  display: flex;
+  gap: var(--space-4);
 }

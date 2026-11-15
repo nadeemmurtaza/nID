@@ -228,7 +228,7 @@ mod inner {
                 account_id: account_id.to_string(),
                 label: req.label.clone(),
                 url: req.url.clone(),
-                order_idx: req.order.unwrap_or(0),
+                order_idx: Some(req.order.unwrap_or(0)),
             }).await?.into_inner();
             Ok(custom_link_from_proto(resp))
         }
@@ -262,7 +262,7 @@ mod inner {
                 link_id: link_id.to_string(),
                 label: req.label.clone(),
                 url: req.url.clone(),
-                order_idx: req.order.unwrap_or(0),
+                order_idx: Some(req.order.unwrap_or(0)),
             }).await?.into_inner();
             Ok(custom_link_from_proto(resp))
         }
