@@ -219,6 +219,40 @@ commits (design-tokens-style rollouts) use `ecosystem` as the scope.
   independently deployed client surface embedded on third-party
   sites, exactly what `apps/*` is for), out from under `apps/web/`.
 
+## crates/services split: in progress, tracked here (2026-11-15)
+
+The pattern in §3 is now proven working, not just specified — three
+real modules split so far, each a standalone `tonic` gRPC service
+with its old monolith route handlers reduced to a thin client, each
+verified with `cargo check --workspace`:
+
+| Module | Repo | Crate | Service | Port |
+|---|---|---|---|---|
+| kb-documents | Communicator | `crates/kb-documents` | `services/kb-documents` | 50061 |
+| system-health | Communicator | `crates/system-health` | `services/system-health` | 50062 |
+| permissions | nID | `crates/permissions` | `services/permissions` | 50071 |
+
+Remaining: **~68 more modules in Communicator's `backend-rs`**
+(70 routes/90 services, 142k lines total) and **~19 more in nID's
+`apps/rust-api`**. This is not a mechanical find-and-replace — each
+module needs its cross-module Rust calls identified and either kept
+in-process (if it stays in the monolith) or turned into a gRPC call
+(if both sides split). Low-coupling modules (zero
+`crate::services::`/`crate::modules::` cross-references, confirmed by
+grep before converting) go fastest; most of nID's remaining modules
+(sessions, tenants, organizations, oauth, etc.) call each other
+directly today and need that coupling mapped out before they can
+split safely. Convert and verify one module at a time, commit each
+once `cargo check --workspace` is clean — never a batch no one
+checked compiles.
+
+**Known shortcut, flagged, not to copy into cross-repo code:** split
+services are currently dialed by a hardcoded `127.0.0.1:<port>` URL
+(env-overridable), no mTLS, no service discovery — a stand-in for the
+real `core-newax` Module Gateway from `COMMUNICATION.md`, acceptable
+*within* one repo for now, never a substitute for the gateway once
+nID and Communicator actually need to call each other.
+
 ## Decided, migration tracked (not yet executed)
 
 - **nID**: `apps/api` (TypeScript/NestJS + Prisma) and `apps/rust-api`

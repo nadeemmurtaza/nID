@@ -142,16 +142,33 @@ decision is how to contain that, not what transport to use:
   synchronously inline with a user-facing request wherever the
   provider's latency isn't something a user should wait on.
 
-## Audit note (2026-11-14): what's actually implemented vs. this plan
+## Audit note (2026-11-14, updated 2026-11-15): what's actually implemented vs. this plan
 
 Honest status, not papered over — see each repo's `CLAUDE.md`/`AGENT.md`
 for the corresponding tech-stack compliance note:
 
-- **Nothing in §1 exists yet.** No `tonic`/`prost`/`.proto` in either
-  repo, no NATS, no Module Gateway client. Today, nID and Communicator
-  don't talk to each other over any mechanism — this is a plan for
-  new infrastructure, not a description of something running.
-- **§2 and §3 are already how both repos actually work** — modular
-  monolith with in-process calls, and REST+HMAC webhook adapters for
-  third parties (Communicator's Meta/TikTok integration). Nothing to
-  change there; this doc just makes the existing pattern explicit.
+- **Intra-repo gRPC exists now, cross-repo still doesn't.** Both repos
+  now have real `tonic`/`prost`/`.proto` infrastructure and real split
+  services: Communicator's `services/kb-documents` and
+  `services/system-health`, nID's `services/permissions` — each a
+  standalone gRPC binary with the monolith as a thin client. **This is
+  intra-repo only** (a module split out of `backend-rs` /
+  `apps/rust-api`, still called only from within that same repo). nID
+  and Communicator still don't call each other over any mechanism —
+  the Module Gateway (§1) and NATS event bus are still not built, and
+  both still need `core-newax`, which this session can't reach.
+- **Interim stand-in, not the real Module Gateway:** each split
+  service is dialed directly by URL
+  (`KB_DOCUMENTS_SERVICE_URL`/`SYSTEM_HEALTH_SERVICE_URL`/
+  `PERMISSIONS_SERVICE_URL`, each defaulting to `127.0.0.1:<port>`) —
+  no mTLS, no service JWT, no service discovery. This is a deliberate,
+  flagged shortcut to prove the split pattern works end to end without
+  being blocked on infrastructure that belongs in `core-newax`. Do not
+  mistake it for the real gateway from §1, and do not extend this
+  direct-dial pattern to cross-repo calls — that still goes through
+  the real gateway once it exists, never repo-to-repo directly.
+- **§2 and §3 are otherwise still how both repos work** — modules not
+  yet split stay in-process, and REST+HMAC webhook adapters still
+  handle third parties (Communicator's Meta/TikTok integration).
+  Nothing to change there; this doc just makes the existing pattern
+  explicit.
