@@ -262,7 +262,7 @@ way §1–10 above are:
 
 ## crates/services split: in progress, tracked here (2026-11-15)
 
-The pattern in §3 is now proven working, not just specified — twelve
+The pattern in §3 is now proven working, not just specified — thirteen
 real modules split so far, each a standalone `tonic` gRPC service
 with its old monolith route handlers reduced to a thin client, each
 verified with `cargo check --workspace`:
@@ -278,6 +278,7 @@ verified with `cargo check --workspace`:
 | conversation-search | Communicator | `crates/conversation_search` | `services/conversation_search` | 50067 |
 | reply-integration | Communicator | `crates/reply_integration` | `services/reply_integration` | 50068 |
 | cx-qa-scoring | Communicator | `crates/cx_qa_scoring` | `services/cx_qa_scoring` | 50069 |
+| tone-of-voice | Communicator | `crates/tone_of_voice` | `services/tone_of_voice` | 50070 |
 | permissions | nID | `crates/permissions` | `services/permissions` | 50071 |
 | tenant-staff | nID | `crates/tenant-staff` | `services/tenant-staff` | 50072 |
 | departments | nID | `crates/departments` | `services/departments` | 50073 |
@@ -290,7 +291,7 @@ having `reply_engine.rs` depend on the new `newax-reply-integration`
 crate directly as a library, not by routing an internal monolith call
 through gRPC.
 
-Remaining: **~60 more modules in Communicator's `backend-rs`**
+Remaining: **~59 more modules in Communicator's `backend-rs`**
 (70 routes/90 services, 142k lines total) and **~17 more in nID's
 `apps/rust-api`**. This is not a mechanical find-and-replace — each
 module needs its cross-module Rust calls identified and either kept
