@@ -262,6 +262,12 @@ way §1–10 above are:
 
 ## crates/services split: in progress, tracked here (2026-11-15)
 
+**See `MODULE_SPLIT_PLAYBOOK.md` for the full step-by-step procedure**
+(required reading list, folder layout, naming, proto/crate/service
+file contents, how to rewrite the monolith side, verification, commit
+discipline, and a final checklist) — this section is just the live
+tracking table and status summary, not the how-to.
+
 The pattern in §3 is now proven working, not just specified —
 nineteen real modules split so far, each a standalone `tonic` gRPC
 service
