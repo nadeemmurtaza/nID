@@ -2,9 +2,8 @@
 resolver = "2"
 members = [
     "apps/rust-api",
-    "crates/shared-types",
-    "crates/storage",
-    "crates/billing",
+    "crates/*",
+    "services/*",
 ]
 
 [workspace.package]

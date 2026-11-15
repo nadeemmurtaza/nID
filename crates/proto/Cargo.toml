@@ -1,0 +1,12 @@
+[package]
+name = "newax-proto"
+version.workspace = true
+edition.workspace = true
+description = "Generated Rust client types for every .proto service under proto/. Add a new .proto to build.rs's list as each module splits out of apps/rust-api."
+
+[dependencies]
+tonic = "0.12"
+prost = "0.13"
+
+[build-dependencies]
+tonic-build = "0.12"
