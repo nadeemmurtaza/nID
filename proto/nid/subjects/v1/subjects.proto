@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package newax.subjects.v1;
+
+service SubjectsService {
+  rpc Create(CreateRequest) returns (SubjectResponse);
+  rpc GetById(GetByIdRequest) returns (SubjectResponse);
+  rpc GetBadges(GetBadgesRequest) returns (BadgesResponse);
+  rpc GetAttributeBadges(GetBadgesRequest) returns (AttributeBadgesResponse);
+}
+
+message GetByIdRequest {
+  string tenant_id = 1;
+  string api_key_id = 2;
+  string subject_id = 3;
+}
+
+message GetBadgesRequest {
+  string tenant_id = 1;
+  string actor_type = 2;
+  string actor_id = 3;
+  string subject_id = 4;
+}
+
+message CreateRequest {
+  string tenant_id = 1;
+  string api_key_id = 2;
+  string type = 3;
+  optional string external_ref = 4;
+  optional string given_name = 5;
+  optional string family_name = 6;
+  optional string email = 7;
+  optional string phone = 8;
+  optional string date_of_birth = 9;
+  optional string address_line1 = 10;
+  optional string address_line2 = 11;
+  optional string city = 12;
+  optional string region = 13;
+  optional string country_code = 14;
+  optional double latitude = 15;
+  optional double longitude = 16;
+}
+
+message SubjectResponse {
+  string id = 1;
+  string tenant_id = 2;
+  optional string external_ref = 3;
+  string type = 4;
+  optional string given_name = 5;
+  optional string family_name = 6;
+  optional string email = 7;
+  optional string phone = 8;
+  optional string date_of_birth = 9;
+  optional string national_id_number = 10;
+  optional string address_line1 = 11;
+  optional string address_line2 = 12;
+  optional string city = 13;
+  optional string region = 14;
+  optional string country_code = 15;
+  optional double latitude = 16;
+  optional double longitude = 17;
+  optional string account_id = 18;
+  string created_at = 19;
+  string updated_at = 20;
+}
+
+message BadgeResponse {
+  string claim_type = 1;
+  string level = 2;
+  optional string verified_at = 3;
+  optional string case_id = 4;
+}
+
+message BadgesResponse {
+  string subject_id = 1;
+  repeated BadgeResponse badges = 2;
+}
+
+message AttributeBadgeResponse {
+  string attribute = 1;
+  string level = 2;
+  optional string verified_at = 3;
+  optional string case_id = 4;
+  string method = 5;
+}
+
+message AttributeBadgesResponse {
+  string subject_id = 1;
+  repeated AttributeBadgeResponse badges = 2;
+}
