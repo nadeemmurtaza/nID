@@ -55,3 +55,11 @@ licensing, data deletion requests) — identical across every NEWAX
 repo. These are launch blockers, not nice-to-haves; read it before
 any surface that collects data, sends email, charges money, or
 renders UI is considered shippable.
+
+See `PRODUCTION_READINESS_RULES.md` (scale/database/reliability, 20
+rules), `SECURITY_RULES.md` (20 security holes to close), and
+`SAAS_UX_PATTERNS.md` (20 expected SaaS UX patterns) — all identical
+across every NEWAX repo, same binding status as the files above.
+Together they're what keeps a service that works fine in dev from
+falling over, getting breached, or feeling unfinished the moment it
+has real users.
