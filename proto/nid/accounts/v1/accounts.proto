@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package newax.accounts.v1;
+
+service AccountsApiService {
+  rpc StartOtp(StartOtpRequest) returns (Empty);
+  rpc VerifyOtp(VerifyOtpRequest) returns (VerifyOtpResponse);
+  rpc GetAccount(AccountIdRequest) returns (AccountResponse);
+  rpc RevokeSession(SessionTokenRequest) returns (Empty);
+  rpc RevokeAllSessions(AccountIdRequest) returns (Empty);
+  rpc StartEmailVerification(StartEmailVerificationRequest) returns (Empty);
+  rpc VerifyEmail(VerifyEmailRequest) returns (AccountResponse);
+}
+
+message Empty {}
+
+message StartOtpRequest {
+  string phone = 1;
+}
+
+message VerifyOtpRequest {
+  string phone = 1;
+  string code = 2;
+}
+
+message AccountIdRequest {
+  string account_id = 1;
+}
+
+message SessionTokenRequest {
+  string session_token_hash = 1;
+}
+
+message StartEmailVerificationRequest {
+  string account_id = 1;
+  string email = 2;
+}
+
+message VerifyEmailRequest {
+  string account_id = 1;
+  string code = 2;
+}
+
+message VerifyOtpResponse {
+  string session_token = 1;
+  AccountResponse account = 2;
+}
+
+message AccountResponse {
+  string id = 1;
+  string phone = 2;
+  optional string email = 3;
+  optional string phone_verified_at = 4;
+  optional string email_verified_at = 5;
+}

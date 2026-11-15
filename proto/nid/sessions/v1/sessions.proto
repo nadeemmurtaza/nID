@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package newax.sessions.v1;
+
+service SessionsApiService {
+  rpc GetStatus(TokenRequest) returns (SessionStatusResponse);
+  rpc SubmitOtp(SubmitOtpRequest) returns (AcceptedResponse);
+  rpc SubmitDocument(SubmitDocumentRequest) returns (AcceptedResponse);
+  rpc SubmitLiveness(SubmitLivenessRequest) returns (AcceptedResponse);
+  rpc SubmitClaimDocument(SubmitClaimDocumentRequest) returns (AcceptedResponse);
+  rpc SubmitSelfReport(SubmitSelfReportRequest) returns (AcceptedResponse);
+  rpc SubmitCode(SubmitCodeRequest) returns (AcceptedResponse);
+  rpc SubmitLocation(SubmitLocationRequest) returns (AcceptedResponse);
+}
+
+message TokenRequest {
+  string token = 1;
+}
+
+message AcceptedResponse {
+  bool accepted = 1;
+}
+
+message SessionStatusResponse {
+  string case_id = 1;
+  string status = 2;
+  string claim_type = 3;
+  string level = 4;
+  optional string resolved_at = 5;
+  repeated AttemptEntry attempts = 6;
+  string phone = 7;
+}
+
+message AttemptEntry {
+  string method = 1;
+  string status = 2;
+}
+
+message SubmitOtpRequest {
+  string token = 1;
+  string code = 2;
+}
+
+message SubmitDocumentRequest {
+  string token = 1;
+  bytes file_data = 2;
+  string file_name = 3;
+  string content_type = 4;
+}
+
+message SubmitLivenessRequest {
+  string token = 1;
+  repeated LivenessFrame frames = 2;
+}
+
+message LivenessFrame {
+  bytes data = 1;
+  string name = 2;
+}
+
+message SubmitClaimDocumentRequest {
+  string token = 1;
+  string method = 2;
+  bytes file_data = 3;
+  string file_name = 4;
+  string content_type = 5;
+}
+
+message SubmitSelfReportRequest {
+  string token = 1;
+  string method = 2;
+  string reported_value = 3;
+}
+
+message SubmitCodeRequest {
+  string token = 1;
+  string method = 2;
+  string code = 3;
+}
+
+message SubmitLocationRequest {
+  string token = 1;
+  string method = 2;
+  double latitude = 3;
+  double longitude = 4;
+}

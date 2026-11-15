@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+package newax.organizations.v1;
+
+service OrganizationsApiService {
+  rpc Create(CreateOrganizationRequest) returns (OrganizationResponse);
+  rpc ListAll(TenantIdRequest) returns (OrganizationListResponse);
+  rpc GetById(GetOrganizationRequest) returns (OrganizationResponse);
+  rpc ListMemberships(GetOrganizationRequest) returns (MembershipListResponse);
+  rpc InviteMember(InviteMemberRequest) returns (MembershipResponse);
+  rpc ListBeneficialOwners(GetOrganizationRequest) returns (BeneficialOwnerListResponse);
+  rpc RequireActiveAdmin(ActiveAdminRequest) returns (TenantIdResponse);
+  rpc RequireActiveMember(ActiveMemberRequest) returns (Empty);
+  rpc ListMyMemberships(AccountIdRequest) returns (OrganizationListResponse);
+  rpc ListMyInvites(AccountIdRequest) returns (MembershipListResponse);
+  rpc RespondToInvite(RespondToInviteRequest) returns (MembershipResponse);
+}
+
+message Empty {}
+
+message TenantIdRequest {
+  string tenant_id = 1;
+}
+
+message AccountIdRequest {
+  string account_id = 1;
+}
+
+message GetOrganizationRequest {
+  string tenant_id = 1;
+  string org_id = 2;
+}
+
+message CreateOrganizationRequest {
+  string tenant_id = 1;
+  string api_key_id = 2;
+  string subject_id = 3;
+  string legal_name = 4;
+  optional string registration_number = 5;
+  optional string country_code = 6;
+  optional string address = 7;
+}
+
+message InviteMemberRequest {
+  string tenant_id = 1;
+  string org_id = 2;
+  string phone = 3;
+  string role = 4;
+}
+
+message ActiveAdminRequest {
+  string organization_id = 1;
+  string account_id = 2;
+}
+
+message ActiveMemberRequest {
+  string organization_id = 1;
+  string account_id = 2;
+}
+
+message RespondToInviteRequest {
+  string account_id = 1;
+  string membership_id = 2;
+  string response = 3;
+}
+
+message TenantIdResponse {
+  string tenant_id = 1;
+}
+
+message OrganizationResponse {
+  string id = 1;
+  string tenant_id = 2;
+  string subject_id = 3;
+  string legal_name = 4;
+  optional string registration_number = 5;
+  optional string country_code = 6;
+  optional string address = 7;
+  string created_at = 8;
+  string updated_at = 9;
+}
+
+message OrganizationListResponse {
+  repeated OrganizationResponse organizations = 1;
+}
+
+message MembershipResponse {
+  string id = 1;
+  string tenant_id = 2;
+  string organization_id = 3;
+  string subject_id = 4;
+  string role = 5;
+  string status = 6;
+  optional string phone = 7;
+  optional string account_id = 8;
+  string created_at = 9;
+}
+
+message MembershipListResponse {
+  repeated MembershipResponse memberships = 1;
+}
+
+message BeneficialOwnerResponse {
+  string id = 1;
+  string tenant_id = 2;
+  string organization_id = 3;
+  string person_subject_id = 4;
+  optional string role = 5;
+  string created_at = 6;
+}
+
+message BeneficialOwnerListResponse {
+  repeated BeneficialOwnerResponse owners = 1;
+}

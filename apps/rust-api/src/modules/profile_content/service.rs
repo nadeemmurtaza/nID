@@ -1,818 +1,457 @@
-//! Profile content service — business logic for profile content operations.
+//! Profile content service — gRPC client for `svc-profile-content`.
+//!
+//! Business logic moved to `crates/profile_content`, served by
+//! `services/profile-content` on port 50090. This file is the thin
+//! gRPC client replacing the local implementation.
 
-use anyhow::{anyhow, Result};
-use sqlx::Row;
-use uuid::Uuid;
+use anyhow::Result;
 
-use crate::core::config::AppEnv;
-use crate::core::db::DbPool;
 use crate::core::upload::UploadedFile;
 use crate::modules::profile_content::dto::{
-    BusinessHourResponse, ContactMessageResponse, CustomLinkResponse, OfferResponse,
-    SocialLinkResponse,
+    BusinessHourResponse, ContactMessageResponse, CreateContactMessageRequest,
+    CreateCustomLinkRequest, CreateOfferRequest, CreateSocialLinkRequest,
+    CustomLinkResponse, MessageResponse, OfferResponse, ProfileImageResponse,
+    SocialLinkResponse, UpdateCustomLinkRequest, UpdateOfferRequest,
+    UpdateSocialLinkRequest, UpsertBusinessHourRequest,
 };
 
-pub struct ProfileContentService {
-    db: DbPool,
-    env: AppEnv,
-}
+pub use crate::modules::profile_content::service::inner::ProfileContentService;
 
-impl ProfileContentService {
-    pub fn new(db: DbPool, env: AppEnv) -> Self {
-        Self { db, env }
+mod inner {
+    use anyhow::{anyhow, Result};
+    use newax_proto::profile_content::v1::{
+        profile_content_api_service_client::ProfileContentApiServiceClient,
+        AccountIdRequest, BusinessHourListResponse, BusinessHourResponse as ProtoBusinessHour,
+        ContactMessageListResponse, ContactMessageResponse as ProtoContactMessage,
+        CreateCustomLinkRequest as GrpcCreateCustomLink,
+        CreateOfferRequest as GrpcCreateOffer,
+        CreatePublicContactMessageRequest,
+        CreateSocialLinkRequest as GrpcCreateSocialLink,
+        CustomLinkListResponse, CustomLinkResponse as ProtoCustomLink,
+        GetPublicImageRequest, ImageUrlResponse,
+        MarkContactMessageReadRequest, OfferListResponse, OfferResponse as ProtoOffer,
+        ProfileImageListResponse, ProfileImageResponse as ProtoProfileImage,
+        PublicLinksResponse, RemoveBusinessHourRequest, RemoveCustomLinkRequest,
+        RemoveImageRequest, RemoveOfferRequest, RemoveSocialLinkRequest,
+        SocialLinkListResponse, SocialLinkResponse as ProtoSocialLink,
+        SlugRequest, UpdateCustomLinkRequest as GrpcUpdateCustomLink,
+        UpdateOfferRequest as GrpcUpdateOffer,
+        UpdateSocialLinkRequest as GrpcUpdateSocialLink,
+        UploadGalleryImageRequest, UploadPhotoRequest,
+        UpsertBusinessHourRequest as GrpcUpsertBusinessHour,
+    };
+    use tonic::transport::Channel;
+    
+    use super::{
+        BusinessHourResponse, ContactMessageResponse, CreateContactMessageRequest,
+        CreateCustomLinkRequest, CreateOfferRequest, CreateSocialLinkRequest,
+        CustomLinkResponse, OfferResponse, ProfileImageResponse,
+        SocialLinkResponse, UpdateCustomLinkRequest, UpdateOfferRequest,
+        UpdateSocialLinkRequest, UpsertBusinessHourRequest,
+    };
+    use crate::core::upload::UploadedFile;
+
+    async fn client() -> Result<ProfileContentApiServiceClient<tonic::transport::Channel>> {
+        let url = std::env::var("PROFILE_CONTENT_SERVICE_URL")
+            .unwrap_or_else(|_| "http://127.0.0.1:50090".to_string());
+        ProfileContentApiServiceClient::connect(url)
+            .await
+            .map_err(|e| anyhow!("profile-content service unreachable: {e}"))
     }
 
-    async fn get_profile_id(&self, account_id: &str) -> Result<String> {
-        let mut conn = self.db.get().await?;
-        let profile_id = sqlx::query("SELECT id FROM profile WHERE account_id = $1 LIMIT 1")
-            .bind(account_id)
-            .fetch_optional(&mut *conn)
-            .await?
-            .map(|r| r.get::<String, _>("id"))
-            .ok_or_else(|| anyhow!("No profile found for this account"))?;
-        Ok(profile_id)
-    }
-
-    async fn get_published_profile_id(&self, slug: &str) -> Result<String> {
-        let mut conn = self.db.get().await?;
-        let profile_id = sqlx::query("SELECT id FROM profile WHERE slug = $1 AND is_published = true LIMIT 1")
-            .bind(slug)
-            .fetch_optional(&mut *conn)
-            .await?
-            .map(|r| r.get::<String, _>("id"))
-            .ok_or_else(|| anyhow!("No published profile at this URL"))?;
-        Ok(profile_id)
-    }
-
-    // ── Offers ──
-
-    pub async fn create_offer(
-        &self,
-        account_id: &str,
-        req: &crate::modules::profile_content::dto::CreateOfferRequest,
-    ) -> Result<OfferResponse> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let offer: (String, String, String, i64, String, Option<String>, bool) = sqlx::query_as(
-            r#"
-            INSERT INTO offer (id, profile_id, title, price_minor, currency, description)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5)
-            RETURNING id, profile_id, title, price_minor, currency, description, is_active
-            "#,
-        )
-        .bind(&profile_id)
-        .bind(&req.title)
-        .bind(req.price_minor)
-        .bind(&req.currency)
-        .bind(&req.description)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        Ok(OfferResponse {
-            id: offer.0, profile_id: offer.1, title: offer.2,
-            price_minor: offer.3, currency: offer.4, description: offer.5, is_active: offer.6,
-        })
-    }
-
-    pub async fn list_my_offers(&self, account_id: &str) -> Result<Vec<OfferResponse>> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let rows: Vec<(String, String, String, i64, String, Option<String>, bool)> = sqlx::query_as(
-            "SELECT id, profile_id, title, price_minor, currency, description, is_active FROM offer WHERE profile_id = $1 ORDER BY title",
-        )
-        .bind(&profile_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(rows.into_iter().map(|r| OfferResponse {
-            id: r.0, profile_id: r.1, title: r.2, price_minor: r.3,
-            currency: r.4, description: r.5, is_active: r.6,
-        }).collect())
-    }
-
-    pub async fn update_offer(
-        &self,
-        account_id: &str,
-        offer_id: &str,
-        req: &crate::modules::profile_content::dto::UpdateOfferRequest,
-    ) -> Result<OfferResponse> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let mut sets = Vec::new();
-        let mut title_val: Option<String> = None;
-        let mut price_val: Option<i64> = None;
-        let mut active_val: Option<bool> = None;
-
-        if let Some(ref t) = req.title {
-            sets.push("title = $1".to_string());
-            title_val = Some(t.clone());
+    fn offer_from_proto(p: ProtoOffer) -> OfferResponse {
+        OfferResponse {
+            id: p.id,
+            profile_id: p.profile_id,
+            title: p.title,
+            price_minor: p.price_minor,
+            currency: p.currency,
+            description: p.description,
+            is_active: p.is_active,
         }
-        if req.price_minor.is_some() {
-            let idx = sets.len() + 1;
-            sets.push(format!("price_minor = ${}", idx));
-            price_val = req.price_minor;
+    }
+
+    fn business_hour_from_proto(p: ProtoBusinessHour) -> BusinessHourResponse {
+        BusinessHourResponse {
+            id: p.id,
+            profile_id: p.profile_id,
+            weekday: p.weekday,
+            start_time: p.start_time,
+            end_time: p.end_time,
+            is_closed: p.is_closed,
         }
-        if req.is_active.is_some() {
-            let idx = sets.len() + 1;
-            sets.push(format!("is_active = ${}", idx));
-            active_val = req.is_active;
+    }
+
+    fn custom_link_from_proto(p: ProtoCustomLink) -> CustomLinkResponse {
+        CustomLinkResponse {
+            id: p.id,
+            profile_id: p.profile_id,
+            label: p.label,
+            url: p.url,
+            order: p.order_idx,
         }
+    }
 
-        if sets.is_empty() {
-            return self.get_offer(&profile_id, offer_id).await;
+    fn social_link_from_proto(p: ProtoSocialLink) -> SocialLinkResponse {
+        SocialLinkResponse {
+            id: p.id,
+            profile_id: p.profile_id,
+            platform: p.platform,
+            username: p.username,
+            url: p.url,
         }
-
-        let offer: (String, String, String, i64, String, Option<String>, bool) = sqlx::query_as(
-            &format!(
-                "UPDATE offer SET {} WHERE id = ${} AND profile_id = ${} RETURNING id, profile_id, title, price_minor, currency, description, is_active",
-                sets.join(", "),
-                sets.len() + 1,
-                sets.len() + 2,
-            ),
-        )
-        .bind(&title_val)
-        .bind(&price_val)
-        .bind(&active_val)
-        .bind(offer_id)
-        .bind(&profile_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Offer not found"))?;
-
-        Ok(OfferResponse {
-            id: offer.0, profile_id: offer.1, title: offer.2, price_minor: offer.3,
-            currency: offer.4, description: offer.5, is_active: offer.6,
-        })
     }
 
-    pub async fn remove_offer(&self, account_id: &str, offer_id: &str) -> Result<()> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let result = sqlx::query("DELETE FROM offer WHERE id = $1 AND profile_id = $2")
-            .bind(offer_id)
-            .bind(&profile_id)
-            .execute(&mut *conn)
-            .await?;
-
-        if result.rows_affected() == 0 {
-            return Err(anyhow!("Offer not found."));
+    fn profile_image_from_proto(p: ProtoProfileImage) -> ProfileImageResponse {
+        ProfileImageResponse {
+            id: p.id,
+            profile_id: p.profile_id,
+            kind: p.kind,
+            url: p.url,
+            content_type: p.content_type,
+            created_at: p.created_at,
         }
-        Ok(())
     }
 
-    async fn get_offer(&self, profile_id: &str, offer_id: &str) -> Result<OfferResponse> {
-        let mut conn = self.db.get().await?;
-
-        let offer: (String, String, String, i64, String, Option<String>, bool) = sqlx::query_as(
-            "SELECT id, profile_id, title, price_minor, currency, description, is_active FROM offer WHERE id = $1 AND profile_id = $2",
-        )
-        .bind(offer_id)
-        .bind(profile_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Offer not found"))?;
-
-        Ok(OfferResponse {
-            id: offer.0, profile_id: offer.1, title: offer.2, price_minor: offer.3,
-            currency: offer.4, description: offer.5, is_active: offer.6,
-        })
-    }
-
-    // ── Business Hours ──
-
-    pub async fn upsert_business_hour(
-        &self,
-        account_id: &str,
-        day: &str,
-        req: &crate::modules::profile_content::dto::UpsertBusinessHourRequest,
-    ) -> Result<BusinessHourResponse> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let hour: (String, String, String, String, String, bool) = sqlx::query_as(
-            r#"
-            INSERT INTO business_hour (id, profile_id, weekday, start_time, end_time, is_closed)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5)
-            ON CONFLICT (profile_id, weekday) DO UPDATE SET start_time = $3, end_time = $4, is_closed = $5
-            RETURNING id, profile_id, weekday, start_time, end_time, is_closed
-            "#,
-        )
-        .bind(&profile_id)
-        .bind(day)
-        .bind(&req.start_time)
-        .bind(&req.end_time)
-        .bind(req.is_closed)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        Ok(BusinessHourResponse {
-            id: hour.0, profile_id: hour.1, weekday: hour.2,
-            start_time: hour.3, end_time: hour.4, is_closed: hour.5,
-        })
-    }
-
-    pub async fn list_my_business_hours(&self, account_id: &str) -> Result<Vec<BusinessHourResponse>> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let rows: Vec<(String, String, String, String, String, bool)> = sqlx::query_as(
-            "SELECT id, profile_id, weekday, start_time, end_time, is_closed FROM business_hour WHERE profile_id = $1 ORDER BY weekday",
-        )
-        .bind(&profile_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(rows.into_iter().map(|r| BusinessHourResponse {
-            id: r.0, profile_id: r.1, weekday: r.2, start_time: r.3, end_time: r.4, is_closed: r.5,
-        }).collect())
-    }
-
-    pub async fn remove_business_hour(&self, account_id: &str, day: &str) -> Result<()> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let result = sqlx::query("DELETE FROM business_hour WHERE profile_id = $1 AND weekday = $2")
-            .bind(&profile_id)
-            .bind(day)
-            .execute(&mut *conn)
-            .await?;
-
-        if result.rows_affected() == 0 {
-            return Err(anyhow!("Business hour not found."));
+    fn contact_message_from_proto(p: ProtoContactMessage) -> ContactMessageResponse {
+        ContactMessageResponse {
+            id: p.id,
+            profile_id: p.profile_id,
+            name: p.name,
+            email: p.email,
+            message: p.message,
+            is_read: p.is_read,
+            created_at: p.created_at,
         }
-        Ok(())
     }
 
-    // ── Custom Links ──
+    pub struct ProfileContentService;
 
-    pub async fn create_custom_link(
-        &self,
-        account_id: &str,
-        req: &crate::modules::profile_content::dto::CreateCustomLinkRequest,
-    ) -> Result<CustomLinkResponse> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
+    impl ProfileContentService {
+        // ── Offers ──
 
-        let link: (String, String, String, String, i32) = sqlx::query_as(
-            r#"
-            INSERT INTO custom_link (id, profile_id, label, url, r#order)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4)
-            RETURNING id, profile_id, label, url, r#order
-            "#,
-        )
-        .bind(&profile_id)
-        .bind(&req.label)
-        .bind(&req.url)
-        .bind(req.order.unwrap_or(0))
-        .fetch_one(&mut *conn)
-        .await?;
-
-        Ok(CustomLinkResponse {
-            id: link.0, profile_id: link.1, label: link.2, url: link.3, order: link.4,
-        })
-    }
-
-    pub async fn list_my_custom_links(&self, account_id: &str) -> Result<Vec<CustomLinkResponse>> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let rows: Vec<(String, String, String, String, i32)> = sqlx::query_as(
-            "SELECT id, profile_id, label, url, r#order FROM custom_link WHERE profile_id = $1 ORDER BY r#order",
-        )
-        .bind(&profile_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(rows.into_iter().map(|r| CustomLinkResponse {
-            id: r.0, profile_id: r.1, label: r.2, url: r.3, order: r.4,
-        }).collect())
-    }
-
-    pub async fn remove_custom_link(&self, account_id: &str, link_id: &str) -> Result<()> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let result = sqlx::query("DELETE FROM custom_link WHERE id = $1 AND profile_id = $2")
-            .bind(link_id)
-            .bind(&profile_id)
-            .execute(&mut *conn)
-            .await?;
-
-        if result.rows_affected() == 0 {
-            return Err(anyhow!("Link not found."));
-        }
-        Ok(())
-    }
-
-    pub async fn update_custom_link(
-        &self,
-        account_id: &str,
-        link_id: &str,
-        req: &crate::modules::profile_content::dto::UpdateCustomLinkRequest,
-    ) -> Result<CustomLinkResponse> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let mut sets = Vec::new();
-        let mut label_val: Option<String> = None;
-        let mut url_val: Option<String> = None;
-        let mut order_val: Option<i32> = None;
-
-        if let Some(ref l) = req.label {
-            sets.push("label = $1".to_string());
-            label_val = Some(l.clone());
-        }
-        if let Some(ref u) = req.url {
-            let idx = sets.len() + 1;
-            sets.push(format!("url = ${}", idx));
-            url_val = Some(u.clone());
-        }
-        if req.order.is_some() {
-            let idx = sets.len() + 1;
-            sets.push(format!("r#order = ${}", idx));
-            order_val = req.order;
+        pub async fn create_offer(
+            &self,
+            account_id: &str,
+            req: &CreateOfferRequest,
+        ) -> Result<OfferResponse> {
+            let mut c = client().await?;
+            let resp = c.create_offer(GrpcCreateOffer {
+                account_id: account_id.to_string(),
+                title: req.title.clone(),
+                price_minor: req.price_minor,
+                currency: req.currency.clone(),
+                description: req.description.clone(),
+            }).await?.into_inner();
+            Ok(offer_from_proto(resp))
         }
 
-        if sets.is_empty() {
-            return self.get_custom_link(&profile_id, link_id).await;
+        pub async fn list_my_offers(&self, account_id: &str) -> Result<Vec<OfferResponse>> {
+            let mut c = client().await?;
+            let resp = c.list_my_offers(AccountIdRequest {
+                account_id: account_id.to_string(),
+            }).await?.into_inner();
+            Ok(resp.offers.into_iter().map(offer_from_proto).collect())
         }
 
-        let link: (String, String, String, String, i32) = sqlx::query_as(
-            &format!(
-                "UPDATE custom_link SET {} WHERE id = ${} AND profile_id = ${} RETURNING id, profile_id, label, url, r#order",
-                sets.join(", "),
-                sets.len() + 1,
-                sets.len() + 2,
-            ),
-        )
-        .bind(&label_val)
-        .bind(&url_val)
-        .bind(&order_val)
-        .bind(link_id)
-        .bind(&profile_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Link not found"))?;
-
-        Ok(CustomLinkResponse {
-            id: link.0, profile_id: link.1, label: link.2, url: link.3, order: link.4,
-        })
-    }
-
-    async fn get_custom_link(&self, profile_id: &str, link_id: &str) -> Result<CustomLinkResponse> {
-        let mut conn = self.db.get().await?;
-
-        let link: (String, String, String, String, i32) = sqlx::query_as(
-            "SELECT id, profile_id, label, url, r#order FROM custom_link WHERE id = $1 AND profile_id = $2",
-        )
-        .bind(link_id)
-        .bind(profile_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Link not found"))?;
-
-        Ok(CustomLinkResponse {
-            id: link.0, profile_id: link.1, label: link.2, url: link.3, order: link.4,
-        })
-    }
-
-    // ── Social Links ──
-
-    pub async fn create_social_link(
-        &self,
-        account_id: &str,
-        req: &crate::modules::profile_content::dto::CreateSocialLinkRequest,
-    ) -> Result<SocialLinkResponse> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let link: (String, String, String, String, Option<String>) = sqlx::query_as(
-            r#"
-            INSERT INTO social_link (id, profile_id, platform, username, url)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4)
-            RETURNING id, profile_id, platform, username, url
-            "#,
-        )
-        .bind(&profile_id)
-        .bind(&req.platform)
-        .bind(&req.username)
-        .bind(&req.url)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        Ok(SocialLinkResponse {
-            id: link.0, profile_id: link.1, platform: link.2, username: link.3, url: link.4,
-        })
-    }
-
-    pub async fn list_my_social_links(&self, account_id: &str) -> Result<Vec<SocialLinkResponse>> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let rows: Vec<(String, String, String, String, Option<String>)> = sqlx::query_as(
-            "SELECT id, profile_id, platform, username, url FROM social_link WHERE profile_id = $1 ORDER BY platform",
-        )
-        .bind(&profile_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(rows.into_iter().map(|r| SocialLinkResponse {
-            id: r.0, profile_id: r.1, platform: r.2, username: r.3, url: r.4,
-        }).collect())
-    }
-
-    pub async fn remove_social_link(&self, account_id: &str, link_id: &str) -> Result<()> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let result = sqlx::query("DELETE FROM social_link WHERE id = $1 AND profile_id = $2")
-            .bind(link_id)
-            .bind(&profile_id)
-            .execute(&mut *conn)
-            .await?;
-
-        if result.rows_affected() == 0 {
-            return Err(anyhow!("Link not found."));
-        }
-        Ok(())
-    }
-
-    pub async fn update_social_link(
-        &self,
-        account_id: &str,
-        link_id: &str,
-        req: &crate::modules::profile_content::dto::UpdateSocialLinkRequest,
-    ) -> Result<SocialLinkResponse> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let mut sets = Vec::new();
-        let mut platform_val: Option<String> = None;
-        let mut username_val: Option<String> = None;
-        let mut url_val: Option<String> = None;
-
-        if let Some(ref p) = req.platform {
-            sets.push("platform = $1".to_string());
-            platform_val = Some(p.clone());
-        }
-        if let Some(ref u) = req.username {
-            let idx = sets.len() + 1;
-            sets.push(format!("username = ${}", idx));
-            username_val = Some(u.clone());
-        }
-        if req.url.is_some() {
-            let idx = sets.len() + 1;
-            sets.push(format!("url = ${}", idx));
-            url_val = req.url.clone();
+        pub async fn update_offer(
+            &self,
+            account_id: &str,
+            offer_id: &str,
+            req: &UpdateOfferRequest,
+        ) -> Result<OfferResponse> {
+            let mut c = client().await?;
+            let resp = c.update_offer(GrpcUpdateOffer {
+                account_id: account_id.to_string(),
+                offer_id: offer_id.to_string(),
+                title: req.title.clone(),
+                price_minor: req.price_minor,
+                is_active: req.is_active,
+            }).await?.into_inner();
+            Ok(offer_from_proto(resp))
         }
 
-        if sets.is_empty() {
-            return self.get_social_link(&profile_id, link_id).await;
+        pub async fn remove_offer(&self, account_id: &str, offer_id: &str) -> Result<()> {
+            let mut c = client().await?;
+            c.remove_offer(RemoveOfferRequest {
+                account_id: account_id.to_string(),
+                offer_id: offer_id.to_string(),
+            }).await?;
+            Ok(())
         }
 
-        let link: (String, String, String, String, Option<String>) = sqlx::query_as(
-            &format!(
-                "UPDATE social_link SET {} WHERE id = ${} AND profile_id = ${} RETURNING id, profile_id, platform, username, url",
-                sets.join(", "),
-                sets.len() + 1,
-                sets.len() + 2,
-            ),
-        )
-        .bind(&platform_val)
-        .bind(&username_val)
-        .bind(&url_val)
-        .bind(link_id)
-        .bind(&profile_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Link not found"))?;
+        // ── Business Hours ──
 
-        Ok(SocialLinkResponse {
-            id: link.0, profile_id: link.1, platform: link.2, username: link.3, url: link.4,
-        })
-    }
-
-    async fn get_social_link(&self, profile_id: &str, link_id: &str) -> Result<SocialLinkResponse> {
-        let mut conn = self.db.get().await?;
-
-        let link: (String, String, String, String, Option<String>) = sqlx::query_as(
-            "SELECT id, profile_id, platform, username, url FROM social_link WHERE id = $1 AND profile_id = $2",
-        )
-        .bind(link_id)
-        .bind(profile_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Link not found"))?;
-
-        Ok(SocialLinkResponse {
-            id: link.0, profile_id: link.1, platform: link.2, username: link.3, url: link.4,
-        })
-    }
-
-    // ── Profile Images ──
-
-    /// Upload a profile photo.
-    ///
-    /// Stores the uploaded file and records the profile_image row.
-    pub async fn upload_photo(
-        &self,
-        account_id: &str,
-        file: UploadedFile,
-    ) -> Result<crate::modules::profile_content::dto::ProfileImageResponse> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let file_id = Uuid::new_v4().to_string();
-        let url = format!("profiles/{}/photo/{}", profile_id, file_id);
-
-        // Delete any existing photo for this profile
-        sqlx::query("DELETE FROM profile_image WHERE profile_id = $1 AND kind = 'photo'")
-            .bind(&profile_id)
-            .execute(&mut *conn)
-            .await?;
-
-        let img: (String, String, String, String, String, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
-            r#"
-            INSERT INTO profile_image (id, profile_id, kind, url, content_type)
-            VALUES ($1, $2, 'photo', $3, $4)
-            RETURNING id, profile_id, kind, url, content_type, created_at
-            "#,
-        )
-        .bind(&file_id)
-        .bind(&profile_id)
-        .bind(&url)
-        .bind(&file.content_type)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        tracing::info!(profile_id = %profile_id, file_id = %file_id, "Profile photo uploaded");
-
-        // TODO: store file bytes via storage driver
-
-        Ok(crate::modules::profile_content::dto::ProfileImageResponse {
-            id: img.0, profile_id: img.1, kind: img.2, url: img.3, content_type: img.4, created_at: img.5.to_rfc3339(),
-        })
-    }
-
-    /// Upload a gallery image.
-    ///
-    /// Stores the uploaded file with the given kind and records the profile_image row.
-    pub async fn upload_gallery_image(
-        &self,
-        account_id: &str,
-        kind: &str,
-        file: UploadedFile,
-    ) -> Result<crate::modules::profile_content::dto::ProfileImageResponse> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let file_id = Uuid::new_v4().to_string();
-        let url = format!("profiles/{}/gallery/{}/{}", profile_id, kind, file_id);
-
-        let img: (String, String, String, String, String, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
-            r#"
-            INSERT INTO profile_image (id, profile_id, kind, url, content_type)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, profile_id, kind, url, content_type, created_at
-            "#,
-        )
-        .bind(&file_id)
-        .bind(&profile_id)
-        .bind(kind)
-        .bind(&url)
-        .bind(&file.content_type)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        tracing::info!(profile_id = %profile_id, file_id = %file_id, kind, "Gallery image uploaded");
-
-        // TODO: store file bytes via storage driver
-
-        Ok(crate::modules::profile_content::dto::ProfileImageResponse {
-            id: img.0, profile_id: img.1, kind: img.2, url: img.3, content_type: img.4, created_at: img.5.to_rfc3339(),
-        })
-    }
-
-    pub async fn list_my_images(&self, account_id: &str) -> Result<Vec<crate::modules::profile_content::dto::ProfileImageResponse>> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let rows: Vec<(String, String, String, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
-            "SELECT id, profile_id, kind, url, content_type, created_at FROM profile_image WHERE profile_id = $1 ORDER BY created_at DESC",
-        )
-        .bind(&profile_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(rows.into_iter().map(|r| crate::modules::profile_content::dto::ProfileImageResponse {
-            id: r.0, profile_id: r.1, kind: r.2, url: r.3, content_type: r.4, created_at: r.5.to_rfc3339(),
-        }).collect())
-    }
-
-    pub async fn remove_image(&self, account_id: &str, image_id: &str) -> Result<()> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
-
-        let result = sqlx::query("DELETE FROM profile_image WHERE id = $1 AND profile_id = $2")
-            .bind(image_id)
-            .bind(&profile_id)
-            .execute(&mut *conn)
-            .await?;
-
-        if result.rows_affected() == 0 {
-            return Err(anyhow!("Image not found."));
+        pub async fn upsert_business_hour(
+            &self,
+            account_id: &str,
+            day: &str,
+            req: &UpsertBusinessHourRequest,
+        ) -> Result<BusinessHourResponse> {
+            let mut c = client().await?;
+            let resp = c.upsert_business_hour(GrpcUpsertBusinessHour {
+                account_id: account_id.to_string(),
+                day: day.to_string(),
+                start_time: req.start_time.clone(),
+                end_time: req.end_time.clone(),
+                is_closed: req.is_closed,
+            }).await?.into_inner();
+            Ok(business_hour_from_proto(resp))
         }
-        Ok(())
-    }
 
-    pub async fn list_public_images(&self, slug: &str) -> Result<Vec<crate::modules::profile_content::dto::ProfileImageResponse>> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_published_profile_id(slug).await?;
+        pub async fn list_my_business_hours(&self, account_id: &str) -> Result<Vec<BusinessHourResponse>> {
+            let mut c = client().await?;
+            let resp = c.list_my_business_hours(AccountIdRequest {
+                account_id: account_id.to_string(),
+            }).await?.into_inner();
+            Ok(resp.hours.into_iter().map(business_hour_from_proto).collect())
+        }
 
-        let rows: Vec<(String, String, String, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
-            "SELECT id, profile_id, kind, url, content_type, created_at FROM profile_image WHERE profile_id = $1 ORDER BY created_at DESC",
-        )
-        .bind(&profile_id)
-        .fetch_all(&mut *conn)
-        .await?;
+        pub async fn remove_business_hour(&self, account_id: &str, day: &str) -> Result<()> {
+            let mut c = client().await?;
+            c.remove_business_hour(RemoveBusinessHourRequest {
+                account_id: account_id.to_string(),
+                day: day.to_string(),
+            }).await?;
+            Ok(())
+        }
 
-        Ok(rows.into_iter().map(|r| crate::modules::profile_content::dto::ProfileImageResponse {
-            id: r.0, profile_id: r.1, kind: r.2, url: r.3, content_type: r.4, created_at: r.5.to_rfc3339(),
-        }).collect())
-    }
+        // ── Custom Links ──
 
-    // ── Contact Messages ──
+        pub async fn create_custom_link(
+            &self,
+            account_id: &str,
+            req: &CreateCustomLinkRequest,
+        ) -> Result<CustomLinkResponse> {
+            let mut c = client().await?;
+            let resp = c.create_custom_link(GrpcCreateCustomLink {
+                account_id: account_id.to_string(),
+                label: req.label.clone(),
+                url: req.url.clone(),
+                order_idx: Some(req.order.unwrap_or(0)),
+            }).await?.into_inner();
+            Ok(custom_link_from_proto(resp))
+        }
 
-    pub async fn list_my_contact_messages(&self, account_id: &str) -> Result<Vec<ContactMessageResponse>> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
+        pub async fn list_my_custom_links(&self, account_id: &str) -> Result<Vec<CustomLinkResponse>> {
+            let mut c = client().await?;
+            let resp = c.list_my_custom_links(AccountIdRequest {
+                account_id: account_id.to_string(),
+            }).await?.into_inner();
+            Ok(resp.links.into_iter().map(custom_link_from_proto).collect())
+        }
 
-        let rows: Vec<(String, String, String, String, String, bool, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
-            "SELECT id, profile_id, name, email, message, is_read, created_at FROM contact_message WHERE profile_id = $1 ORDER BY created_at DESC",
-        )
-        .bind(&profile_id)
-        .fetch_all(&mut *conn)
-        .await?;
+        pub async fn remove_custom_link(&self, account_id: &str, link_id: &str) -> Result<()> {
+            let mut c = client().await?;
+            c.remove_custom_link(RemoveCustomLinkRequest {
+                account_id: account_id.to_string(),
+                link_id: link_id.to_string(),
+            }).await?;
+            Ok(())
+        }
 
-        Ok(rows.into_iter().map(|r| ContactMessageResponse {
-            id: r.0, profile_id: r.1, name: r.2, email: r.3, message: r.4,
-            is_read: r.5, created_at: r.6.to_rfc3339(),
-        }).collect())
-    }
+        pub async fn update_custom_link(
+            &self,
+            account_id: &str,
+            link_id: &str,
+            req: &UpdateCustomLinkRequest,
+        ) -> Result<CustomLinkResponse> {
+            let mut c = client().await?;
+            let resp = c.update_custom_link(GrpcUpdateCustomLink {
+                account_id: account_id.to_string(),
+                link_id: link_id.to_string(),
+                label: req.label.clone(),
+                url: req.url.clone(),
+                order_idx: Some(req.order.unwrap_or(0)),
+            }).await?.into_inner();
+            Ok(custom_link_from_proto(resp))
+        }
 
-    pub async fn mark_contact_message_read(&self, account_id: &str, message_id: &str) -> Result<ContactMessageResponse> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_profile_id(account_id).await?;
+        // ── Social Links ──
 
-        let msg: (String, String, String, String, String, bool, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
-            "UPDATE contact_message SET is_read = true WHERE id = $1 AND profile_id = $2 RETURNING id, profile_id, name, email, message, is_read, created_at",
-        )
-        .bind(message_id)
-        .bind(&profile_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Message not found"))?;
+        pub async fn create_social_link(
+            &self,
+            account_id: &str,
+            req: &CreateSocialLinkRequest,
+        ) -> Result<SocialLinkResponse> {
+            let mut c = client().await?;
+            let resp = c.create_social_link(GrpcCreateSocialLink {
+                account_id: account_id.to_string(),
+                platform: req.platform.clone(),
+                username: req.username.clone(),
+                url: req.url.clone(),
+            }).await?.into_inner();
+            Ok(social_link_from_proto(resp))
+        }
 
-        Ok(ContactMessageResponse {
-            id: msg.0, profile_id: msg.1, name: msg.2, email: msg.3, message: msg.4,
-            is_read: msg.5, created_at: msg.6.to_rfc3339(),
-        })
-    }
+        pub async fn list_my_social_links(&self, account_id: &str) -> Result<Vec<SocialLinkResponse>> {
+            let mut c = client().await?;
+            let resp = c.list_my_social_links(AccountIdRequest {
+                account_id: account_id.to_string(),
+            }).await?.into_inner();
+            Ok(resp.links.into_iter().map(social_link_from_proto).collect())
+        }
 
-    pub async fn create_public_contact_message(
-        &self,
-        slug: &str,
-        req: &crate::modules::profile_content::dto::CreateContactMessageRequest,
-    ) -> Result<ContactMessageResponse> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_published_profile_id(slug).await?;
+        pub async fn remove_social_link(&self, account_id: &str, link_id: &str) -> Result<()> {
+            let mut c = client().await?;
+            c.remove_social_link(RemoveSocialLinkRequest {
+                account_id: account_id.to_string(),
+                link_id: link_id.to_string(),
+            }).await?;
+            Ok(())
+        }
 
-        let msg: (String, String, String, String, String, bool, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
-            r#"
-            INSERT INTO contact_message (id, profile_id, name, email, message)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4)
-            RETURNING id, profile_id, name, email, message, is_read, created_at
-            "#,
-        )
-        .bind(&profile_id)
-        .bind(&req.name)
-        .bind(&req.email)
-        .bind(&req.message)
-        .fetch_one(&mut *conn)
-        .await?;
+        pub async fn update_social_link(
+            &self,
+            account_id: &str,
+            link_id: &str,
+            req: &UpdateSocialLinkRequest,
+        ) -> Result<SocialLinkResponse> {
+            let mut c = client().await?;
+            let resp = c.update_social_link(GrpcUpdateSocialLink {
+                account_id: account_id.to_string(),
+                link_id: link_id.to_string(),
+                platform: req.platform.clone(),
+                username: req.username.clone(),
+                url: req.url.clone(),
+            }).await?.into_inner();
+            Ok(social_link_from_proto(resp))
+        }
 
-        Ok(ContactMessageResponse {
-            id: msg.0, profile_id: msg.1, name: msg.2, email: msg.3, message: msg.4,
-            is_read: msg.5, created_at: msg.6.to_rfc3339(),
-        })
-    }
+        // ── Profile Images ──
 
-    // ── Public endpoints ──
+        pub async fn upload_photo(
+            &self,
+            account_id: &str,
+            file: UploadedFile,
+        ) -> Result<ProfileImageResponse> {
+            let mut c = client().await?;
+            let resp = c.upload_photo(UploadPhotoRequest {
+                account_id: account_id.to_string(),
+                content_type: file.content_type,
+                data: file.buffer,
+            }).await?.into_inner();
+            Ok(profile_image_from_proto(resp))
+        }
 
-    pub async fn list_public_offers(&self, slug: &str) -> Result<Vec<OfferResponse>> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_published_profile_id(slug).await?;
+        pub async fn upload_gallery_image(
+            &self,
+            account_id: &str,
+            kind: &str,
+            file: UploadedFile,
+        ) -> Result<ProfileImageResponse> {
+            let mut c = client().await?;
+            let resp = c.upload_gallery_image(UploadGalleryImageRequest {
+                account_id: account_id.to_string(),
+                kind: kind.to_string(),
+                content_type: file.content_type,
+                data: file.buffer,
+            }).await?.into_inner();
+            Ok(profile_image_from_proto(resp))
+        }
 
-        let rows: Vec<(String, String, String, i64, String, Option<String>, bool)> = sqlx::query_as(
-            "SELECT id, profile_id, title, price_minor, currency, description, is_active FROM offer WHERE profile_id = $1 AND is_active = true ORDER BY title",
-        )
-        .bind(&profile_id)
-        .fetch_all(&mut *conn)
-        .await?;
+        pub async fn list_my_images(&self, account_id: &str) -> Result<Vec<ProfileImageResponse>> {
+            let mut c = client().await?;
+            let resp = c.list_my_images(AccountIdRequest {
+                account_id: account_id.to_string(),
+            }).await?.into_inner();
+            Ok(resp.images.into_iter().map(profile_image_from_proto).collect())
+        }
 
-        Ok(rows.into_iter().map(|r| OfferResponse {
-            id: r.0, profile_id: r.1, title: r.2, price_minor: r.3,
-            currency: r.4, description: r.5, is_active: r.6,
-        }).collect())
-    }
+        pub async fn remove_image(&self, account_id: &str, image_id: &str) -> Result<()> {
+            let mut c = client().await?;
+            c.remove_image(RemoveImageRequest {
+                account_id: account_id.to_string(),
+                image_id: image_id.to_string(),
+            }).await?;
+            Ok(())
+        }
 
-    pub async fn list_public_business_hours(&self, slug: &str) -> Result<Vec<BusinessHourResponse>> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_published_profile_id(slug).await?;
+        pub async fn list_public_images(&self, slug: &str) -> Result<Vec<ProfileImageResponse>> {
+            let mut c = client().await?;
+            let resp = c.list_public_images(SlugRequest {
+                slug: slug.to_string(),
+            }).await?.into_inner();
+            Ok(resp.images.into_iter().map(profile_image_from_proto).collect())
+        }
 
-        let rows: Vec<(String, String, String, String, String, bool)> = sqlx::query_as(
-            "SELECT id, profile_id, weekday, start_time, end_time, is_closed FROM business_hour WHERE profile_id = $1 ORDER BY weekday",
-        )
-        .bind(&profile_id)
-        .fetch_all(&mut *conn)
-        .await?;
+        // ── Contact Messages ──
 
-        Ok(rows.into_iter().map(|r| BusinessHourResponse {
-            id: r.0, profile_id: r.1, weekday: r.2, start_time: r.3, end_time: r.4, is_closed: r.5,
-        }).collect())
-    }
+        pub async fn list_my_contact_messages(&self, account_id: &str) -> Result<Vec<ContactMessageResponse>> {
+            let mut c = client().await?;
+            let resp = c.list_my_contact_messages(AccountIdRequest {
+                account_id: account_id.to_string(),
+            }).await?.into_inner();
+            Ok(resp.messages.into_iter().map(contact_message_from_proto).collect())
+        }
 
-    pub async fn list_public_links(&self, slug: &str) -> Result<(Vec<CustomLinkResponse>, Vec<SocialLinkResponse>)> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_published_profile_id(slug).await?;
+        pub async fn mark_contact_message_read(&self, account_id: &str, message_id: &str) -> Result<ContactMessageResponse> {
+            let mut c = client().await?;
+            let resp = c.mark_contact_message_read(MarkContactMessageReadRequest {
+                account_id: account_id.to_string(),
+                message_id: message_id.to_string(),
+            }).await?.into_inner();
+            Ok(contact_message_from_proto(resp))
+        }
 
-        let custom: Vec<(String, String, String, String, i32)> = sqlx::query_as(
-            "SELECT id, profile_id, label, url, r#order FROM custom_link WHERE profile_id = $1 ORDER BY r#order",
-        )
-        .bind(&profile_id)
-        .fetch_all(&mut *conn)
-        .await?;
+        pub async fn create_public_contact_message(
+            &self,
+            slug: &str,
+            req: &CreateContactMessageRequest,
+        ) -> Result<ContactMessageResponse> {
+            let mut c = client().await?;
+            let resp = c.create_public_contact_message(CreatePublicContactMessageRequest {
+                slug: slug.to_string(),
+                name: req.name.clone(),
+                email: req.email.clone(),
+                message: req.message.clone(),
+            }).await?.into_inner();
+            Ok(contact_message_from_proto(resp))
+        }
 
-        let social: Vec<(String, String, String, String, Option<String>)> = sqlx::query_as(
-            "SELECT id, profile_id, platform, username, url FROM social_link WHERE profile_id = $1 ORDER BY platform",
-        )
-        .bind(&profile_id)
-        .fetch_all(&mut *conn)
-        .await?;
+        // ── Public endpoints ──
 
-        let custom_links = custom.into_iter().map(|r| CustomLinkResponse {
-            id: r.0, profile_id: r.1, label: r.2, url: r.3, order: r.4,
-        }).collect();
+        pub async fn list_public_offers(&self, slug: &str) -> Result<Vec<OfferResponse>> {
+            let mut c = client().await?;
+            let resp = c.list_public_offers(SlugRequest {
+                slug: slug.to_string(),
+            }).await?.into_inner();
+            Ok(resp.offers.into_iter().map(offer_from_proto).collect())
+        }
 
-        let social_links = social.into_iter().map(|r| SocialLinkResponse {
-            id: r.0, profile_id: r.1, platform: r.2, username: r.3, url: r.4,
-        }).collect();
+        pub async fn list_public_business_hours(&self, slug: &str) -> Result<Vec<BusinessHourResponse>> {
+            let mut c = client().await?;
+            let resp = c.list_public_business_hours(SlugRequest {
+                slug: slug.to_string(),
+            }).await?.into_inner();
+            Ok(resp.hours.into_iter().map(business_hour_from_proto).collect())
+        }
 
-        Ok((custom_links, social_links))
-    }
+        pub async fn list_public_links(&self, slug: &str) -> Result<(Vec<CustomLinkResponse>, Vec<SocialLinkResponse>)> {
+            let mut c = client().await?;
+            let resp = c.list_public_links(SlugRequest {
+                slug: slug.to_string(),
+            }).await?.into_inner();
+            let custom = resp.custom_links.into_iter().map(custom_link_from_proto).collect();
+            let social = resp.social_links.into_iter().map(social_link_from_proto).collect();
+            Ok((custom, social))
+        }
 
-    /// Get the public profile photo bytes — mirrors ProfileImagesService.getPublicPhoto().
-    ///
-    /// Returns the image URL and content type. The actual image streaming is handled
-    /// by the storage driver; this method resolves the photo record for the profile.
-    pub async fn get_public_photo(&self, slug: &str) -> Result<(String, String)> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_published_profile_id(slug).await?;
+        pub async fn get_public_photo(&self, slug: &str) -> Result<(String, String)> {
+            let mut c = client().await?;
+            let resp = c.get_public_photo(SlugRequest {
+                slug: slug.to_string(),
+            }).await?.into_inner();
+            Ok((resp.url, resp.content_type))
+        }
 
-        let (url, content_type): (String, String) = sqlx::query_as(
-            "SELECT url, content_type FROM profile_image
-             WHERE profile_id = $1 AND kind = 'photo'
-             ORDER BY created_at DESC LIMIT 1",
-        )
-        .bind(&profile_id)
-        .fetch_optional(&mut *conn)
-        .await?
-        .ok_or_else(|| anyhow!("No photo found for this profile"))?;
-
-        Ok((url, content_type))
-    }
-
-    /// Get a public gallery image by ID — mirrors ProfileImagesService.getPublicImageBytes().
-    ///
-    /// Returns the image URL and content type for the given image ID.
-    pub async fn get_public_image(&self, slug: &str, image_id: &str) -> Result<(String, String)> {
-        let mut conn = self.db.get().await?;
-        let profile_id = self.get_published_profile_id(slug).await?;
-
-        let (url, content_type): (String, String) = sqlx::query_as(
-            "SELECT url, content_type FROM profile_image
-             WHERE id = $1 AND profile_id = $2",
-        )
-        .bind(image_id)
-        .bind(&profile_id)
-        .fetch_optional(&mut *conn)
-        .await?
-        .ok_or_else(|| anyhow!("Image not found"))?;
-
-        Ok((url, content_type))
+        pub async fn get_public_image(&self, slug: &str, image_id: &str) -> Result<(String, String)> {
+            let mut c = client().await?;
+            let resp = c.get_public_image(GetPublicImageRequest {
+                slug: slug.to_string(),
+                image_id: image_id.to_string(),
+            }).await?.into_inner();
+            Ok((resp.url, resp.content_type))
+        }
     }
 }

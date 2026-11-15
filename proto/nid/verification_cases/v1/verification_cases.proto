@@ -1,0 +1,186 @@
+syntax = "proto3";
+
+package newax.verification_cases.v1;
+
+service VerificationCasesApiService {
+  rpc Create(CreateCaseRequest) returns (CreatedCaseResponse);
+  rpc List(ListCasesRequest) returns (CaseListResponse);
+  rpc GetById(GetCaseRequest) returns (VerificationCaseWithAttempts);
+  rpc ResolveCase(ResolveCaseRequest) returns (VerificationCaseResponse);
+  rpc SubmitOtpCode(SubmitOtpCodeRequest) returns (MessageResponse);
+  rpc SubmitSelfReport(SubmitSelfReportRequest) returns (MessageResponse);
+  rpc SubmitAgentAttestation(SubmitAgentAttestationRequest) returns (MessageResponse);
+  rpc SubmitCode(SubmitCodeRequest) returns (MessageResponse);
+  rpc SubmitLocation(SubmitLocationRequest) returns (MessageResponse);
+}
+
+message Empty {}
+
+message ListCasesRequest {
+  string tenant_id = 1;
+  string actor_type = 2;
+  string actor_id = 3;
+}
+
+message GetCaseRequest {
+  string tenant_id = 1;
+  string actor_type = 2;
+  string actor_id = 3;
+  string case_id = 4;
+}
+
+message CreateCaseRequest {
+  string tenant_id = 1;
+  string api_key_id = 2;
+  string subject_id = 3;
+  string policy_name = 4;
+  optional string phone = 5;
+  optional string reference_id = 6;
+  optional string account_title = 7;
+  optional string organization_id = 8;
+}
+
+message ResolveCaseRequest {
+  string tenant_id = 1;
+  string actor_type = 2;
+  string actor_id = 3;
+  string case_id = 4;
+  string decision = 5;
+  optional string reason = 6;
+}
+
+message SubmitOtpCodeRequest {
+  string tenant_id = 1;
+  string api_key_id = 2;
+  string case_id = 3;
+  string code = 4;
+}
+
+message SubmitSelfReportRequest {
+  string tenant_id = 1;
+  string api_key_id = 2;
+  string case_id = 3;
+  string method = 4;
+  string reported_value = 5;
+}
+
+message SubmitAgentAttestationRequest {
+  string tenant_id = 1;
+  string api_key_id = 2;
+  string case_id = 3;
+  string method = 4;
+  string decision = 5;
+  optional string notes = 6;
+}
+
+message SubmitCodeRequest {
+  string tenant_id = 1;
+  string api_key_id = 2;
+  string case_id = 3;
+  string method = 4;
+  string code = 5;
+}
+
+message SubmitLocationRequest {
+  string tenant_id = 1;
+  string api_key_id = 2;
+  string case_id = 3;
+  string method = 4;
+  double latitude = 5;
+  double longitude = 6;
+}
+
+message VerificationCaseResponse {
+  string id = 1;
+  string tenant_id = 2;
+  string subject_id = 3;
+  string policy_id = 4;
+  string status = 5;
+  optional string temporal_workflow_id = 6;
+  optional string decision = 7;
+  optional string reviewer_id = 8;
+  string claim_type = 9;
+  string level = 10;
+  string created_at = 11;
+  string updated_at = 12;
+  optional string resolved_at = 13;
+}
+
+message SubjectSummary {
+  string id = 1;
+  optional string given_name = 2;
+  optional string family_name = 3;
+  optional string email = 4;
+  optional string phone = 5;
+}
+
+message VerificationCaseWithSubject {
+  string id = 1;
+  string tenant_id = 2;
+  string subject_id = 3;
+  string policy_id = 4;
+  string status = 5;
+  optional string temporal_workflow_id = 6;
+  optional string decision = 7;
+  optional string reviewer_id = 8;
+  string claim_type = 9;
+  string level = 10;
+  string created_at = 11;
+  string updated_at = 12;
+  optional string resolved_at = 13;
+  SubjectSummary subject = 14;
+}
+
+message MethodAttemptResponse {
+  string id = 1;
+  string tenant_id = 2;
+  string case_id = 3;
+  string method = 4;
+  string status = 5;
+  string provider_key = 6;
+  optional string result_meta = 7;
+  optional double score = 8;
+  string started_at = 9;
+  optional string completed_at = 10;
+}
+
+message VerificationCaseWithAttempts {
+  string id = 1;
+  string tenant_id = 2;
+  string subject_id = 3;
+  string policy_id = 4;
+  string status = 5;
+  optional string temporal_workflow_id = 6;
+  optional string decision = 7;
+  optional string reviewer_id = 8;
+  string claim_type = 9;
+  string level = 10;
+  string created_at = 11;
+  string updated_at = 12;
+  optional string resolved_at = 13;
+  repeated MethodAttemptResponse attempts = 14;
+  SubjectSummary subject = 15;
+}
+
+message CreatedCaseResponse {
+  string id = 1;
+  string tenant_id = 2;
+  string subject_id = 3;
+  string policy_id = 4;
+  string status = 5;
+  optional string temporal_workflow_id = 6;
+  string claim_type = 7;
+  string level = 8;
+  string created_at = 9;
+  string updated_at = 10;
+  string session_token = 11;
+  string hosted_url = 12;
+}
+
+message MessageResponse {
+  string message = 1;
+}
+
+message CaseListResponse {
+  repeated VerificationCaseWithSubject cases = 1;
+}

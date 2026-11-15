@@ -120,7 +120,7 @@ fn build_router(state: AppState) -> Router {
         env: state.env.clone(),
     });
     let profile_content_state = Arc::new(ProfileContentState {
-        service: ProfileContentService::new(state.db.clone(), state.env.clone()),
+        service: ProfileContentService,
         env: state.env.clone(),
     });
 

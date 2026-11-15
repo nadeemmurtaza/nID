@@ -1,32 +1,78 @@
-//! Organizations service — business logic for organization operations.
+//! Organizations service — gRPC client for `svc-organizations`.
 //!
-//! Mirrors `apps/api/src/modules/organizations/organizations.service.ts`.
+//! Business logic moved to `crates/organizations`, served by
+//! `services/organizations` (see CONVENTIONS.md's crates/services split).
+//! Same public shape so `handlers.rs` needed zero changes.
 
 use anyhow::{anyhow, Result};
-use sqlx::{FromRow, Row};
+use newax_proto::organizations::v1::{
+    organizations_api_service_client::OrganizationsApiServiceClient,
+    AccountIdRequest, ActiveAdminRequest, ActiveMemberRequest,
+    BeneficialOwnerResponse as ProtoBeneficialOwnerResponse,
+    CreateOrganizationRequest as ProtoCreateOrgRequest, Empty, GetOrganizationRequest,
+    InviteMemberRequest, MembershipListResponse,
+    MembershipResponse as ProtoMembershipResponse,
+    OrganizationListResponse,
+    OrganizationResponse as ProtoOrganizationResponse, RespondToInviteRequest, TenantIdRequest,
+};
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
 use crate::modules::organizations::dto::{
-    BeneficialOwnerResponse, MembershipResponse, OrganizationResponse,
+    BeneficialOwnerResponse, CreateOrganizationRequest, MembershipResponse, OrganizationResponse,
 };
 
-#[derive(Debug, Clone, FromRow)]
-pub struct OrganizationRow {
-    pub id: String,
-    pub tenant_id: String,
-    pub subject_id: String,
-    pub legal_name: String,
-    pub registration_number: Option<String>,
-    pub country_code: Option<String>,
-    pub address: Option<String>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-}
-
 pub struct OrganizationsService {
+    #[allow(dead_code)]
     db: DbPool,
     env: AppEnv,
+}
+
+fn org_from_proto(p: ProtoOrganizationResponse) -> OrganizationResponse {
+    OrganizationResponse {
+        id: p.id,
+        tenant_id: p.tenant_id,
+        subject_id: p.subject_id,
+        legal_name: p.legal_name,
+        registration_number: p.registration_number,
+        country_code: p.country_code,
+        address: p.address,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+    }
+}
+
+fn membership_from_proto(p: ProtoMembershipResponse) -> MembershipResponse {
+    MembershipResponse {
+        id: p.id,
+        tenant_id: p.tenant_id,
+        organization_id: p.organization_id,
+        subject_id: p.subject_id,
+        role: p.role,
+        status: p.status,
+        phone: p.phone,
+        account_id: p.account_id,
+        created_at: p.created_at,
+    }
+}
+
+fn bo_from_proto(p: ProtoBeneficialOwnerResponse) -> BeneficialOwnerResponse {
+    BeneficialOwnerResponse {
+        id: p.id,
+        tenant_id: p.tenant_id,
+        organization_id: p.organization_id,
+        person_subject_id: p.person_subject_id,
+        role: p.role,
+        created_at: p.created_at,
+    }
+}
+
+async fn client() -> Result<OrganizationsApiServiceClient<tonic::transport::Channel>> {
+    let url = std::env::var("ORGANIZATIONS_SERVICE_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:50087".to_string());
+    OrganizationsApiServiceClient::connect(url)
+        .await
+        .map_err(|e| anyhow!("organizations service unreachable: {e}"))
 }
 
 impl OrganizationsService {
@@ -34,147 +80,71 @@ impl OrganizationsService {
         Self { db, env }
     }
 
-    fn row_to_response(row: OrganizationRow) -> OrganizationResponse {
-        OrganizationResponse {
-            id: row.id,
-            tenant_id: row.tenant_id,
-            subject_id: row.subject_id,
-            legal_name: row.legal_name,
-            registration_number: row.registration_number,
-            country_code: row.country_code,
-            address: row.address,
-            created_at: row.created_at.to_rfc3339(),
-            updated_at: row.updated_at.to_rfc3339(),
-        }
-    }
-
     pub async fn create(
         &self,
         tenant_id: &str,
         api_key_id: &str,
-        req: &crate::modules::organizations::dto::CreateOrganizationRequest,
+        req: &CreateOrganizationRequest,
     ) -> Result<OrganizationResponse> {
-        let mut conn = self.db.inner().begin().await?;
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)").bind(tenant_id).execute(&mut *conn).await?;
-
-        // Verify subject exists and is ORGANIZATION type
-        let subject_type: String = sqlx::query_scalar(
-            "SELECT type FROM subject WHERE id = $1",
-        )
-        .bind(&req.subject_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Subject not found"))?;
-
-        if subject_type != "ORGANIZATION" {
-            return Err(anyhow!("Subject must be of type ORGANIZATION"));
-        }
-
-        let org: OrganizationRow = sqlx::query_as(
-            r#"
-            INSERT INTO organization (id, tenant_id, subject_id, legal_name, registration_number, country_code, address)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)
-            RETURNING id, tenant_id, subject_id, legal_name, registration_number, country_code, address, created_at, updated_at
-            "#,
-        )
-        .bind(tenant_id)
-        .bind(&req.subject_id)
-        .bind(&req.legal_name)
-        .bind(&req.registration_number)
-        .bind(&req.country_code)
-        .bind(&req.address)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        // Audit log
-        sqlx::query(
-            r#"
-            INSERT INTO audit_log_entry (id, tenant_id, actor_type, actor_id, action, metadata)
-            VALUES (gen_random_uuid(), $1, 'API_KEY', $2, 'organization.create', NULL)
-            "#,
-        )
-        .bind(tenant_id)
-        .bind(api_key_id)
-        .execute(&mut *conn)
-        .await?;
-
-        conn.commit().await?;
-        Ok(Self::row_to_response(org))
+        let mut c = client().await?;
+        let resp = c
+            .create(ProtoCreateOrgRequest {
+                tenant_id: tenant_id.to_string(),
+                api_key_id: api_key_id.to_string(),
+                subject_id: req.subject_id.clone(),
+                legal_name: req.legal_name.clone(),
+                registration_number: req.registration_number.clone(),
+                country_code: req.country_code.clone(),
+                address: req.address.clone(),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(org_from_proto(resp.into_inner()))
     }
 
     pub async fn list_all(&self, tenant_id: &str) -> Result<Vec<OrganizationResponse>> {
-        let mut conn = self.db.inner().begin().await?;
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)").bind(tenant_id).execute(&mut *conn).await?;
-
-        let rows: Vec<OrganizationRow> = sqlx::query_as(
-            "SELECT id, tenant_id, subject_id, legal_name, registration_number, country_code, address, created_at, updated_at FROM organization ORDER BY created_at DESC",
-        )
-        .fetch_all(&mut *conn)
-        .await?;
-
-        conn.commit().await?;
-        Ok(rows.into_iter().map(Self::row_to_response).collect())
+        let mut c = client().await?;
+        let resp = c
+            .list_all(TenantIdRequest {
+                tenant_id: tenant_id.to_string(),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(resp
+            .into_inner()
+            .organizations
+            .into_iter()
+            .map(org_from_proto)
+            .collect())
     }
 
     pub async fn get_by_id(&self, tenant_id: &str, org_id: &str) -> Result<OrganizationResponse> {
-        let mut conn = self.db.inner().begin().await?;
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)").bind(tenant_id).execute(&mut *conn).await?;
-
-        let org: OrganizationRow = sqlx::query_as(
-            "SELECT id, tenant_id, subject_id, legal_name, registration_number, country_code, address, created_at, updated_at FROM organization WHERE id = $1",
-        )
-        .bind(org_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Organization not found"))?;
-
-        conn.commit().await?;
-        Ok(Self::row_to_response(org))
+        let mut c = client().await?;
+        let resp = c
+            .get_by_id(GetOrganizationRequest {
+                tenant_id: tenant_id.to_string(),
+                org_id: org_id.to_string(),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(org_from_proto(resp.into_inner()))
     }
 
     pub async fn list_memberships(&self, tenant_id: &str, org_id: &str) -> Result<Vec<MembershipResponse>> {
-        let mut conn = self.db.inner().begin().await?;
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)").bind(tenant_id).execute(&mut *conn).await?;
-
-        // Verify org exists
-        let exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM organization WHERE id = $1)")
-            .bind(org_id)
-            .fetch_one(&mut *conn)
-            .await?
-            .get(0);
-        if !exists {
-            return Err(anyhow!("Organization not found"));
-        }
-
-        let rows = sqlx::query(
-            r#"
-            SELECT id, tenant_id, organization_id, subject_id, role, status, phone, account_id, created_at
-            FROM organization_membership
-            WHERE organization_id = $1
-            ORDER BY created_at DESC
-            "#,
-        )
-        .bind(org_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        let memberships: Vec<MembershipResponse> = rows
-            .into_iter()
-            .map(|row| MembershipResponse {
-                id: row.get("id"),
-                tenant_id: row.get("tenant_id"),
-                organization_id: row.get("organization_id"),
-                subject_id: row.get("subject_id"),
-                role: row.get("role"),
-                status: row.get("status"),
-                phone: row.get("phone"),
-                account_id: row.get("account_id"),
-                created_at: row.get::<chrono::DateTime<chrono::Utc>, _>("created_at").to_rfc3339(),
+        let mut c = client().await?;
+        let resp = c
+            .list_memberships(GetOrganizationRequest {
+                tenant_id: tenant_id.to_string(),
+                org_id: org_id.to_string(),
             })
-            .collect();
-
-        conn.commit().await?;
-        Ok(memberships)
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(resp
+            .into_inner()
+            .memberships
+            .into_iter()
+            .map(membership_from_proto)
+            .collect())
     }
 
     pub async fn invite_member(
@@ -184,254 +154,106 @@ impl OrganizationsService {
         phone: &str,
         role: &str,
     ) -> Result<MembershipResponse> {
-        let mut conn = self.db.inner().begin().await?;
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)").bind(tenant_id).execute(&mut *conn).await?;
-
-        // Verify org exists
-        let exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM organization WHERE id = $1)")
-            .bind(org_id)
-            .fetch_one(&mut *conn)
-            .await?
-            .get(0);
-        if !exists {
-            return Err(anyhow!("Organization not found"));
-        }
-
-        let membership: (String, String, String, String, String, String, Option<String>, Option<String>, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
-            r#"
-            INSERT INTO organization_membership (id, tenant_id, organization_id, subject_id, role, status, phone, created_at)
-            VALUES (gen_random_uuid(), $1, $2, '', $3, 'PENDING', $4, now())
-            RETURNING id, tenant_id, organization_id, subject_id, role, status, phone, account_id, created_at
-            "#,
-        )
-        .bind(tenant_id)
-        .bind(org_id)
-        .bind(role)
-        .bind(phone)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        conn.commit().await?;
-        Ok(MembershipResponse {
-            id: membership.0,
-            tenant_id: membership.1,
-            organization_id: membership.2,
-            subject_id: membership.3,
-            role: membership.4,
-            status: membership.5,
-            phone: membership.6,
-            account_id: membership.7,
-            created_at: membership.8.to_rfc3339(),
-        })
+        let mut c = client().await?;
+        let resp = c
+            .invite_member(InviteMemberRequest {
+                tenant_id: tenant_id.to_string(),
+                org_id: org_id.to_string(),
+                phone: phone.to_string(),
+                role: role.to_string(),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(membership_from_proto(resp.into_inner()))
     }
 
     pub async fn list_beneficial_owners(&self, tenant_id: &str, org_id: &str) -> Result<Vec<BeneficialOwnerResponse>> {
-        let mut conn = self.db.inner().begin().await?;
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)").bind(tenant_id).execute(&mut *conn).await?;
-
-        let rows = sqlx::query(
-            r#"
-            SELECT id, tenant_id, organization_id, person_subject_id, role, created_at
-            FROM organization_beneficial_owner
-            WHERE organization_id = $1
-            ORDER BY created_at DESC
-            "#,
-        )
-        .bind(org_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        let owners: Vec<BeneficialOwnerResponse> = rows
-            .into_iter()
-            .map(|row| BeneficialOwnerResponse {
-                id: row.get("id"),
-                tenant_id: row.get("tenant_id"),
-                organization_id: row.get("organization_id"),
-                person_subject_id: row.get("person_subject_id"),
-                role: row.get("role"),
-                created_at: row.get::<chrono::DateTime<chrono::Utc>, _>("created_at").to_rfc3339(),
+        let mut c = client().await?;
+        let resp = c
+            .list_beneficial_owners(GetOrganizationRequest {
+                tenant_id: tenant_id.to_string(),
+                org_id: org_id.to_string(),
             })
-            .collect();
-
-        conn.commit().await?;
-        Ok(owners)
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(resp
+            .into_inner()
+            .owners
+            .into_iter()
+            .map(bo_from_proto)
+            .collect())
     }
 
-    // ── Account-session endpoints (mirrors TypeScript OrganizationsController) ──
-
-    /// List organizations the account is an active member of — mirrors listMyMemberships().
-    /// Authorizes an Account to act as an ACTIVE admin of an Organization.
-    /// Mirrors `organizations.service.ts`'s `requireActiveAdmin()`.
-    /// Returns the membership's tenant_id, used by callers (e.g. BrandsService) for webhook emission.
     pub async fn require_active_admin(&self, organization_id: &str, account_id: &str) -> Result<String> {
-        let mut conn = self.db.get().await?;
-        let tenant_id: Option<String> = sqlx::query_scalar(
-            "SELECT tenant_id FROM organization_membership WHERE organization_id = $1 AND account_id = $2 AND status = 'ACTIVE' AND is_admin = true",
-        )
-        .bind(organization_id)
-        .bind(account_id)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        tenant_id.ok_or_else(|| anyhow!("This account is not an admin of this organization."))
+        let mut c = client().await?;
+        let resp = c
+            .require_active_admin(ActiveAdminRequest {
+                organization_id: organization_id.to_string(),
+                account_id: account_id.to_string(),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(resp.into_inner().tenant_id)
     }
 
-    /// Authorizes an Account to act as an ACTIVE member (not necessarily admin) of an Organization.
-    /// Mirrors `organizations.service.ts`'s `requireActiveMember()`.
     pub async fn require_active_member(&self, organization_id: &str, account_id: &str) -> Result<()> {
-        let mut conn = self.db.get().await?;
-        let membership: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM organization_membership WHERE organization_id = $1 AND account_id = $2 AND status = 'ACTIVE'",
-        )
-        .bind(organization_id)
-        .bind(account_id)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        if membership.is_none() {
-            return Err(anyhow!("This account is not a member of this organization."));
-        }
+        let mut c = client().await?;
+        c.require_active_member(ActiveMemberRequest {
+            organization_id: organization_id.to_string(),
+            account_id: account_id.to_string(),
+        })
+        .await
+        .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(())
     }
 
     pub async fn list_my_memberships(&self, account_id: &str) -> Result<Vec<OrganizationResponse>> {
-        let mut conn = self.db.get().await?;
-
-        // Find the person subject for this account
-        let subject_id: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM subject WHERE account_id = $1 LIMIT 1",
-        )
-        .bind(account_id)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        let subject_id = subject_id.ok_or_else(|| anyhow!("No subject found for account"))?;
-
-        // Get active organization memberships
-        let org_ids: Vec<String> = sqlx::query_scalar(
-            "SELECT organization_id FROM organization_membership
-             WHERE person_subject_id = $1 AND status = 'ACTIVE'",
-        )
-        .bind(&subject_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        let mut results = Vec::new();
-        for org_id in org_ids {
-            let org: OrganizationRow = sqlx::query_as(
-                "SELECT id, tenant_id, subject_id, legal_name, registration_number, country_code, address, created_at, updated_at
-                 FROM organization WHERE id = $1",
-            )
-            .bind(&org_id)
-            .fetch_optional(&mut *conn)
-            .await?
-            .ok_or_else(|| anyhow!("Organization not found"))?;
-
-            results.push(Self::row_to_response(org));
-        }
-
-        Ok(results)
-    }
-
-    /// List pending invites for an account — mirrors listMyInvites().
-    pub async fn list_my_invites(&self, account_id: &str) -> Result<Vec<MembershipResponse>> {
-        let mut conn = self.db.get().await?;
-
-        // Find the person subject for this account
-        let subject_id: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM subject WHERE account_id = $1 LIMIT 1",
-        )
-        .bind(account_id)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        let subject_id = subject_id.ok_or_else(|| anyhow!("No subject found for account"))?;
-
-        // Get pending memberships for this subject
-        let rows = sqlx::query(
-            "SELECT id, tenant_id, organization_id, subject_id, role, status, phone, account_id, created_at
-             FROM organization_membership
-             WHERE person_subject_id = $1 AND status = 'PENDING'
-             ORDER BY created_at DESC",
-        )
-        .bind(&subject_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        let invites: Vec<MembershipResponse> = rows
-            .into_iter()
-            .map(|row| MembershipResponse {
-                id: row.get("id"),
-                tenant_id: row.get("tenant_id"),
-                organization_id: row.get("organization_id"),
-                subject_id: row.get("subject_id"),
-                role: row.get("role"),
-                status: row.get("status"),
-                phone: row.get("phone"),
-                account_id: row.get("account_id"),
-                created_at: row.get::<chrono::DateTime<chrono::Utc>, _>("created_at").to_rfc3339(),
+        let mut c = client().await?;
+        let resp = c
+            .list_my_memberships(AccountIdRequest {
+                account_id: account_id.to_string(),
             })
-            .collect();
-
-        Ok(invites)
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(resp
+            .into_inner()
+            .organizations
+            .into_iter()
+            .map(org_from_proto)
+            .collect())
     }
 
-    /// Accept or decline an invite — mirrors respondToInvite().
+    pub async fn list_my_invites(&self, account_id: &str) -> Result<Vec<MembershipResponse>> {
+        let mut c = client().await?;
+        let resp = c
+            .list_my_invites(AccountIdRequest {
+                account_id: account_id.to_string(),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(resp
+            .into_inner()
+            .memberships
+            .into_iter()
+            .map(membership_from_proto)
+            .collect())
+    }
+
     pub async fn respond_to_invite(
         &self,
         account_id: &str,
         membership_id: &str,
         response: &str,
     ) -> Result<MembershipResponse> {
-        let mut conn = self.db.get().await?;
-
-        // Find the person subject for this account
-        let subject_id: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM subject WHERE account_id = $1 LIMIT 1",
-        )
-        .bind(account_id)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        let subject_id = subject_id.ok_or_else(|| anyhow!("No subject found for account"))?;
-
-        // Verify membership exists and is pending
-        let current_status: String = sqlx::query_scalar(
-            "SELECT status FROM organization_membership WHERE id = $1",
-        )
-        .bind(membership_id)
-        .fetch_optional(&mut *conn)
-        .await?
-        .ok_or_else(|| anyhow!("Invite not found"))?;
-
-        if current_status != "PENDING" {
-            return Err(anyhow!("Invite is not pending"));
-        }
-
-        // Update the membership
-        let membership: (String, String, String, String, String, String, Option<String>, Option<String>, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
-            "UPDATE organization_membership
-             SET status = $1, person_subject_id = $2, account_id = $3
-             WHERE id = $4
-             RETURNING id, tenant_id, organization_id, subject_id, role, status, phone, account_id, created_at",
-        )
-        .bind(response)
-        .bind(&subject_id)
-        .bind(account_id)
-        .bind(membership_id)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        Ok(MembershipResponse {
-            id: membership.0,
-            tenant_id: membership.1,
-            organization_id: membership.2,
-            subject_id: membership.3,
-            role: membership.4,
-            status: membership.5,
-            phone: membership.6,
-            account_id: membership.7,
-            created_at: membership.8.to_rfc3339(),
-        })
+        let mut c = client().await?;
+        let resp = c
+            .respond_to_invite(RespondToInviteRequest {
+                account_id: account_id.to_string(),
+                membership_id: membership_id.to_string(),
+                response: response.to_string(),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(membership_from_proto(resp.into_inner()))
     }
 }

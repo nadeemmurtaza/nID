@@ -1,0 +1,270 @@
+syntax = "proto3";
+
+package newax.profile_content.v1;
+
+service ProfileContentApiService {
+  // ── Offers (owner) ──
+  rpc CreateOffer(CreateOfferRequest) returns (OfferResponse);
+  rpc ListMyOffers(AccountIdRequest) returns (OfferListResponse);
+  rpc UpdateOffer(UpdateOfferRequest) returns (OfferResponse);
+  rpc RemoveOffer(RemoveOfferRequest) returns (Empty);
+
+  // ── Business Hours (owner) ──
+  rpc UpsertBusinessHour(UpsertBusinessHourRequest) returns (BusinessHourResponse);
+  rpc ListMyBusinessHours(AccountIdRequest) returns (BusinessHourListResponse);
+  rpc RemoveBusinessHour(RemoveBusinessHourRequest) returns (Empty);
+
+  // ── Custom Links (owner) ──
+  rpc CreateCustomLink(CreateCustomLinkRequest) returns (CustomLinkResponse);
+  rpc ListMyCustomLinks(AccountIdRequest) returns (CustomLinkListResponse);
+  rpc RemoveCustomLink(RemoveCustomLinkRequest) returns (Empty);
+  rpc UpdateCustomLink(UpdateCustomLinkRequest) returns (CustomLinkResponse);
+
+  // ── Social Links (owner) ──
+  rpc CreateSocialLink(CreateSocialLinkRequest) returns (SocialLinkResponse);
+  rpc ListMySocialLinks(AccountIdRequest) returns (SocialLinkListResponse);
+  rpc RemoveSocialLink(RemoveSocialLinkRequest) returns (Empty);
+  rpc UpdateSocialLink(UpdateSocialLinkRequest) returns (SocialLinkResponse);
+
+  // ── Profile Images (owner) ──
+  rpc UploadPhoto(UploadPhotoRequest) returns (ProfileImageResponse);
+  rpc UploadGalleryImage(UploadGalleryImageRequest) returns (ProfileImageResponse);
+  rpc ListMyImages(AccountIdRequest) returns (ProfileImageListResponse);
+  rpc RemoveImage(RemoveImageRequest) returns (Empty);
+
+  // ── Contact Messages (owner) ──
+  rpc ListMyContactMessages(AccountIdRequest) returns (ContactMessageListResponse);
+  rpc MarkContactMessageRead(MarkContactMessageReadRequest) returns (ContactMessageResponse);
+
+  // ── Public endpoints ──
+  rpc ListPublicOffers(SlugRequest) returns (OfferListResponse);
+  rpc ListPublicBusinessHours(SlugRequest) returns (BusinessHourListResponse);
+  rpc ListPublicLinks(SlugRequest) returns (PublicLinksResponse);
+  rpc CreatePublicContactMessage(CreatePublicContactMessageRequest) returns (ContactMessageResponse);
+  rpc ListPublicImages(SlugRequest) returns (ProfileImageListResponse);
+  rpc GetPublicPhoto(SlugRequest) returns (ImageUrlResponse);
+  rpc GetPublicImage(GetPublicImageRequest) returns (ImageUrlResponse);
+}
+
+message Empty {}
+
+message AccountIdRequest {
+  string account_id = 1;
+}
+
+message SlugRequest {
+  string slug = 1;
+}
+
+// ── Offers ──
+
+message CreateOfferRequest {
+  string account_id = 1;
+  string title = 2;
+  int64 price_minor = 3;
+  string currency = 4;
+  optional string description = 5;
+}
+
+message UpdateOfferRequest {
+  string account_id = 1;
+  string offer_id = 2;
+  optional string title = 3;
+  optional int64 price_minor = 4;
+  optional bool is_active = 5;
+}
+
+message RemoveOfferRequest {
+  string account_id = 1;
+  string offer_id = 2;
+}
+
+message OfferResponse {
+  string id = 1;
+  string profile_id = 2;
+  string title = 3;
+  int64 price_minor = 4;
+  string currency = 5;
+  optional string description = 6;
+  bool is_active = 7;
+}
+
+message OfferListResponse {
+  repeated OfferResponse offers = 1;
+}
+
+// ── Business Hours ──
+
+message UpsertBusinessHourRequest {
+  string account_id = 1;
+  string day = 2;
+  string start_time = 3;
+  string end_time = 4;
+  bool is_closed = 5;
+}
+
+message RemoveBusinessHourRequest {
+  string account_id = 1;
+  string day = 2;
+}
+
+message BusinessHourResponse {
+  string id = 1;
+  string profile_id = 2;
+  string weekday = 3;
+  string start_time = 4;
+  string end_time = 5;
+  bool is_closed = 6;
+}
+
+message BusinessHourListResponse {
+  repeated BusinessHourResponse hours = 1;
+}
+
+// ── Custom Links ──
+
+message CreateCustomLinkRequest {
+  string account_id = 1;
+  string label = 2;
+  string url = 3;
+  optional int32 order_idx = 4;
+}
+
+message UpdateCustomLinkRequest {
+  string account_id = 1;
+  string link_id = 2;
+  optional string label = 3;
+  optional string url = 4;
+  optional int32 order_idx = 5;
+}
+
+message RemoveCustomLinkRequest {
+  string account_id = 1;
+  string link_id = 2;
+}
+
+message CustomLinkResponse {
+  string id = 1;
+  string profile_id = 2;
+  string label = 3;
+  string url = 4;
+  int32 order_idx = 5;
+}
+
+message CustomLinkListResponse {
+  repeated CustomLinkResponse links = 1;
+}
+
+// ── Social Links ──
+
+message CreateSocialLinkRequest {
+  string account_id = 1;
+  string platform = 2;
+  string username = 3;
+  optional string url = 4;
+}
+
+message UpdateSocialLinkRequest {
+  string account_id = 1;
+  string link_id = 2;
+  optional string platform = 3;
+  optional string username = 4;
+  optional string url = 5;
+}
+
+message RemoveSocialLinkRequest {
+  string account_id = 1;
+  string link_id = 2;
+}
+
+message SocialLinkResponse {
+  string id = 1;
+  string profile_id = 2;
+  string platform = 3;
+  string username = 4;
+  optional string url = 5;
+}
+
+message SocialLinkListResponse {
+  repeated SocialLinkResponse links = 1;
+}
+
+// ── Profile Images ──
+
+message UploadPhotoRequest {
+  string account_id = 1;
+  string content_type = 2;
+  bytes data = 3;
+}
+
+message UploadGalleryImageRequest {
+  string account_id = 1;
+  string kind = 2;
+  string content_type = 3;
+  bytes data = 4;
+}
+
+message RemoveImageRequest {
+  string account_id = 1;
+  string image_id = 2;
+}
+
+message ProfileImageResponse {
+  string id = 1;
+  string profile_id = 2;
+  string kind = 3;
+  string url = 4;
+  string content_type = 5;
+  string created_at = 6;
+}
+
+message ProfileImageListResponse {
+  repeated ProfileImageResponse images = 1;
+}
+
+// ── Contact Messages ──
+
+message MarkContactMessageReadRequest {
+  string account_id = 1;
+  string message_id = 2;
+}
+
+message CreatePublicContactMessageRequest {
+  string slug = 1;
+  string name = 2;
+  string email = 3;
+  string message = 4;
+}
+
+message ContactMessageResponse {
+  string id = 1;
+  string profile_id = 2;
+  string name = 3;
+  string email = 4;
+  string message = 5;
+  bool is_read = 6;
+  string created_at = 7;
+}
+
+message ContactMessageListResponse {
+  repeated ContactMessageResponse messages = 1;
+}
+
+// ── Public Links ──
+
+message PublicLinksResponse {
+  repeated CustomLinkResponse custom_links = 1;
+  repeated SocialLinkResponse social_links = 2;
+}
+
+// ── Image URL ──
+
+message GetPublicImageRequest {
+  string slug = 1;
+  string image_id = 2;
+}
+
+message ImageUrlResponse {
+  string url = 1;
+  string content_type = 2;
+}
