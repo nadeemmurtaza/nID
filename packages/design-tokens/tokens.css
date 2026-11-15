@@ -18,6 +18,15 @@
    stylesheet, before any component CSS. Components read the --color-*,
    --text-*, --space-*, --radius-*, --elevation-*, --layer-*, and
    --motion-* custom properties — never a literal value.
+
+   FLAGGED (2026-11-15): CONVENTIONS.md's "Design anti-patterns —
+   strictly forbidden, no exceptions" section bans Inter/Geist/Space
+   Grotesk (rule 10) and drop shadows (rule 5). --font-sans below is
+   currently 'Inter', and --elevation-* below are drop-shadow values.
+   Both are now known, documented violations, not silent exceptions —
+   replacing them is a deliberate design-system decision for whoever
+   owns this file next, not something to swap quietly as a side effect
+   of an unrelated edit to this file.
    ========================================================================== */
 
 :root {

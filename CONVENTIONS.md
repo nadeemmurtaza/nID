@@ -362,3 +362,197 @@ nID and Communicator actually need to call each other.
   nID's backend is actually split by module rather than staying
   lumped into `apps/api` + `apps/rust-api`. Blocked on the same
   migration above, not a separate decision.
+
+## Design anti-patterns — strictly forbidden, no exceptions (2026-11-15)
+
+These are banned in every UI surface across the ecosystem — marketing
+pages, product screens, dashboards, emails, docs sites, everything —
+in both repos, with no exceptions and no "just this once." They are
+listed because they are the default output of generic AI-assisted
+design, not because any one of them is independently catastrophic;
+the rule is strict precisely so nothing in this ecosystem reads as
+generic AI-assisted design. If a design calls for one of these,
+redesign instead of asking for an exception.
+
+Most items below name a visual/copy cliché to never use. A few
+(marked explicitly) are the inverse — a thing that must never be
+missing.
+
+1. **No harsh gradients.** No loud, high-contrast, multi-stop
+   gradients as backgrounds or fills. `tokens.css` defines no gradient
+   tokens for a reason — if a surface needs visual interest, use the
+   palette's flat semantic colors or `--elevation-*`, not a gradient.
+2. **No Lucide icons.** Do not pull in `lucide-react` or any Lucide
+   icon set. If this ecosystem adopts an icon set, it will be a
+   deliberate, documented decision here — not a default import.
+3. **No pure white (`#ffffff`) background fields.** The canvas is
+   `--color-page` (warm cream, `#faf9f6`), never `#fff`. `#ffffff` is
+   reserved for `--color-surface` (cards/panels sitting on the cream
+   canvas) and the explicitly-named fixed surfaces in `tokens.css`
+   (`--color-qr-backing`, etc.) — never the page background itself.
+4. **No rainbow coloring.** Do not cycle through the full chart/accent
+   palette decoratively (e.g. a row of icons each in a different
+   chart color for no semantic reason). Color carries meaning in this
+   design system or it isn't used.
+5. **No drop shadows.** Flat, flush surfaces only — `--elevation-*`
+   tokens exist for the few places real elevation is earned (modals,
+   overlays), not for routine cards/buttons/images. If you reach for
+   a shadow to make something "pop," that's the tell to stop and use
+   a border or background-color change from `tokens.css` instead.
+6. **No "3 feature cards in a row."** The generic three-equal-column
+   icon+heading+paragraph feature grid is banned as a layout
+   primitive. If three things need explaining, explain them in a
+   layout that reflects their actual relationship (sequence, hierarchy,
+   comparison), not a default grid.
+7. **No emojis.** Not in UI copy, not in product text, not in commit
+   messages or PR descriptions (see `CONVENTIONS.md` §9/§10 and this
+   repo's own emoji policy in the system-level instructions) — this
+   rule just makes it explicit for design surfaces too.
+8. **No "liquid glass" / glassmorphism effects.** `tokens.css` does
+   define `--color-surface-glass*`/`--color-border-glass` tokens for
+   the few places a translucent overlay is load-bearing (e.g. a sticky
+   header over scrolled content) — that is not a license to add
+   frosted-glass blur panels decoratively. Default to opaque surfaces;
+   treat the glass tokens as the exception, not the starting point.
+9. **No em dashes.** In UI copy or documentation prose written for
+   this ecosystem, use a period, comma, or parenthetical instead of
+   "—". (This file and the other ecosystem docs predate this rule and
+   use em dashes throughout; it applies going forward, not
+   retroactively — see the "Renaming policy" style precedent in §6 for
+   how this repo treats rules like this.)
+10. **No Inter, Geist, or Space Grotesk.** These three typefaces are
+    the default of every generic AI-generated interface and are
+    banned specifically, by name, regardless of how the rest of the
+    design looks. **`tokens.css`'s current `--font-sans` is `'Inter'`
+    — that is now a known, flagged violation of this rule, not an
+    exception to it.** Replacing it is a deliberate font-choice
+    decision for whoever owns the design system next, not something to
+    silently swap the next time any file touches `tokens.css`.
+11. **No colored left stripe.** No card/row/alert pattern that signals
+    category or status with a thin colored bar down the left edge.
+    Use the semantic background/border/icon tokens instead.
+12. **No fake testimonials.** Never fabricate a customer quote,
+    reviewer name, star rating, or logo wall. If there is no real
+    testimonial yet, the section doesn't ship yet — it does not ship
+    with placeholder content standing in for real content.
+13. **No bento grids.** No asymmetric-tile "bento box" dashboard/
+    marketing layout. Pick a layout driven by the actual content's
+    size and importance, not a trendy grid shape.
+14. **No terminal window mockups.** No decorative fake terminal/code
+    editor chrome used as a visual prop (window chrome, blinking
+    cursor, syntax-highlighted fake command output) unless the product
+    itself is literally a terminal.
+15. **No "it's not X, it's Y" copywriting.** Banned as a sentence
+    structure in any marketing or product copy, regardless of what
+    fills in X and Y.
+16. **No checkmark bullet lists.** No ✓/✔ icon used as a generic list
+    marker for feature lists. If a list needs bullets, use a plain
+    bullet or no marker at all; reserve a checkmark for an actual
+    completed/passed state.
+17. **No "3 pricing tiers."** The generic Basic/Pro/Enterprise
+    three-column pricing table is banned as a layout primitive, same
+    reasoning as item 6. Price the actual plan structure that exists,
+    in whatever layout that structure actually needs.
+18. **Never ship without real product demos.** (Inverse rule.) A
+    marketing or landing surface must show the actual product —
+    real screenshots, a real recorded walkthrough, a live embed —
+    never a stock photo, an abstract illustration, or a mockup standing
+    in for the product itself.
+19. **No soft/large corner radius.** This design system's shape
+    language is sharp and small: `--radius-sm`/`--radius-md` are 4px,
+    `--radius-lg` is 8px, `--radius-xl` is 12px. Do not reach for a
+    large, soft "friendly SaaS" radius (16px+, or anything approaching
+    a pill on a non-pill element) — `tokens.css` already encodes the
+    correct scale; use it as written.
+20. **No purple-and-black color scheme.** Do not build a UI (or a
+    one-off marketing page, pitch deck, etc.) around a purple+black
+    palette — it is the other default of generic AI-generated
+    branding. This ecosystem's brand is the cream/off-black/orange
+    palette already in `tokens.css`.
+21. **Never ship without skeleton loaders.** (Inverse rule.) Any view
+    that fetches data before it can render must show a skeleton
+    placeholder matching the eventual layout while loading — never a
+    bare spinner, a blank screen, or a layout-shifting pop-in once data
+    arrives.
+22. **No radial gradient "orbs."** No soft, blurred, radial-gradient
+    color blobs used as decorative background elements (the
+    "AI startup hero background" cliché).
+23. **No dot grids.** No dotted-grid decorative background pattern.
+24. **No sparkle icons.** No ✨/sparkle/magic-wand icon used to signify
+    "AI" or "new" or "magic." If a feature is AI-powered, say so in
+    words; don't reach for the sparkle glyph as a shorthand.
+25. **No animated arrows.** No decorative arrow that bounces, slides,
+    or pulses to draw attention (e.g. a "scroll down" chevron
+    animation, an animated arrow pointing at a CTA).
+26. **Never ship without Terms of Service.** (Inverse rule.) Any
+    product surface that creates accounts, takes payment, or stores
+    user data must link a real Terms of Service document before it is
+    considered shippable — not a placeholder link, not a "coming
+    soon."
+27. **Never ship without a Privacy Policy.** (Inverse rule.) Same as
+    item 26, for the Privacy Policy. Both are a legal and product
+    requirement here, not a design nice-to-have — treat a missing one
+    as a launch blocker, the same severity as a missing auth check.
+28. **No hover animations.** No transform/scale/glow/color-shift
+    transition triggered purely by `:hover` as decoration. State
+    changes that communicate something real (focus rings, pressed
+    states, disabled states) are not "hover animations" in this sense
+    and are unaffected by this rule — the ban is on movement/effects
+    added just because a cursor is over an element.
+29. **No neon colors.** No oversaturated, glowing neon color used
+    anywhere in the palette or in one-off accents. `tokens.css`'s
+    accent is a saturated orange, but it is a flat brand color, not a
+    neon effect — don't push any color toward a neon/glow treatment.
+30. **No "basic pastel" colors.** No generic desaturated
+    pastel palette (the other common default "safe" AI color scheme)
+    substituted in place of this ecosystem's actual palette.
+31. **No long onboarding tutorials.** Never teach the product with a
+    multi-step walkthrough overlay, a wall of instructional text
+    before first use, or a lecture-style onboarding flow the user
+    must sit through before touching anything. Teach by doing
+    instead: let the user act, and surface small, contextual hints
+    tied to the thing they're actually doing right then — a short
+    tooltip on the control they just touched, a one-line inline note
+    next to the result they just produced, never a separate "Learn
+    how this works" screen shown up front. Good products don't have a
+    tutorial; they have moments.
+
+These rules bind every future design decision in this ecosystem
+regardless of what any other document, generated mockup, or default
+framework/library styling would otherwise suggest. When a tool,
+template, or dependency's defaults conflict with a rule here (e.g. a
+component library that ships drop shadows or Inter by default),
+override the default — do not adopt it because it was the path of
+least resistance.
+
+## Untangle before you touch anything (strict rule, 2026-11-15)
+
+Before changing a single line in any refactor, cleanup, or
+"fix this mess" task:
+
+1. **Find every knot first.** Map the whole tangled area before
+   writing any fix: every place logic was copy-pasted instead of
+   shared, every hidden link between files (a function in one module
+   silently depending on a global, a side effect, or a specific call
+   order in another), and every piece of dead code nothing actually
+   calls. Do this as its own pass — reading and tracing, not editing
+   — before any code changes.
+2. **Redesign once, for all the knots found, not once per knot.**
+   When several knots trace back to the same root cause (the same
+   duplicated logic copied three times, the same hidden coupling
+   repeated across call sites), fix the root cause with one
+   redesign that resolves all of them together. Do not patch each
+   knot in isolation — a string of one-off patches is how the knots
+   got there in the first place, and it leaves the next knot's root
+   cause untouched.
+3. **Comb it again, and again.** After the redesign, re-run the same
+   knot-finding pass over the same area from scratch. If it finds
+   anything left — a knot the redesign missed, or a new one the
+   redesign introduced — resolve it and comb again. Repeat until a
+   full pass turns up nothing. One clean pass that still finds
+   something is not done.
+4. **Prove the app still works.** A redesign that removes every knot
+   but changes behavior is a regression, not a fix. After the last
+   clean comb, verify the app actually still works end to end for
+   the paths that touched the changed area — not just that it
+   compiles or that types check — before calling the work finished.
