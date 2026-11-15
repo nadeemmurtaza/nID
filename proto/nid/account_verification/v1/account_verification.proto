@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package newax.account_verification.v1;
+
+service AccountVerificationService {
+  rpc GetStatus(AccountIdRequest) returns (VerificationStatusResponse);
+  rpc CreateCase(CreateCaseRequest) returns (VerificationCaseResponse);
+  rpc ListCases(AccountIdRequest) returns (VerificationCasesResponse);
+  rpc GetCase(CaseIdRequest) returns (VerificationCaseResponse);
+}
+
+message AccountIdRequest {
+  string account_id = 1;
+}
+
+message CaseIdRequest {
+  string account_id = 1;
+  string case_id = 2;
+}
+
+message CreateCaseRequest {
+  string account_id = 1;
+  string claim_type = 2;
+  optional string level = 3;
+}
+
+message BadgeEntry {
+  string claim_type = 1;
+  string level = 2;
+  optional string verified_at = 3;
+}
+
+message VerificationStatusResponse {
+  string account_id = 1;
+  repeated BadgeEntry badges = 2;
+}
+
+message VerificationCaseResponse {
+  string id = 1;
+  string subject_id = 2;
+  string claim_type = 3;
+  string level = 4;
+  string status = 5;
+  string created_at = 6;
+  optional string resolved_at = 7;
+}
+
+message VerificationCasesResponse {
+  repeated VerificationCaseResponse cases = 1;
+}

@@ -15,3 +15,9 @@ pub mod departments {
         tonic::include_proto!("newax.departments.v1");
     }
 }
+
+pub mod account_verification {
+    pub mod v1 {
+        tonic::include_proto!("newax.account_verification.v1");
+    }
+}
