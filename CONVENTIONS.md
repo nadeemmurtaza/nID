@@ -262,7 +262,7 @@ way §1–10 above are:
 
 ## crates/services split: in progress, tracked here (2026-11-15)
 
-The pattern in §3 is now proven working, not just specified — eleven
+The pattern in §3 is now proven working, not just specified — twelve
 real modules split so far, each a standalone `tonic` gRPC service
 with its old monolith route handlers reduced to a thin client, each
 verified with `cargo check --workspace`:
@@ -280,6 +280,7 @@ verified with `cargo check --workspace`:
 | cx-qa-scoring | Communicator | `crates/cx_qa_scoring` | `services/cx_qa_scoring` | 50069 |
 | permissions | nID | `crates/permissions` | `services/permissions` | 50071 |
 | tenant-staff | nID | `crates/tenant-staff` | `services/tenant-staff` | 50072 |
+| departments | nID | `crates/departments` | `services/departments` | 50073 |
 
 `reply-integration` is the one case so far where a split module had
 genuine in-process coupling from elsewhere in the monolith
@@ -290,7 +291,7 @@ crate directly as a library, not by routing an internal monolith call
 through gRPC.
 
 Remaining: **~60 more modules in Communicator's `backend-rs`**
-(70 routes/90 services, 142k lines total) and **~18 more in nID's
+(70 routes/90 services, 142k lines total) and **~17 more in nID's
 `apps/rust-api`**. This is not a mechanical find-and-replace — each
 module needs its cross-module Rust calls identified and either kept
 in-process (if it stays in the monolith) or turned into a gRPC call
