@@ -219,6 +219,47 @@ commits (design-tokens-style rollouts) use `ecosystem` as the scope.
   independently deployed client surface embedded on third-party
   sites, exactly what `apps/*` is for), out from under `apps/web/`.
 
+## Module separation is mandatory for all new work (strict rule, 2026-11-15)
+
+This is no longer "the plan" or "the target shape" — it's a standing
+rule, binding on every future change in every NEWAX repo, the same
+way §1–10 above are:
+
+1. **New backend capability = new crate + new service, from the
+   first line of code.** Nothing new gets added to `backend-rs`'s or
+   `apps/rust-api`'s top-level `src/routes`/`src/services`/`src/modules`
+   as a shortcut "for now." Scaffold `crates/<module>/` (business
+   logic) and `services/<module>/` (the `tonic` binary) per §2's
+   one-name rule before writing the first handler. The ~87 modules
+   still inside the two monoliths are a migration backlog, not a
+   template to keep copying.
+2. **Module-to-module calls are always `tonic` + Protobuf, never a
+   direct function call across a module boundary once the callee has
+   its own crate.** This holds whether the caller is in the same repo
+   or a different one. See `COMMUNICATION.md`'s "two distinct roles"
+   section — this is Role 1, and it is not optional infrastructure to
+   bolt on later. A module still living in the monolith may call
+   another in-monolith module directly (that's the modular-monolith
+   ADR, unchanged); the moment either side has its own service, the
+   call is gRPC, full stop.
+3. **The edge gateway is Pingora** (Cloudflare's Rust proxy
+   framework), not Envoy, not a hand-rolled reverse proxy — see
+   `COMMUNICATION.md`'s Role 2. It terminates TLS, load-balances, and
+   routes incoming gRPC streams to the right backend service. Envoy
+   is a deliberate, requested exception for a specific gap, never a
+   default.
+4. **Every `.proto` contract is reviewed like a public API**, because
+   it is one the moment a second caller exists — a breaking field
+   change needs the same care as a breaking REST response shape
+   change, more so once another repo depends on it.
+5. **No new interim shortcuts without flagging them the way the
+   current one is flagged.** The direct-`127.0.0.1:<port>`-dial used
+   by the three pilot services (see below) is an explicitly named,
+   explicitly temporary stand-in for Pingora — written down as such
+   in `COMMUNICATION.md`, not left for someone to mistake for the
+   real thing. Any future shortcut gets the same treatment: named,
+   dated, and tied to what it's standing in for.
+
 ## crates/services split: in progress, tracked here (2026-11-15)
 
 The pattern in §3 is now proven working, not just specified — three

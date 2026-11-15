@@ -41,20 +41,52 @@ Module Gateway (sync) or event bus (async) — never repo-to-repo
 directly. This section names the concrete technology for each, since
 `ECOSYSTEM.md` names the components but not what they run on.
 
-### Synchronous: Module Gateway
+### Synchronous: two distinct roles, two distinct technologies — do not blur them
 
-- **Protocol: gRPC (`tonic`) + Connect**, Protobuf-schema'd, per the
-  ecosystem tech-stack plan in `CLAUDE.md`/`AGENT.md`. Use this for
-  "I need this value now to finish handling this request" calls —
-  e.g. Communicator validating a session against nID before answering
-  an API call.
-- **Transport security: mTLS, mandatory, no exceptions.** Every
-  service presents a client certificate; the gateway and every peer
-  verify it. Certificates are short-lived and minted/rotated by nID
-  (the ecosystem's identity provider, extended to service identity,
-  not just human identity) and delivered only through each
-  environment's secrets vault — never committed, never passed as a
-  bare API key in an env var that outlives rotation.
+This ecosystem uses **gRPC for two different jobs**, and the rule is
+strict precisely because the two jobs look similar and are not:
+
+**Role 1 — module-to-module calls themselves: `tonic` + Protobuf,
+always, no exceptions.** Any time one module's logic needs another
+module's logic — whether both live in the same repo (nID calling nID,
+Communicator calling Communicator) or across repos (nID calling
+Communicator) — that call is a `tonic` gRPC client against a
+`.proto`-defined contract. Never a raw REST call between two internal
+services, never an ad hoc JSON-over-HTTP endpoint "just for this one
+caller," never a direct Rust function call once the callee has its
+own crate+service (that's a layering violation even if it compiles —
+see the strict rule in `CONVENTIONS.md`). This is what `tonic` is
+for everywhere in this ecosystem: it's the inter-module RPC layer,
+full stop, not optional infrastructure to add "later."
+
+**Role 2 — the edge in front of all of it: Pingora, not Envoy.** The
+Module Gateway named in `ECOSYSTEM.md` is the thing a request (or
+another service's gRPC stream) hits *first* — it terminates TLS,
+load-balances across however many instances of a service are running,
+and routes each incoming gRPC stream to the right backend module.
+That's a distinct job from Role 1 and gets a distinct technology:
+**[Pingora](https://github.com/cloudflare/pingora)**, Cloudflare's
+Rust proxy framework, chosen over Envoy for the same reason this
+ecosystem is Rust end to end — Envoy is a mature, more feature-complete
+proxy with a bigger ecosystem (xDS, broad service-mesh tooling), and
+that maturity is real; it's also a C++ binary with Envoy's own memory
+footprint and operational model bolted onto a stack that is otherwise
+Rust everywhere for exactly the RAM/GC reasons in the tech-stack plan.
+Pingora already speaks HTTP/2 and proxies gRPC natively, is what
+Cloudflare runs at a scale that proves the pattern works, and keeps
+the gateway in the same language, same allocator behavior, same
+operational story as every service behind it. Use Pingora unless a
+specific gap (e.g. an xDS-driven dynamic-routing need Pingora doesn't
+cover) forces Envoy for one deployment — that's a deliberate
+exception to request, not a default to fall back to.
+- **Transport security: mTLS, mandatory, no exceptions**, terminated
+  at Pingora for external/edge traffic and carried through to each
+  backend service. Every service presents a client certificate; the
+  gateway and every peer verify it. Certificates are short-lived and
+  minted/rotated by nID (the ecosystem's identity provider, extended
+  to service identity, not just human identity) and delivered only
+  through each environment's secrets vault — never committed, never
+  passed as a bare API key in an env var that outlives rotation.
 - **Authorization on top of transport security:** a short-lived
   service JWT (also minted by nID, ~15 minute TTL) carried per-call,
   scoped to which module-to-module calls it's allowed to make. mTLS
@@ -161,12 +193,13 @@ for the corresponding tech-stack compliance note:
   service is dialed directly by URL
   (`KB_DOCUMENTS_SERVICE_URL`/`SYSTEM_HEALTH_SERVICE_URL`/
   `PERMISSIONS_SERVICE_URL`, each defaulting to `127.0.0.1:<port>`) —
-  no mTLS, no service JWT, no service discovery. This is a deliberate,
-  flagged shortcut to prove the split pattern works end to end without
-  being blocked on infrastructure that belongs in `core-newax`. Do not
-  mistake it for the real gateway from §1, and do not extend this
+  no Pingora in front, no mTLS, no service JWT, no service discovery.
+  This is a deliberate, flagged shortcut to prove the gRPC split
+  pattern (Role 1 above) works end to end without being blocked on
+  standing up Pingora (Role 2) first, which belongs in `core-newax`.
+  Do not mistake it for the real gateway, and do not extend this
   direct-dial pattern to cross-repo calls — that still goes through
-  the real gateway once it exists, never repo-to-repo directly.
+  Pingora once it exists, never repo-to-repo directly.
 - **§2 and §3 are otherwise still how both repos work** — modules not
   yet split stay in-process, and REST+HMAC webhook adapters still
   handle third parties (Communicator's Meta/TikTok integration).

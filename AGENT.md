@@ -52,9 +52,15 @@ yet — see its audit note.
     grpc-web. Connect speaks Protobuf-or-JSON over plain HTTP/1.1 or
     HTTP/2 directly from the Rust server — no Envoy/grpc-web proxy, no
     second schema, no extra RAM-hungry process to run and secure.
-  - Service-to-service inside the ecosystem: gRPC via the Module Gateway
-    in `core-newax` only. No repo calls another repo's API directly —
-    see `ECOSYSTEM.md`.
+  - Service-to-service inside the ecosystem: gRPC (`tonic` +
+    Protobuf) via the Module Gateway in `core-newax` only — never a
+    direct repo-to-repo call, never a direct function call once
+    either side has its own service. The gateway itself runs on
+    **Pingora** (Cloudflare's Rust proxy framework), not Envoy,
+    terminating TLS/mTLS, load-balancing, and routing each incoming
+    gRPC stream to the right backend — see `COMMUNICATION.md`'s "two
+    distinct roles" section and `CONVENTIONS.md`'s strict module-
+    separation rule.
 - **Database:** PostgreSQL. Row-level security, mature TLS/auditing, no
   surprises. Not Mongo/MySQL unless a specific service proves a
   document-shaped workload needs it.
