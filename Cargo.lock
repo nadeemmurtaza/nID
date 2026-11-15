@@ -1202,6 +1202,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "newax-tenant-staff"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "sqlx",
+]
+
+[[package]]
 name = "nid-api"
 version = "0.1.0"
 dependencies = [
@@ -2192,6 +2202,22 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-permissions",
+ "prost",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "svc-tenant-staff"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-tenant-staff",
  "prost",
  "sqlx",
  "tokio",

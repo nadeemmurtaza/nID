@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package newax.tenant_staff.v1;
+
+service TenantStaffService {
+  rpc Invite(InviteRequest) returns (StaffMember);
+  rpc List(ListRequest) returns (StaffMemberList);
+}
+
+message InviteRequest {
+  string tenant_id = 1;
+  string api_key_id = 2;
+  string account_id = 3;
+  string role = 4;
+}
+
+message ListRequest {
+  string tenant_id = 1;
+  string api_key_id = 2;
+}
+
+message StaffMember {
+  string id = 1;
+  string tenant_id = 2;
+  string account_id = 3;
+  string role = 4;
+  optional string phone = 5;
+  bool phone_verified = 6;
+  string created_at = 7;
+}
+
+message StaffMemberList {
+  repeated StaffMember members = 1;
+}
