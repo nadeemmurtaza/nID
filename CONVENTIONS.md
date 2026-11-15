@@ -263,7 +263,7 @@ way §1–10 above are:
 ## crates/services split: in progress, tracked here (2026-11-15)
 
 The pattern in §3 is now proven working, not just specified —
-eighteen real modules split so far, each a standalone `tonic` gRPC
+nineteen real modules split so far, each a standalone `tonic` gRPC
 service
 with its old monolith route handlers reduced to a thin client, each
 verified with `cargo check --workspace`:
@@ -288,6 +288,7 @@ verified with `cargo check --workspace`:
 | compliance-dashboard | Communicator | `crates/compliance_dashboard` | `services/compliance_dashboard` | 50076 |
 | subjects | nID | `crates/subjects` | `services/subjects` | 50077 |
 | unified-analytics | Communicator | `crates/unified_analytics` | `services/unified_analytics` | 50078 |
+| invitations | nID | `crates/invitations` | `services/invitations` | 50079 |
 
 `reply-integration` is the one case so far where a split module had
 genuine in-process coupling from elsewhere in the monolith
@@ -298,7 +299,7 @@ crate directly as a library, not by routing an internal monolith call
 through gRPC.
 
 Remaining: **~56 more modules in Communicator's `backend-rs`**
-(70 routes/90 services, 142k lines total) and **~15 more in nID's
+(70 routes/90 services, 142k lines total) and **~14 more in nID's
 `apps/rust-api`**. This is not a mechanical find-and-replace — each
 module needs its cross-module Rust calls identified and either kept
 in-process (if it stays in the monolith) or turned into a gRPC call
@@ -310,6 +311,15 @@ directly today and need that coupling mapped out before they can
 split safely. Convert and verify one module at a time, commit each
 once `cargo check --workspace` is clean — never a batch no one
 checked compiles.
+
+**Not every module is a split candidate.** nID's
+`apps/rust-api/src/modules/badges` is a pure shared library (badge-
+ranking helpers + `CrossTenantBadgesService`) used in-process by
+`profiles/service.rs`, with no routes/handlers of its own. Converting
+it to a standalone gRPC service would be wrong — it belongs inlined,
+not behind a network call. Skip modules like this; look for the
+dto/handlers/routes/service shape (or Communicator's routes+services
+pair) before starting one.
 
 **Known shortcut, flagged, not to copy into cross-repo code:** split
 services are currently dialed by a hardcoded `127.0.0.1:<port>` URL
