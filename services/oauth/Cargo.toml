@@ -1,0 +1,22 @@
+[package]
+name = "svc-oauth"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "svc-oauth"
+path = "src/main.rs"
+
+[dependencies]
+newax-oauth = { path = "../../crates/oauth" }
+tonic = "0.12"
+prost = "0.13"
+tokio = { workspace = true }
+sqlx = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+dotenvy = { workspace = true }
+
+[build-dependencies]
+tonic-build = "0.12"

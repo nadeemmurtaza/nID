@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package newax.oauth.v1;
+
+service OAuthApiService {
+  rpc CreateLoginRequest(CreateLoginRequestReq) returns (LoginRequestStatusResponse);
+  rpc GetStatus(PollTokenRequest) returns (LoginRequestStatusResponse);
+  rpc Approve(ApproveRequest) returns (Empty);
+  rpc Claim(PollTokenRequest) returns (TokenResponse);
+  rpc ExchangeToken(ExchangeTokenRequest) returns (TokenResponse);
+}
+
+message Empty {}
+
+message CreateLoginRequestReq {
+  string client_id = 1;
+  string redirect_uri = 2;
+  optional string state = 3;
+}
+
+message PollTokenRequest {
+  string poll_token = 1;
+}
+
+message ApproveRequest {
+  string poll_token = 1;
+  string account_id = 2;
+}
+
+message ExchangeTokenRequest {
+  string code = 1;
+  string client_id = 2;
+  string client_secret = 3;
+  string redirect_uri = 4;
+}
+
+message LoginRequestStatusResponse {
+  string status = 1;
+  optional string approval_url = 2;
+}
+
+message TokenResponse {
+  string access_token = 1;
+  string token_type = 2;
+  optional int64 expires_in = 3;
+}

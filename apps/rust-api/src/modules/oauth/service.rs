@@ -1,17 +1,48 @@
-//! OAuth service — business logic for OAuth operations.
+//! OAuth service -- gRPC client for `svc-oauth`.
+//!
+//! Business logic moved to `crates/oauth`, served by
+//! `services/oauth` (see CONVENTIONS.md's crates/services split).
+//! Same public shape so `handlers.rs` needed zero changes.
 
 use anyhow::{anyhow, Result};
-use chrono::{Duration, Utc};
-use sqlx::Row;
-use uuid::Uuid;
+use newax_proto::oauth::v1::{
+    o_auth_api_service_client::OAuthApiServiceClient,
+    ApproveRequest, CreateLoginRequestReq, ExchangeTokenRequest,
+    LoginRequestStatusResponse as ProtoStatusResponse,
+    PollTokenRequest, TokenResponse as ProtoTokenResponse,
+};
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
 use crate::modules::oauth::dto::{LoginRequestStatusResponse, TokenResponse};
 
 pub struct OAuthService {
+    #[allow(dead_code)]
     db: DbPool,
+    #[allow(dead_code)]
     env: AppEnv,
+}
+
+fn status_from_proto(p: ProtoStatusResponse) -> LoginRequestStatusResponse {
+    LoginRequestStatusResponse {
+        status: p.status,
+        approval_url: p.approval_url,
+    }
+}
+
+fn token_from_proto(p: ProtoTokenResponse) -> TokenResponse {
+    TokenResponse {
+        access_token: p.access_token,
+        token_type: p.token_type,
+        expires_in: p.expires_in,
+    }
+}
+
+async fn client() -> Result<OAuthApiServiceClient<tonic::transport::Channel>> {
+    let url = std::env::var("OAUTH_SERVICE_URL").unwrap_or_else(|_| "http://127.0.0.1:50080".to_string());
+    OAuthApiServiceClient::connect(url)
+        .await
+        .map_err(|e| anyhow!("oauth service unreachable: {e}"))
 }
 
 impl OAuthService {
@@ -25,113 +56,46 @@ impl OAuthService {
         redirect_uri: &str,
         state: Option<&str>,
     ) -> Result<LoginRequestStatusResponse> {
-        let mut conn = self.db.get().await?;
-
-        // Verify client exists
-        let client = sqlx::query(
-            "SELECT id, tenant_id FROM oauth_client WHERE client_id = $1",
-        )
-        .bind(client_id)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        if client.is_none() {
-            return Err(anyhow!("Client not found"));
-        }
-        let client = client.unwrap();
-        let tenant_id: String = client.get("tenant_id");
-
-        let poll_token = Uuid::new_v4().to_string();
-        let expires_at = Utc::now() + Duration::minutes(10);
-
-        sqlx::query(
-            r#"
-            INSERT INTO oauth_login_request (id, tenant_id, client_id, redirect_uri, state, poll_token_hash, expires_at)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)
-            "#,
-        )
-        .bind(&tenant_id)
-        .bind(client_id)
-        .bind(redirect_uri)
-        .bind(state)
-        .bind(&poll_token)
-        .bind(expires_at)
-        .execute(&mut *conn)
-        .await?;
-
-        Ok(LoginRequestStatusResponse {
-            status: "PENDING".to_string(),
-            approval_url: Some(format!("/authorize/{}", poll_token)),
+        let mut c = client().await?;
+        let resp = c.create_login_request(CreateLoginRequestReq {
+            client_id: client_id.to_string(),
+            redirect_uri: redirect_uri.to_string(),
+            state: state.map(|s| s.to_string()),
         })
+        .await
+        .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(status_from_proto(resp.into_inner()))
     }
 
     pub async fn get_status(&self, poll_token: &str) -> Result<LoginRequestStatusResponse> {
-        let mut conn = self.db.get().await?;
-
-        let row = sqlx::query(
-            "SELECT status, id FROM oauth_login_request WHERE poll_token_hash = $1",
-        )
-        .bind(poll_token)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        match row {
-            Some(r) => {
-                let status: String = r.get("status");
-                Ok(LoginRequestStatusResponse {
-                    status,
-                    approval_url: None,
-                })
-            }
-            None => Err(anyhow!("Login request not found")),
-        }
+        let mut c = client().await?;
+        let resp = c.get_status(PollTokenRequest {
+            poll_token: poll_token.to_string(),
+        })
+        .await
+        .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(status_from_proto(resp.into_inner()))
     }
 
     pub async fn approve(&self, poll_token: &str, account_id: &str) -> Result<()> {
-        let mut conn = self.db.get().await?;
-
-        let code = Uuid::new_v4().to_string();
-        let result = sqlx::query(
-            r#"
-            UPDATE oauth_login_request
-            SET status = 'APPROVED', account_id = $1, code_hash = $2
-            WHERE poll_token_hash = $3 AND status = 'PENDING'
-            "#,
-        )
-        .bind(account_id)
-        .bind(&code)
-        .bind(poll_token)
-        .execute(&mut *conn)
-        .await?;
-
-        if result.rows_affected() == 0 {
-            return Err(anyhow!("Login request not found or already approved"));
-        }
-
+        let mut c = client().await?;
+        c.approve(ApproveRequest {
+            poll_token: poll_token.to_string(),
+            account_id: account_id.to_string(),
+        })
+        .await
+        .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(())
     }
 
     pub async fn claim(&self, poll_token: &str) -> Result<TokenResponse> {
-        let mut conn = self.db.get().await?;
-
-        let row = sqlx::query(
-            "SELECT code_hash, client_id, redirect_uri FROM oauth_login_request WHERE poll_token_hash = $1 AND status = 'APPROVED'",
-        )
-        .bind(poll_token)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        match row {
-            Some(r) => {
-                let code: String = r.get("code_hash");
-                Ok(TokenResponse {
-                    access_token: code,
-                    token_type: "Bearer".to_string(),
-                    expires_in: Some(3600),
-                })
-            }
-            None => Err(anyhow!("Login request not approved")),
-        }
+        let mut c = client().await?;
+        let resp = c.claim(PollTokenRequest {
+            poll_token: poll_token.to_string(),
+        })
+        .await
+        .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(token_from_proto(resp.into_inner()))
     }
 
     pub async fn exchange_token(
@@ -139,52 +103,17 @@ impl OAuthService {
         code: &str,
         client_id: &str,
         client_secret: &str,
-        _redirect_uri: &str,
+        redirect_uri: &str,
     ) -> Result<TokenResponse> {
-        let mut conn = self.db.get().await?;
-
-        // Verify client secret
-        let client = sqlx::query(
-            "SELECT id FROM oauth_client WHERE client_id = $1 AND client_secret_hash = $2",
-        )
-        .bind(client_id)
-        .bind(client_secret)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        if client.is_none() {
-            return Err(anyhow!("Invalid client credentials"));
-        }
-
-        // Find and consume the code
-        let row = sqlx::query(
-            "SELECT id, account_id FROM oauth_login_request WHERE code_hash = $1 AND code_consumed_at IS NULL",
-        )
-        .bind(code)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        if row.is_none() {
-            return Err(anyhow!("Invalid or expired code"));
-        }
-        let row = row.unwrap();
-        let request_id: String = row.get("id");
-
-        // Consume the code
-        sqlx::query(
-            "UPDATE oauth_login_request SET code_consumed_at = NOW() WHERE id = $1",
-        )
-        .bind(&request_id)
-        .execute(&mut *conn)
-        .await?;
-
-        let account_id: String = row.get("account_id");
-        let access_token = format!("{}_{}", account_id, Uuid::new_v4());
-
-        Ok(TokenResponse {
-            access_token,
-            token_type: "Bearer".to_string(),
-            expires_in: Some(3600),
+        let mut c = client().await?;
+        let resp = c.exchange_token(ExchangeTokenRequest {
+            code: code.to_string(),
+            client_id: client_id.to_string(),
+            client_secret: client_secret.to_string(),
+            redirect_uri: redirect_uri.to_string(),
         })
+        .await
+        .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(token_from_proto(resp.into_inner()))
     }
 }

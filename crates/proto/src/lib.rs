@@ -33,3 +33,9 @@ pub mod invitations {
         tonic::include_proto!("newax.invitations.v1");
     }
 }
+
+pub mod oauth {
+    pub mod v1 {
+        tonic::include_proto!("newax.oauth.v1");
+    }
+}
