@@ -174,32 +174,38 @@ decision is how to contain that, not what transport to use:
   synchronously inline with a user-facing request wherever the
   provider's latency isn't something a user should wait on.
 
-## Audit note (2026-11-14, updated 2026-11-15): what's actually implemented vs. this plan
+## Audit note (2026-11-14, last updated 2026-11-15): what's actually implemented vs. this plan
 
 Honest status, not papered over — see each repo's `CLAUDE.md`/`AGENT.md`
 for the corresponding tech-stack compliance note:
 
 - **Intra-repo gRPC exists now, cross-repo still doesn't.** Both repos
   now have real `tonic`/`prost`/`.proto` infrastructure and real split
-  services: Communicator's `services/kb-documents` and
-  `services/system-health`, nID's `services/permissions` — each a
-  standalone gRPC binary with the monolith as a thin client. **This is
-  intra-repo only** (a module split out of `backend-rs` /
-  `apps/rust-api`, still called only from within that same repo). nID
-  and Communicator still don't call each other over any mechanism —
-  the Module Gateway (§1) and NATS event bus are still not built, and
-  both still need `core-newax`, which this session can't reach.
+  services — see `CONVENTIONS.md`'s "crates/services split" table for
+  the current, authoritative list (14 Communicator modules, 6 nID
+  modules as of this update; that count moves forward, so read the
+  table there rather than a count repeated here). Each is a standalone
+  gRPC binary with the monolith as a thin client. **This is intra-repo
+  only** (a module split out of `backend-rs` / `apps/rust-api`, still
+  called only from within that same repo, with one documented
+  exception — see `CONVENTIONS.md`'s `reply-integration` note for the
+  one case so far where a split module had genuine in-process coupling
+  from elsewhere in its own monolith, resolved as a direct crate
+  dependency, never gRPC). nID and Communicator still don't call each
+  other over any mechanism — the Module Gateway (§1) and NATS event
+  bus are still not built, and both still need `core-newax`, which
+  this session can't reach.
 - **Interim stand-in, not the real Module Gateway:** each split
-  service is dialed directly by URL
-  (`KB_DOCUMENTS_SERVICE_URL`/`SYSTEM_HEALTH_SERVICE_URL`/
-  `PERMISSIONS_SERVICE_URL`, each defaulting to `127.0.0.1:<port>`) —
-  no Pingora in front, no mTLS, no service JWT, no service discovery.
-  This is a deliberate, flagged shortcut to prove the gRPC split
-  pattern (Role 1 above) works end to end without being blocked on
-  standing up Pingora (Role 2) first, which belongs in `core-newax`.
-  Do not mistake it for the real gateway, and do not extend this
-  direct-dial pattern to cross-repo calls — that still goes through
-  Pingora once it exists, never repo-to-repo directly.
+  service is dialed directly by URL (`<MODULE>_SERVICE_URL`, each
+  defaulting to `127.0.0.1:<port>` — see `CONVENTIONS.md`'s table for
+  the actual port per module) — no Pingora in front, no mTLS, no
+  service JWT, no service discovery. This is a deliberate, flagged
+  shortcut to prove the gRPC split pattern (Role 1 above) works end to
+  end without being blocked on standing up Pingora (Role 2) first,
+  which belongs in `core-newax`. Do not mistake it for the real
+  gateway, and do not extend this direct-dial pattern to cross-repo
+  calls — that still goes through Pingora once it exists, never
+  repo-to-repo directly.
 - **§2 and §3 are otherwise still how both repos work** — modules not
   yet split stay in-process, and REST+HMAC webhook adapters still
   handle third parties (Communicator's Meta/TikTok integration).

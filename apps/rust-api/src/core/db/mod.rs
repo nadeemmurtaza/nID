@@ -22,8 +22,11 @@ impl DbPool {
 
     /// Create a new connection pool from a PostgreSQL connection string.
     ///
-    /// PRODUCTION_READINESS_RULES.md §10: connection pooling with deliberate sizing.
-    /// Default max_connections is configurable via DB_MAX_CONNECTIONS env var (default: 10).
+    /// PRODUCTION_READINESS_RULES.md §10: connection pooling with deliberate
+    /// sizing, never an unconfigured default pool. `DB_MAX_CONNECTIONS` /
+    /// `DB_MIN_CONNECTIONS` override the defaults below; a 10s acquire
+    /// timeout means a request fails fast instead of queuing forever when
+    /// the pool is exhausted.
     pub async fn connect(database_url: &str) -> Result<Self> {
         let max_connections: u32 = std::env::var("DB_MAX_CONNECTIONS")
             .ok()

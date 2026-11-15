@@ -7,17 +7,19 @@
 mod core;
 mod modules;
 
+use anyhow::Context;
+use axum::http::{HeaderName, HeaderValue, Method};
 use axum::{Router, middleware, Extension};
 use std::sync::Arc;
-use std::time::Duration;
 use tower_http::{
-    cors::{Any, CorsLayer},
-    trace::TraceLayer,
+    cors::{AllowOrigin, CorsLayer},
     set_header::SetResponseHeaderLayer,
+    trace::TraceLayer,
 };
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::core::middleware::{request_tracing, validate_cors_origin};
+use crate::core::middleware::request_tracing;
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
@@ -123,14 +125,6 @@ fn build_router(state: AppState) -> Router {
         env: state.env.clone(),
     });
 
-    // CORS — SECURITY_RULES.md §8: explicit origin allowlist, not permissive
-    // Custom middleware validates Origin header against an allowlist
-    let cors = CorsLayer::new()
-        .allow_methods(Any)
-        .allow_headers(Any)
-        .allow_origin(Any)
-        .max_age(Duration::from_secs(3600));
-
     Router::new()
         .merge(health_router())
         .merge(accounts_router().with_state(accounts_state))
@@ -154,26 +148,65 @@ fn build_router(state: AppState) -> Router {
         .merge(profile_content_router().with_state(profile_content_state))
         .layer(Extension(state.db.clone()))
         .layer(Extension(state.env.clone()))
-        .layer(middleware::from_fn(validate_cors_origin))
         .layer(middleware::from_fn(request_tracing))
-        .layer(cors)
+        .layer(build_cors_layer(&state.env))
         .layer(SetResponseHeaderLayer::if_not_present(
-            axum::http::header::STRICT_TRANSPORT_SECURITY,
-            axum::http::HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+            HeaderName::from_static("x-content-type-options"),
+            HeaderValue::from_static("nosniff"),
         ))
         .layer(SetResponseHeaderLayer::if_not_present(
-            axum::http::header::X_CONTENT_TYPE_OPTIONS,
-            axum::http::HeaderValue::from_static("nosniff"),
+            HeaderName::from_static("x-frame-options"),
+            HeaderValue::from_static("DENY"),
         ))
         .layer(SetResponseHeaderLayer::if_not_present(
-            axum::http::header::X_FRAME_OPTIONS,
-            axum::http::HeaderValue::from_static("DENY"),
+            HeaderName::from_static("referrer-policy"),
+            HeaderValue::from_static("same-origin"),
         ))
         .layer(SetResponseHeaderLayer::if_not_present(
-            axum::http::header::REFERRER_POLICY,
-            axum::http::HeaderValue::from_static("strict-origin-when-cross-origin"),
+            HeaderName::from_static("strict-transport-security"),
+            HeaderValue::from_static("max-age=63072000; includeSubDomains"),
         ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("content-security-policy"),
+            HeaderValue::from_static("default-src 'none'; frame-ancestors 'none'"),
+        ))
+        .layer({
+            // Per-IP rate limit (SECURITY_RULES.md item 5 /
+            // PRODUCTION_READINESS_RULES.md item 7): 10 req/s sustained,
+            // bursts up to 30. Per-user limits on top of this would need a
+            // custom key extractor keyed on the auth token rather than the
+            // peer IP; not yet implemented -- this covers the per-IP half.
+            let config = std::sync::Arc::new(
+                GovernorConfigBuilder::default()
+                    .per_second(10)
+                    .burst_size(30)
+                    .finish()
+                    .expect("valid governor rate-limit config"),
+            );
+            GovernorLayer::new(config)
+        })
         .layer(TraceLayer::new_for_http())
+}
+
+/// Explicit CORS allowlist (SECURITY_RULES.md item 8) -- never
+/// `CorsLayer::permissive()`. Origins come from `ALLOWED_ORIGINS`
+/// (see `AppEnv::load`), never a wildcard.
+fn build_cors_layer(env: &AppEnv) -> CorsLayer {
+    let origins: Vec<HeaderValue> = env
+        .allowed_origins
+        .iter()
+        .filter_map(|o| HeaderValue::from_str(o).ok())
+        .collect();
+
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list(origins))
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::ACCEPT,
+        ])
+        .allow_credentials(true)
 }
 
 /// Bootstrap the API server.
@@ -188,6 +221,21 @@ async fn main() -> anyhow::Result<()> {
     // Load environment
     dotenvy::dotenv().ok();
     let env = AppEnv::load()?;
+
+    // Apply schema migrations (crates/db-schema) before accepting traffic.
+    // Runs as the DDL-owning role (DATABASE_URL), never APP_DATABASE_URL --
+    // nid_app has no BYPASSRLS and isn't meant to own schema. Prisma's
+    // migrations already built this schema historically; db-schema's
+    // baseline migration is a snapshot of it, so this is a tool cutover,
+    // not a schema change (see crates/db-schema/src/lib.rs).
+    let migrate_db_url = std::env::var("DATABASE_URL")
+        .context("DATABASE_URL (migration-capable role) must be set to apply schema migrations")?;
+    let migrate_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&migrate_db_url)
+        .await?;
+    nid_db_schema::MIGRATOR.run(&migrate_pool).await?;
+    migrate_pool.close().await;
 
     // Connect to database
     let db = DbPool::connect(&env.app_database_url).await?;
@@ -206,9 +254,15 @@ async fn main() -> anyhow::Result<()> {
     let addr = listener.local_addr()?;
     tracing::info!(%addr, "Listening for connections");
 
+    // GovernorLayer's PeerIpKeyExtractor reads ConnectInfo<SocketAddr> from
+    // request extensions -- without into_make_service_with_connect_info,
+    // that extension is never populated and every request 500s with
+    // "UnableToExtractKey".
+    let make_service = app.into_make_service_with_connect_info::<std::net::SocketAddr>();
+
     // Graceful shutdown on SIGINT/SIGTERM
     let graceful = async {
-        axum::serve(listener, app)
+        axum::serve(listener, make_service)
             .with_graceful_shutdown(shutdown_signal())
             .await
     };

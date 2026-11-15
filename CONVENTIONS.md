@@ -345,7 +345,7 @@ real `core-newax` Module Gateway from `COMMUNICATION.md`, acceptable
 *within* one repo for now, never a substitute for the gateway once
 nID and Communicator actually need to call each other.
 
-## Decided, migration tracked (not yet executed)
+## Decided, migration tracked (partially executed)
 
 - **nID**: `apps/api` (TypeScript/NestJS + Prisma) and `apps/rust-api`
   (Rust/SQLx) are not an open question anymore — **`apps/rust-api` is
@@ -361,6 +361,26 @@ nID and Communicator actually need to call each other.
   — a real migration with its own testing needs, not a naming-audit
   side effect. Until it's done, don't build new features on
   `apps/api`.
+
+  **2026-11-15: schema ownership cut over for `apps/rust-api`.**
+  `crates/db-schema` now holds SQLx-native migrations and
+  `apps/rust-api` applies them at boot (`DATABASE_URL`, the
+  DDL-owning role — never `APP_DATABASE_URL`), instead of depending on
+  `prisma migrate deploy`. The baseline migration
+  (`20261115000000_baseline_from_prisma.sql`) is a `pg_dump
+  --schema-only` snapshot of the schema Prisma's migrations had
+  already built — a tool cutover, not a schema change. `packages/db/
+  prisma` stays in the repo and must still be updated in lockstep for
+  any schema change, because `apps/workflows`,
+  `packages/verification-providers`, and `packages/billing` still
+  read/write this same database through the Prisma client directly.
+  Porting those three off Prisma (onto their own Rust services,
+  consistent with how every other nID module has been split — see
+  `MODULE_SPLIT_PLAYBOOK.md`) is the remaining, much larger piece;
+  it is not started. Going forward: write new schema changes as a
+  `crates/db-schema/migrations/*.sql` file first, then hand-port the
+  same DDL into a new Prisma migration for those three services —
+  don't let the two schemas drift.
 - `crates/` currently holds only 3 Rust library crates (`billing`,
   `shared-types`, `storage`); the verification engines
   (`forensics-engine`, `liveness-engine`, `ocr-engine`,

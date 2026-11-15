@@ -30,6 +30,12 @@ pub struct AppEnv {
     pub platform_admin_secret: String,
     /// Dev mode: log email verification codes instead of sending.
     pub account_email_dev_mode: bool,
+    /// Comma-separated list of allowed CORS origins. Required in
+    /// production (see SECURITY_RULES.md item 8 -- CORS must never be
+    /// permissive/wildcarded); defaults to this repo's four known
+    /// Next.js apps' dev ports when unset, which only matters for
+    /// local development.
+    pub allowed_origins: Vec<String>,
 }
 
 impl AppEnv {
@@ -54,6 +60,16 @@ impl AppEnv {
             liveness_dev_mode: std::env::var("LIVENESS_DEV_MODE").map_or(false, |v| v == "true"),
             platform_admin_secret: std::env::var("PLATFORM_ADMIN_SECRET").unwrap_or_default(),
             account_email_dev_mode: std::env::var("ACCOUNT_EMAIL_DEV_MODE").map_or(false, |v| v == "true"),
+            allowed_origins: std::env::var("ALLOWED_ORIGINS")
+                .map(|v| v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+                .unwrap_or_else(|_| {
+                    vec![
+                        "http://localhost:3100".to_string(), // verify-ui
+                        "http://localhost:3200".to_string(), // dashboard
+                        "http://localhost:3300".to_string(), // login-ui
+                        "http://localhost:3400".to_string(), // profile-ui
+                    ]
+                }),
         })
     }
 }

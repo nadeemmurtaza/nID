@@ -12,7 +12,8 @@ newax-proto = { path = "../../crates/proto" }
 # Workspace
 axum = { workspace = true }
 tower = { workspace = true }
-tower-http = { workspace = true, features = ["cors", "trace", "set-header"] }
+tower-http = { workspace = true }
+tower_governor = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 futures = { workspace = true }
@@ -38,3 +39,4 @@ multer = "3"
 # Local crates
 nid-shared-types = { path = "../../crates/shared-types" }
 nid-storage = { path = "../../crates/storage" }
+nid-db-schema = { path = "../../crates/db-schema" }

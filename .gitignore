@@ -21,3 +21,6 @@ storage-data/
 *.traineddata
 *.traineddata.gz
 .npmrc
+
+# JetBrains IDE project files — never commit these
+.idea/
