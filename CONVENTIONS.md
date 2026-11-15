@@ -522,3 +522,35 @@ template, or dependency's defaults conflict with a rule here (e.g. a
 component library that ships drop shadows or Inter by default),
 override the default — do not adopt it because it was the path of
 least resistance.
+
+## Untangle before you touch anything (strict rule, 2026-11-15)
+
+Before changing a single line in any refactor, cleanup, or
+"fix this mess" task:
+
+1. **Find every knot first.** Map the whole tangled area before
+   writing any fix: every place logic was copy-pasted instead of
+   shared, every hidden link between files (a function in one module
+   silently depending on a global, a side effect, or a specific call
+   order in another), and every piece of dead code nothing actually
+   calls. Do this as its own pass — reading and tracing, not editing
+   — before any code changes.
+2. **Redesign once, for all the knots found, not once per knot.**
+   When several knots trace back to the same root cause (the same
+   duplicated logic copied three times, the same hidden coupling
+   repeated across call sites), fix the root cause with one
+   redesign that resolves all of them together. Do not patch each
+   knot in isolation — a string of one-off patches is how the knots
+   got there in the first place, and it leaves the next knot's root
+   cause untouched.
+3. **Comb it again, and again.** After the redesign, re-run the same
+   knot-finding pass over the same area from scratch. If it finds
+   anything left — a knot the redesign missed, or a new one the
+   redesign introduced — resolve it and comb again. Repeat until a
+   full pass turns up nothing. One clean pass that still finds
+   something is not done.
+4. **Prove the app still works.** A redesign that removes every knot
+   but changes behavior is a regression, not a fix. After the last
+   clean comb, verify the app actually still works end to end for
+   the paths that touched the changed area — not just that it
+   compiles or that types check — before calling the work finished.
