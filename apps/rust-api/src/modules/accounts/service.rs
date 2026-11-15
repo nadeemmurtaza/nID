@@ -1,50 +1,43 @@
-//! Accounts service — business logic for account operations.
+//! Accounts service -- gRPC client for `svc-accounts`.
 //!
-//! Mirrors `apps/api/src/modules/accounts/accounts.service.ts`.
+//! Business logic moved to `crates/accounts`, served by
+//! `services/accounts` (see CONVENTIONS.md's crates/services split).
+//! Same public shape so `handlers.rs` needed zero changes.
 
 use anyhow::{anyhow, Result};
-use chrono::Utc;
-use nid_shared_types::{generate_session_token, sha256_hex};
-use rand::Rng;
-use sqlx::{FromRow, Row};
-use tracing::info;
+use newax_proto::accounts::v1::{
+    accounts_api_service_client::AccountsApiServiceClient,
+    AccountIdRequest, AccountResponse as ProtoAccountResponse,
+    Empty, SessionTokenRequest, StartEmailVerificationRequest,
+    StartOtpRequest, VerifyEmailRequest, VerifyOtpRequest,
+    VerifyOtpResponse as ProtoVerifyOtpResponse,
+};
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
 use crate::modules::accounts::dto::{AccountResponse, VerifyOtpResponse};
 
-const OTP_CODE_LENGTH: usize = 6;
-const OTP_TTL_MINUTES: i64 = 10;
-const SESSION_TTL_DAYS: i64 = 30;
-const MAX_OTP_ATTEMPTS: i32 = 5;
-const OTP_RESEND_COOLDOWN_SECONDS: i64 = 30;
-
-/// Account row from database
-#[derive(Debug, Clone, FromRow)]
-pub struct AccountRow {
-    pub id: String,
-    pub phone: String,
-    pub email: Option<String>,
-    pub phone_verified_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub email_verified_at: Option<chrono::DateTime<chrono::Utc>>,
+pub struct AccountsService {
+    #[allow(dead_code)]
+    db: DbPool,
+    env: AppEnv,
 }
 
-impl From<AccountRow> for AccountResponse {
-    fn from(row: AccountRow) -> Self {
-        Self {
-            id: row.id,
-            phone: row.phone,
-            email: row.email,
-            phone_verified_at: row.phone_verified_at.map(|dt| dt.to_rfc3339()),
-            email_verified_at: row.email_verified_at.map(|dt| dt.to_rfc3339()),
-        }
+fn account_from_proto(p: ProtoAccountResponse) -> AccountResponse {
+    AccountResponse {
+        id: p.id,
+        phone: p.phone,
+        email: p.email,
+        phone_verified_at: p.phone_verified_at,
+        email_verified_at: p.email_verified_at,
     }
 }
 
-/// Accounts service — handles OTP flow, session management, and email verification.
-pub struct AccountsService {
-    db: DbPool,
-    env: AppEnv,
+async fn client() -> Result<AccountsApiServiceClient<tonic::transport::Channel>> {
+    let url = std::env::var("ACCOUNTS_SERVICE_URL").unwrap_or_else(|_| "http://127.0.0.1:50081".to_string());
+    AccountsApiServiceClient::connect(url)
+        .await
+        .map_err(|e| anyhow!("accounts service unreachable: {e}"))
 }
 
 impl AccountsService {
@@ -52,318 +45,85 @@ impl AccountsService {
         Self { db, env }
     }
 
-    /// Start an OTP challenge for the given phone number.
     pub async fn start_otp(&self, phone: &str) -> Result<()> {
-        let mut conn = self.db.get().await?;
-
-        // Check cooldown — only while a code is still outstanding
-        let outstanding: Option<(f64,)> = sqlx::query_as(
-            r#"
-            SELECT EXTRACT(EPOCH FROM (NOW() - created_at)) as elapsed
-            FROM account_otp_code
-            WHERE phone = $1 AND consumed_at IS NULL
-            ORDER BY created_at DESC
-            LIMIT 1
-            "#,
-        )
-        .bind(phone)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        if let Some((elapsed,)) = outstanding {
-            if elapsed < OTP_RESEND_COOLDOWN_SECONDS as f64 {
-                return Err(anyhow!("Please wait before requesting another code."));
-            }
-        }
-
-        // Generate OTP code — rand::thread_rng() isn't Send, so it must not
-        // be held across an .await (axum requires handler futures be Send).
-        let code = {
-            let mut rng = rand::thread_rng();
-            format!("{:0width$}", rng.gen_range(0..10u32.pow(OTP_CODE_LENGTH as u32)), width = OTP_CODE_LENGTH)
-        };
-        let code_hash = sha256_hex(&code);
-        let expires_at = Utc::now() + chrono::Duration::minutes(OTP_TTL_MINUTES);
-
-        sqlx::query(
-            r#"
-            INSERT INTO account_otp_code (id, phone, code_hash, expires_at)
-            VALUES (gen_random_uuid(), $1, $2, $3)
-            "#,
-        )
-        .bind(phone)
-        .bind(&code_hash)
-        .bind(expires_at)
-        .execute(&mut *conn)
-        .await?;
-
-        if !self.env.otp_sms_dev_mode {
-            return Err(anyhow!(
-                "Account OTP delivery has no production SMS vendor wired up yet"
-            ));
-        }
-
-        info!("[accounts:dev] would send login code {} to {}", code, phone);
+        let mut c = client().await?;
+        c.start_otp(StartOtpRequest { phone: phone.to_string() })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(())
     }
 
-    /// Verify an OTP code, creating the account if needed and returning a session.
     pub async fn verify_otp(&self, phone: &str, code: &str) -> Result<VerifyOtpResponse> {
-        let mut conn = self.db.get().await?;
-
-        // Find the live challenge
-        let challenge: Option<(String, String, i32)> = sqlx::query_as(
-            r#"
-            SELECT id, code_hash, attempts
-            FROM account_otp_code
-            WHERE phone = $1 AND consumed_at IS NULL AND expires_at > NOW()
-            ORDER BY created_at DESC
-            LIMIT 1
-            "#,
-        )
-        .bind(phone)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        let challenge = challenge.ok_or_else(|| anyhow!("That code is incorrect or has expired."))?;
-        let (challenge_id, code_hash, attempts) = challenge;
-
-        if attempts >= MAX_OTP_ATTEMPTS {
-            sqlx::query("UPDATE account_otp_code SET consumed_at = NOW() WHERE id = $1")
-                .bind(&challenge_id)
-                .execute(&mut *conn)
-                .await?;
-            return Err(anyhow!("Too many incorrect attempts. Request a new code."));
-        }
-
-        let submitted_hash = sha256_hex(code);
-        if submitted_hash != code_hash {
-            sqlx::query(
-                "UPDATE account_otp_code SET attempts = attempts + 1 WHERE id = $1",
-            )
-            .bind(&challenge_id)
-            .execute(&mut *conn)
-            .await?;
-            return Err(anyhow!("That code is incorrect or has expired."));
-        }
-
-        // Consume the code
-        sqlx::query("UPDATE account_otp_code SET consumed_at = NOW() WHERE id = $1")
-            .bind(&challenge_id)
-            .execute(&mut *conn)
-            .await?;
-
-        // Upsert account
-        let now = Utc::now();
-        let account: AccountRow = sqlx::query_as(
-            r#"
-            INSERT INTO account (id, phone, phone_verified_at)
-            VALUES (gen_random_uuid(), $1, $2)
-            ON CONFLICT (phone)
-            DO UPDATE SET phone_verified_at = $2
-            RETURNING id, phone, email, phone_verified_at, email_verified_at
-            "#,
-        )
-        .bind(phone)
-        .bind(now)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        // Create session
-        let session = generate_session_token();
-        let expires_at = Utc::now() + chrono::Duration::days(SESSION_TTL_DAYS);
-
-        sqlx::query(
-            r#"
-            INSERT INTO account_session (id, account_id, token_hash, expires_at)
-            VALUES (gen_random_uuid(), $1, $2, $3)
-            "#,
-        )
-        .bind(&account.id)
-        .bind(&session.hash)
-        .bind(expires_at)
-        .execute(&mut *conn)
-        .await?;
-
+        let mut c = client().await?;
+        let resp = c.verify_otp(VerifyOtpRequest {
+            phone: phone.to_string(),
+            code: code.to_string(),
+        })
+        .await
+        .map_err(|e| anyhow!(e.message().to_string()))?;
+        let p = resp.into_inner();
+        let account = p.account.map(account_from_proto).unwrap_or_else(|| AccountResponse {
+            id: String::new(),
+            phone: String::new(),
+            email: None,
+            phone_verified_at: None,
+            email_verified_at: None,
+        });
         Ok(VerifyOtpResponse {
-            session_token: session.plaintext,
-            account: account.into(),
+            session_token: p.session_token,
+            account,
         })
     }
 
-    /// Resolve a session token to an account.
-    pub async fn resolve_session(&self, token: &str) -> Result<AccountRow> {
-        let mut conn = self.db.get().await?;
-        let token_hash = sha256_hex(token);
-
-        let account: AccountRow = sqlx::query_as(
-            r#"
-            SELECT a.id, a.phone, a.email, a.phone_verified_at, a.email_verified_at
-            FROM account_session s
-            JOIN account a ON s.account_id = a.id
-            WHERE s.token_hash = $1 AND s.expires_at > NOW()
-            "#,
-        )
-        .bind(&token_hash)
-        .fetch_one(&mut *conn)
+    pub async fn get_account(&self, account_id: &str) -> Result<AccountResponse> {
+        let mut c = client().await?;
+        let resp = c.get_account(AccountIdRequest {
+            account_id: account_id.to_string(),
+        })
         .await
-        .map_err(|_| anyhow!("Invalid or expired session"))?;
-
-        Ok(account)
+        .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(account_from_proto(resp.into_inner()))
     }
 
-    /// Revoke a single session by token hash.
     pub async fn revoke_session(&self, token_hash: &str) -> Result<()> {
-        let mut conn = self.db.get().await?;
-        sqlx::query("DELETE FROM account_session WHERE token_hash = $1")
-            .bind(token_hash)
-            .execute(&mut *conn)
-            .await?;
+        let mut c = client().await?;
+        c.revoke_session(SessionTokenRequest {
+            session_token_hash: token_hash.to_string(),
+        })
+        .await
+        .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(())
     }
 
-    /// Revoke all sessions for an account.
     pub async fn revoke_all_sessions(&self, account_id: &str) -> Result<()> {
-        let mut conn = self.db.get().await?;
-        sqlx::query("DELETE FROM account_session WHERE account_id = $1")
-            .bind(account_id)
-            .execute(&mut *conn)
-            .await?;
+        let mut c = client().await?;
+        c.revoke_all_sessions(AccountIdRequest {
+            account_id: account_id.to_string(),
+        })
+        .await
+        .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(())
     }
 
-    /// Get the current account by ID.
-    pub async fn get_account(&self, account_id: &str) -> Result<AccountRow> {
-        let mut conn = self.db.get().await?;
-        let account: AccountRow = sqlx::query_as(
-            "SELECT id, phone, email, phone_verified_at, email_verified_at FROM account WHERE id = $1",
-        )
-        .bind(account_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Account not found"))?;
-        Ok(account)
-    }
-
-    /// Start email verification — sends a code to the given email.
-    /// Mirrors AccountsService.startEmailVerification().
     pub async fn start_email_verification(&self, account_id: &str, email: &str) -> Result<()> {
-        let mut conn = self.db.get().await?;
-
-        // Verify account exists
-        sqlx::query("SELECT id FROM account WHERE id = $1")
-            .bind(account_id)
-            .fetch_one(&mut *conn)
-            .await
-            .map_err(|_| anyhow!("Account not found"))?;
-
-        // Check cooldown
-        let outstanding: Option<(f64,)> = sqlx::query_as(
-            "SELECT EXTRACT(EPOCH FROM (NOW() - created_at)) as elapsed
-             FROM account_otp_code
-             WHERE phone = $1 AND consumed_at IS NULL
-             ORDER BY created_at DESC LIMIT 1",
-        )
-        .bind(email)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        if let Some((elapsed,)) = outstanding {
-            if elapsed < OTP_RESEND_COOLDOWN_SECONDS as f64 {
-                return Err(anyhow!("Please wait before requesting another code."));
-            }
-        }
-
-        // Generate email verification code
-        let code = {
-            let mut rng = rand::thread_rng();
-            format!("{:0width$}", rng.gen_range(0..10u32.pow(OTP_CODE_LENGTH as u32)), width = OTP_CODE_LENGTH)
-        };
-        let code_hash = sha256_hex(&code);
-        let expires_at = Utc::now() + chrono::Duration::minutes(OTP_TTL_MINUTES);
-
-        sqlx::query(
-            "INSERT INTO account_otp_code (id, phone, code_hash, expires_at)
-             VALUES (gen_random_uuid(), $1, $2, $3)",
-        )
-        .bind(email)
-        .bind(&code_hash)
-        .bind(expires_at)
-        .execute(&mut *conn)
-        .await?;
-
-        if !self.env.otp_sms_dev_mode {
-            return Err(anyhow!(
-                "Account email verification has no production email vendor wired up yet"
-            ));
-        }
-
-        info!("[accounts:dev] would send email verification code {} to {}", code, email);
+        let mut c = client().await?;
+        c.start_email_verification(StartEmailVerificationRequest {
+            account_id: account_id.to_string(),
+            email: email.to_string(),
+        })
+        .await
+        .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(())
     }
 
-    /// Verify an email verification code.
-    /// Mirrors AccountsService.verifyEmail().
     pub async fn verify_email(&self, account_id: &str, code: &str) -> Result<AccountResponse> {
-        let mut conn = self.db.get().await?;
-
-        // Get the account's email
-        let email: String = sqlx::query_scalar(
-            "SELECT email FROM account WHERE id = $1",
-        )
-        .bind(account_id)
-        .fetch_one(&mut *conn)
+        let mut c = client().await?;
+        let resp = c.verify_email(VerifyEmailRequest {
+            account_id: account_id.to_string(),
+            code: code.to_string(),
+        })
         .await
-        .map_err(|_| anyhow!("Account not found or email not set"))?;
-
-        // Find the live challenge (stored with email as phone)
-        let challenge: Option<(String, String, i32)> = sqlx::query_as(
-            "SELECT id, code_hash, attempts
-             FROM account_otp_code
-             WHERE phone = $1 AND consumed_at IS NULL AND expires_at > NOW()
-             ORDER BY created_at DESC LIMIT 1",
-        )
-        .bind(&email)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        let challenge = challenge.ok_or_else(|| anyhow!("That code is incorrect or has expired."))?;
-        let (challenge_id, code_hash, attempts) = challenge;
-
-        if attempts >= MAX_OTP_ATTEMPTS {
-            sqlx::query("UPDATE account_otp_code SET consumed_at = NOW() WHERE id = $1")
-                .bind(&challenge_id)
-                .execute(&mut *conn)
-                .await?;
-            return Err(anyhow!("Too many incorrect attempts. Request a new code."));
-        }
-
-        let submitted_hash = sha256_hex(code);
-        if submitted_hash != code_hash {
-            sqlx::query(
-                "UPDATE account_otp_code SET attempts = attempts + 1 WHERE id = $1",
-            )
-            .bind(&challenge_id)
-            .execute(&mut *conn)
-            .await?;
-            return Err(anyhow!("That code is incorrect or has expired."));
-        }
-
-        // Consume the code
-        sqlx::query("UPDATE account_otp_code SET consumed_at = NOW() WHERE id = $1")
-            .bind(&challenge_id)
-            .execute(&mut *conn)
-            .await?;
-
-        // Mark email as verified
-        let account: AccountRow = sqlx::query_as(
-            "UPDATE account SET email_verified_at = NOW() WHERE id = $1
-             RETURNING id, phone, email, phone_verified_at, email_verified_at",
-        )
-        .bind(account_id)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        Ok(account.into())
+        .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(account_from_proto(resp.into_inner()))
     }
 }
