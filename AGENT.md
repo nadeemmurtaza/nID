@@ -74,3 +74,10 @@ optical centre, tabular numbers, safe area, progressive disclosure,
 shared element transitions, and more), each tied to the exact rule it
 implies here. Cross-referenced against, not duplicating, the files
 above — read it alongside them before any UI work.
+
+See `RULE_VIOLATIONS_AUDIT.md` for the current, honest list of which
+of these rules this repo is already known to violate (no Privacy
+Policy/TOS, permissive CORS, missing security headers, no rate
+limiting, and more) — a point-in-time breadth-first audit, not a
+claim of full compliance elsewhere. Update it when a violation gets
+fixed or a new one is found; don't let it go stale.
