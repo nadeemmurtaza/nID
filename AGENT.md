@@ -29,3 +29,11 @@ architecture plan (backend, frontend, database, cache, package
 manager) and its honest compliance audit against what's actually
 running here — identical content to Communicator's copy except where
 this repo's specifics (paths, compliance status) differ.
+
+See `CONVENTIONS.md`'s **"Design anti-patterns — strictly forbidden,
+no exceptions"** section for the ecosystem-wide list of banned
+visual/copy clichés (gradients, drop shadows, Lucide icons, Inter/
+Geist/Space Grotesk, em dashes, bento grids, fake testimonials, and
+more — 30 rules total, identical across every NEWAX repo). These bind
+every UI surface in this repo with no exceptions; read that section
+before building or editing any UI.
