@@ -63,3 +63,12 @@ across every NEWAX repo, same binding status as the files above.
 Together they're what keeps a service that works fine in dev from
 falling over, getting breached, or feeling unfinished the moment it
 has real users.
+
+See `UNSLOP_DESIGN_RULES.md` for 40 more rules on not looking like
+generic AI-generated design: 20 concrete fixes (delete filler badges,
+specific headlines, consistent icons, nested-radius math, and more)
+plus 20 vocabulary terms this repo's UI work must get right (kerning,
+optical centre, tabular numbers, safe area, progressive disclosure,
+shared element transitions, and more), each tied to the exact rule it
+implies here. Cross-referenced against, not duplicating, the files
+above — read it alongside them before any UI work.
