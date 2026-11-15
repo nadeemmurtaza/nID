@@ -7,6 +7,7 @@
 mod core;
 mod modules;
 
+use anyhow::Context;
 use axum::http::{HeaderName, HeaderValue, Method};
 use axum::{Router, middleware, Extension};
 use std::sync::Arc;
@@ -220,6 +221,21 @@ async fn main() -> anyhow::Result<()> {
     // Load environment
     dotenvy::dotenv().ok();
     let env = AppEnv::load()?;
+
+    // Apply schema migrations (crates/db-schema) before accepting traffic.
+    // Runs as the DDL-owning role (DATABASE_URL), never APP_DATABASE_URL --
+    // nid_app has no BYPASSRLS and isn't meant to own schema. Prisma's
+    // migrations already built this schema historically; db-schema's
+    // baseline migration is a snapshot of it, so this is a tool cutover,
+    // not a schema change (see crates/db-schema/src/lib.rs).
+    let migrate_db_url = std::env::var("DATABASE_URL")
+        .context("DATABASE_URL (migration-capable role) must be set to apply schema migrations")?;
+    let migrate_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&migrate_db_url)
+        .await?;
+    nid_db_schema::MIGRATOR.run(&migrate_pool).await?;
+    migrate_pool.close().await;
 
     // Connect to database
     let db = DbPool::connect(&env.app_database_url).await?;

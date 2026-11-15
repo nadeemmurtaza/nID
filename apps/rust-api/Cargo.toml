@@ -39,3 +39,4 @@ multer = "3"
 # Local crates
 nid-shared-types = { path = "../../crates/shared-types" }
 nid-storage = { path = "../../crates/storage" }
+nid-db-schema = { path = "../../crates/db-schema" }
