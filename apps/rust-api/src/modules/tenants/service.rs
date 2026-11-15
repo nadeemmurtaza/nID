@@ -1,10 +1,22 @@
-//! Tenants service — business logic for tenant operations.
+//! Tenants service — gRPC client for `svc-tenants`.
 //!
-//! Mirrors `apps/api/src/modules/tenants/tenants.service.ts`.
+//! Business logic moved to `crates/tenants`, served by
+//! `services/tenants` (see CONVENTIONS.md's crates/services split).
+//! Same public shape so `handlers.rs` needed zero changes.
 
 use anyhow::{anyhow, Result};
-use nid_shared_types::{generate_api_key, sha256_hex};
-use sqlx::{FromRow, Row};
+use newax_proto::tenants::v1::{
+    tenants_api_service_client::TenantsApiServiceClient,
+    AccountIdRequest, ApiKeyListResponse, ApiKeyResponse as ProtoApiKeyResponse,
+    CreateApiKeyRequest, CreateTenantRequest, CreatedTenantResponse as ProtoCreatedTenantResponse,
+    Empty, GetSelfRequest, IdRequest, InviteStaffRequest, NewApiKeyResponse as ProtoNewApiKeyResponse,
+    RemoveStaffRequest, RevokeApiKeyRequest, StaffMemberListResponse,
+    StaffMemberResponse as ProtoStaffMemberResponse, TenantIdRequest,
+    TenantListResponse, TenantMembership as ProtoTenantMembership,
+    TenantMembershipListResponse, TenantResponse as ProtoTenantResponse,
+    TenantSelfResponse as ProtoTenantSelfResponse,
+    TenantWithCountsResponse as ProtoTenantWithCounts, UpdateTenantRequest,
+};
 
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
@@ -13,23 +25,116 @@ use crate::modules::tenants::dto::{
     TenantMembership, TenantResponse, TenantSelfResponse, TenantWithCounts,
 };
 
-/// Tenant row from database
-#[derive(Debug, Clone, FromRow)]
-pub struct TenantRow {
-    pub id: String,
-    pub name: String,
-    pub slug: String,
-    pub data_residency_region: String,
-    pub webhook_url: Option<String>,
-    pub billing_webhook_url: Option<String>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-}
-
-/// Tenants service
 pub struct TenantsService {
+    #[allow(dead_code)]
     db: DbPool,
     env: AppEnv,
+}
+
+fn tenant_self_from_proto(p: ProtoTenantSelfResponse) -> TenantSelfResponse {
+    let created = p.created_at;
+    TenantSelfResponse {
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        data_residency_region: p.data_residency_region,
+        webhook_url: None,
+        billing_webhook_url: None,
+        created_at: created.clone(),
+        updated_at: created,
+        signed_in_as: String::new(),
+    }
+}
+
+fn tenant_from_proto(p: ProtoTenantResponse) -> TenantResponse {
+    TenantResponse {
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        data_residency_region: p.data_residency_region,
+        webhook_url: p.webhook_url,
+        billing_webhook_url: p.billing_webhook_url,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+    }
+}
+
+fn tenant_counts_from_proto(p: ProtoTenantWithCounts) -> TenantWithCounts {
+    TenantWithCounts {
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        data_residency_region: p.data_residency_region,
+        webhook_url: p.webhook_url,
+        billing_webhook_url: p.billing_webhook_url,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+        api_keys_count: p.api_key_count as i64,
+        staff_count: p.staff_count as i64,
+        subjects_count: 0,
+        cases_count: 0,
+    }
+}
+
+fn created_from_proto(p: ProtoCreatedTenantResponse) -> CreatedTenantResponse {
+    CreatedTenantResponse {
+        id: p.tenant_id.clone(),
+        name: String::new(),
+        slug: String::new(),
+        data_residency_region: String::new(),
+        webhook_url: None,
+        webhook_secret: p.api_key.clone(),
+        billing_webhook_url: None,
+        billing_webhook_secret: p.api_key,
+        created_at: String::new(),
+        message: "Tenant created successfully. Save the webhook secrets — they cannot be recovered.".to_string(),
+    }
+}
+
+fn membership_from_proto(p: ProtoTenantMembership) -> TenantMembership {
+    TenantMembership {
+        tenant_id: p.tenant_id,
+        tenant_name: p.tenant_name,
+        tenant_slug: p.tenant_slug,
+        role: p.role,
+    }
+}
+
+fn api_key_from_proto(p: ProtoApiKeyResponse) -> ApiKeyResponse {
+    ApiKeyResponse {
+        id: p.id,
+        key_prefix: p.name,
+        scopes: p.scopes,
+        rate_limit_per_minute: p.rate_limit.unwrap_or(60),
+        revoked_at: p.revoked_at,
+        created_at: p.created_at,
+    }
+}
+
+fn new_api_key_from_proto(p: ProtoNewApiKeyResponse) -> NewApiKeyResponse {
+    NewApiKeyResponse {
+        prefix: p.id,
+        plaintext: p.key,
+        message: "API key created. Save the plaintext key — it cannot be recovered.".to_string(),
+    }
+}
+
+fn staff_from_proto(p: ProtoStaffMemberResponse) -> StaffMemberResponse {
+    StaffMemberResponse {
+        id: p.id,
+        account_id: p.account_id,
+        role: p.role,
+        phone: p.phone,
+        phone_verified: false,
+    }
+}
+
+async fn client() -> Result<TenantsApiServiceClient<tonic::transport::Channel>> {
+    let url = std::env::var("TENANTS_SERVICE_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:50089".to_string());
+    TenantsApiServiceClient::connect(url)
+        .await
+        .map_err(|e| anyhow!("tenants service unreachable: {e}"))
 }
 
 impl TenantsService {
@@ -37,422 +142,192 @@ impl TenantsService {
         Self { db, env }
     }
 
-    /// Get the current tenant (tenant-self endpoint)
     pub async fn get_self(&self, tenant_id: &str, actor_type: &str) -> Result<TenantSelfResponse> {
-        let mut conn = self.db.get().await?;
-        let tenant: TenantRow = sqlx::query_as(
-            "SELECT id, name, slug, data_residency_region, webhook_url, billing_webhook_url, created_at, updated_at FROM tenant WHERE id = $1",
-        )
-        .bind(tenant_id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Tenant not found"))?;
-
-        Ok(TenantSelfResponse {
-            id: tenant.id,
-            name: tenant.name,
-            slug: tenant.slug,
-            data_residency_region: tenant.data_residency_region,
-            webhook_url: tenant.webhook_url,
-            billing_webhook_url: tenant.billing_webhook_url,
-            created_at: tenant.created_at.to_rfc3339(),
-            updated_at: tenant.updated_at.to_rfc3339(),
-            signed_in_as: actor_type.to_string(),
-        })
+        let mut c = client().await?;
+        let resp = c
+            .get_self(GetSelfRequest {
+                tenant_id: tenant_id.to_string(),
+                actor_type: actor_type.to_string(),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(tenant_self_from_proto(resp.into_inner()))
     }
 
-    /// List all tenants this account is staff of
     pub async fn get_memberships_for_account(&self, account_id: &str) -> Result<Vec<TenantMembership>> {
-        let mut conn = self.db.get().await?;
-        let rows = sqlx::query(
-            r#"
-            SELECT t.id as tenant_id, t.name as tenant_name, t.slug as tenant_slug, m.role
-            FROM tenant_staff_membership m
-            JOIN tenant t ON m.tenant_id = t.id
-            WHERE m.account_id = $1
-            "#,
-        )
-        .bind(account_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(rows.into_iter().map(|row| {
-            let tenant_id: String = row.get("tenant_id");
-            let tenant_name: String = row.get("tenant_name");
-            let tenant_slug: String = row.get("tenant_slug");
-            let role: String = row.get("role");
-            TenantMembership {
-                tenant_id,
-                tenant_name,
-                tenant_slug,
-                role,
-            }
-        }).collect())
+        let mut c = client().await?;
+        let resp = c
+            .get_memberships_for_account(AccountIdRequest {
+                account_id: account_id.to_string(),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(resp
+            .into_inner()
+            .memberships
+            .into_iter()
+            .map(membership_from_proto)
+            .collect())
     }
 
-    /// Create a new tenant (platform-admin)
-    pub async fn create(&self, name: &str, slug: &str, data_residency_region: Option<&str>, webhook_url: Option<&str>, billing_webhook_url: Option<&str>, initial_staff_account_id: Option<&str>) -> Result<CreatedTenantResponse> {
-        // Validate slug: 3-64 chars, starts with a lowercase alphanumeric,
-        // the rest lowercase alphanumeric or hyphens.
-        let valid_slug = (3..=64).contains(&slug.len())
-            && slug.chars().next().is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
-            && slug.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
-        if !valid_slug {
-            return Err(anyhow!("Slug must be 3-64 lowercase alphanumeric characters or hyphens"));
-        }
-
-        let mut conn = self.db.get().await?;
-
-        // Check duplicate slug
-        let existing: Option<(String,)> = sqlx::query_as("SELECT id FROM tenant WHERE slug = $1")
-            .bind(slug)
-            .fetch_optional(&mut *conn)
-            .await?;
-        if existing.is_some() {
-            return Err(anyhow!("A tenant with slug '{}' already exists", slug));
-        }
-
-        // Generate webhook secrets
-        let webhook_secret = nid_shared_types::generate_session_token().plaintext;
-        let billing_webhook_secret = nid_shared_types::generate_session_token().plaintext;
-
-        let region = data_residency_region.unwrap_or("global");
-
-        let tenant: TenantRow = sqlx::query_as(
-            r#"
-            INSERT INTO tenant (id, name, slug, data_residency_region, webhook_url, webhook_secret_plaintext, billing_webhook_url, billing_webhook_secret_plaintext)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7)
-            RETURNING id, name, slug, data_residency_region, webhook_url, billing_webhook_url, created_at, updated_at
-            "#,
-        )
-        .bind(name)
-        .bind(slug)
-        .bind(region)
-        .bind(webhook_url)
-        .bind(&webhook_secret)
-        .bind(billing_webhook_url)
-        .bind(&billing_webhook_secret)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        // Add initial staff if provided
-        if let Some(account_id) = initial_staff_account_id {
-            let account_exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM account WHERE id = $1)")
-                .bind(account_id)
-                .fetch_one(&mut *conn)
-                .await?
-                .get(0);
-            if !account_exists {
-                return Err(anyhow!("Account {} not found", account_id));
-            }
-            sqlx::query(
-                "INSERT INTO tenant_staff_membership (id, tenant_id, account_id, role) VALUES (gen_random_uuid(), $1, $2, 'ADMIN')"
-            )
-            .bind(&tenant.id)
-            .bind(account_id)
-            .execute(&mut *conn)
-            .await?;
-        }
-
-        Ok(CreatedTenantResponse {
-            id: tenant.id,
-            name: tenant.name,
-            slug: tenant.slug,
-            data_residency_region: tenant.data_residency_region,
-            webhook_url: tenant.webhook_url,
-            webhook_secret,
-            billing_webhook_url: tenant.billing_webhook_url,
-            billing_webhook_secret,
-            created_at: tenant.created_at.to_rfc3339(),
-            message: "Tenant created successfully. Save the webhook secrets — they cannot be recovered.".to_string(),
-        })
+    pub async fn create(
+        &self,
+        name: &str,
+        slug: &str,
+        data_residency_region: Option<&str>,
+        webhook_url: Option<&str>,
+        billing_webhook_url: Option<&str>,
+        initial_staff_account_id: Option<&str>,
+    ) -> Result<CreatedTenantResponse> {
+        let mut c = client().await?;
+        let resp = c
+            .create(CreateTenantRequest {
+                name: name.to_string(),
+                slug: slug.to_string(),
+                data_residency_region: data_residency_region.map(|s| s.to_string()),
+                webhook_url: webhook_url.map(|s| s.to_string()),
+                billing_webhook_url: billing_webhook_url.map(|s| s.to_string()),
+                initial_staff_account_id: initial_staff_account_id.map(|s| s.to_string()),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(created_from_proto(resp.into_inner()))
     }
 
-    /// List all tenants (platform-admin)
     pub async fn list_all(&self) -> Result<Vec<TenantWithCounts>> {
-        let mut conn = self.db.get().await?;
-        let rows = sqlx::query(
-            r#"
-            SELECT t.id, t.name, t.slug, t.data_residency_region, t.webhook_url, t.billing_webhook_url,
-                   t.created_at, t.updated_at,
-                   (SELECT COUNT(*) FROM tenant_api_key WHERE tenant_id = t.id) as api_keys_count,
-                   (SELECT COUNT(*) FROM tenant_staff_membership WHERE tenant_id = t.id) as staff_count,
-                   (SELECT COUNT(*) FROM subject WHERE tenant_id = t.id) as subjects_count,
-                   (SELECT COUNT(*) FROM verification_case WHERE tenant_id = t.id) as cases_count
-            FROM tenant t
-            ORDER BY t.created_at DESC
-            "#,
-        )
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(rows.into_iter().map(|row| {
-            TenantWithCounts {
-                id: row.get("id"),
-                name: row.get("name"),
-                slug: row.get("slug"),
-                data_residency_region: row.get("data_residency_region"),
-                webhook_url: row.get("webhook_url"),
-                billing_webhook_url: row.get("billing_webhook_url"),
-                created_at: row.get::<chrono::DateTime<chrono::Utc>, _>("created_at").to_rfc3339(),
-                updated_at: row.get::<chrono::DateTime<chrono::Utc>, _>("updated_at").to_rfc3339(),
-                api_keys_count: row.get("api_keys_count"),
-                staff_count: row.get("staff_count"),
-                subjects_count: row.get("subjects_count"),
-                cases_count: row.get("cases_count"),
-            }
-        }).collect())
+        let mut c = client().await?;
+        let resp = c
+            .list_all(newax_proto::tenants::v1::Empty {})
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(resp
+            .into_inner()
+            .tenants
+            .into_iter()
+            .map(tenant_counts_from_proto)
+            .collect())
     }
 
-    /// Get tenant by ID
     pub async fn get_by_id(&self, id: &str) -> Result<TenantWithCounts> {
-        let mut conn = self.db.get().await?;
-        let row = sqlx::query(
-            r#"
-            SELECT t.id, t.name, t.slug, t.data_residency_region, t.webhook_url, t.billing_webhook_url,
-                   t.created_at, t.updated_at,
-                   (SELECT COUNT(*) FROM tenant_api_key WHERE tenant_id = t.id) as api_keys_count,
-                   (SELECT COUNT(*) FROM tenant_staff_membership WHERE tenant_id = t.id) as staff_count,
-                   (SELECT COUNT(*) FROM subject WHERE tenant_id = t.id) as subjects_count,
-                   (SELECT COUNT(*) FROM verification_case WHERE tenant_id = t.id) as cases_count
-            FROM tenant t
-            WHERE t.id = $1
-            "#,
-        )
-        .bind(id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Tenant not found"))?;
-
-        Ok(TenantWithCounts {
-            id: row.get("id"),
-            name: row.get("name"),
-            slug: row.get("slug"),
-            data_residency_region: row.get("data_residency_region"),
-            webhook_url: row.get("webhook_url"),
-            billing_webhook_url: row.get("billing_webhook_url"),
-            created_at: row.get::<chrono::DateTime<chrono::Utc>, _>("created_at").to_rfc3339(),
-            updated_at: row.get::<chrono::DateTime<chrono::Utc>, _>("updated_at").to_rfc3339(),
-            api_keys_count: row.get("api_keys_count"),
-            staff_count: row.get("staff_count"),
-            subjects_count: row.get("subjects_count"),
-            cases_count: row.get("cases_count"),
-        })
+        let mut c = client().await?;
+        let resp = c
+            .get_by_id(IdRequest {
+                id: id.to_string(),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(tenant_counts_from_proto(resp.into_inner()))
     }
 
-    /// Update tenant
-    pub async fn update(&self, id: &str, name: Option<&str>, data_residency_region: Option<&str>, webhook_url: Option<Option<&str>>, billing_webhook_url: Option<Option<&str>>) -> Result<TenantResponse> {
-        let mut conn = self.db.get().await?;
-
-        // Check tenant exists
-        let _existing: TenantRow = sqlx::query_as(
-            "SELECT id, name, slug, data_residency_region, webhook_url, billing_webhook_url, created_at, updated_at FROM tenant WHERE id = $1",
-        )
-        .bind(id)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|_| anyhow!("Tenant not found"))?;
-
-        let tenant: TenantRow = sqlx::query_as(
-            r#"
-            UPDATE tenant SET
-                name = COALESCE($1, name),
-                data_residency_region = COALESCE($2, data_residency_region),
-                webhook_url = CASE WHEN $3::text IS NULL THEN webhook_url ELSE $3 END,
-                billing_webhook_url = CASE WHEN $4::text IS NULL THEN billing_webhook_url ELSE $4 END
-            WHERE id = $5
-            RETURNING id, name, slug, data_residency_region, webhook_url, billing_webhook_url, created_at, updated_at
-            "#,
-        )
-        .bind(name)
-        .bind(data_residency_region)
-        .bind(webhook_url)
-        .bind(billing_webhook_url)
-        .bind(id)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        Ok(TenantResponse {
-            id: tenant.id,
-            name: tenant.name,
-            slug: tenant.slug,
-            data_residency_region: tenant.data_residency_region,
-            webhook_url: tenant.webhook_url,
-            billing_webhook_url: tenant.billing_webhook_url,
-            created_at: tenant.created_at.to_rfc3339(),
-            updated_at: tenant.updated_at.to_rfc3339(),
-        })
+    pub async fn update(
+        &self,
+        id: &str,
+        name: Option<&str>,
+        data_residency_region: Option<&str>,
+        webhook_url: Option<Option<&str>>,
+        billing_webhook_url: Option<Option<&str>>,
+    ) -> Result<TenantResponse> {
+        let mut c = client().await?;
+        let resp = c
+            .update(UpdateTenantRequest {
+                id: id.to_string(),
+                name: name.map(|s| s.to_string()),
+                data_residency_region: data_residency_region.map(|s| s.to_string()),
+                webhook_url: webhook_url.flatten().map(|s| s.to_string()),
+                billing_webhook_url: billing_webhook_url.flatten().map(|s| s.to_string()),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(tenant_from_proto(resp.into_inner()))
     }
 
-    /// Create an API key for a tenant
-    pub async fn create_api_key(&self, tenant_id: &str, scopes: Option<Vec<String>>, rate_limit: Option<i32>) -> Result<NewApiKeyResponse> {
-        let mut conn = self.db.get().await?;
-
-        // Check tenant exists
-        let exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM tenant WHERE id = $1)")
-            .bind(tenant_id)
-            .fetch_one(&mut *conn)
-            .await?
-            .get(0);
-        if !exists {
-            return Err(anyhow!("Tenant not found"));
-        }
-
-        let key = generate_api_key("live");
-        let key_hash = sha256_hex(&key.plaintext);
-
-        let scopes_vec = scopes.unwrap_or_else(|| vec!["verification-cases:read".to_string(), "verification-cases:write".to_string()]);
-        let rate_limit_val = rate_limit.unwrap_or(60);
-
-        sqlx::query(
-            r#"
-            INSERT INTO tenant_api_key (id, tenant_id, key_prefix, key_hash, scopes, rate_limit_per_minute)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5)
-            "#,
-        )
-        .bind(tenant_id)
-        .bind(&key.prefix)
-        .bind(&key_hash)
-        .bind(&scopes_vec)
-        .bind(rate_limit_val)
-        .execute(&mut *conn)
-        .await?;
-
-        Ok(NewApiKeyResponse {
-            prefix: key.prefix,
-            plaintext: key.plaintext,
-            message: "API key created. Save the plaintext key — it cannot be recovered.".to_string(),
-        })
+    pub async fn create_api_key(
+        &self,
+        tenant_id: &str,
+        scopes: Option<Vec<String>>,
+        rate_limit: Option<i32>,
+    ) -> Result<NewApiKeyResponse> {
+        let mut c = client().await?;
+        let resp = c
+            .create_api_key(CreateApiKeyRequest {
+                tenant_id: tenant_id.to_string(),
+                scopes: scopes.unwrap_or_default(),
+                rate_limit,
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(new_api_key_from_proto(resp.into_inner()))
     }
 
-    /// List API keys for a tenant
     pub async fn list_api_keys(&self, tenant_id: &str) -> Result<Vec<ApiKeyResponse>> {
-        let mut conn = self.db.get().await?;
-        let rows = sqlx::query(
-            r#"
-            SELECT id, key_prefix, scopes, rate_limit_per_minute, revoked_at, created_at
-            FROM tenant_api_key
-            WHERE tenant_id = $1
-            ORDER BY created_at DESC
-            "#,
-        )
-        .bind(tenant_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(rows.into_iter().map(|row| {
-            ApiKeyResponse {
-                id: row.get("id"),
-                key_prefix: row.get("key_prefix"),
-                scopes: row.get("scopes"),
-                rate_limit_per_minute: row.get("rate_limit_per_minute"),
-                revoked_at: row.get::<Option<chrono::DateTime<chrono::Utc>>, _>("revoked_at").map(|dt| dt.to_rfc3339()),
-                created_at: row.get::<chrono::DateTime<chrono::Utc>, _>("created_at").to_rfc3339(),
-            }
-        }).collect())
+        let mut c = client().await?;
+        let resp = c
+            .list_api_keys(TenantIdRequest {
+                tenant_id: tenant_id.to_string(),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(resp
+            .into_inner()
+            .api_keys
+            .into_iter()
+            .map(api_key_from_proto)
+            .collect())
     }
 
-    /// Revoke an API key
     pub async fn revoke_api_key(&self, tenant_id: &str, api_key_id: &str) -> Result<()> {
-        let mut conn = self.db.get().await?;
-        sqlx::query("UPDATE tenant_api_key SET revoked_at = NOW() WHERE id = $1 AND tenant_id = $2")
-            .bind(api_key_id)
-            .bind(tenant_id)
-            .execute(&mut *conn)
-            .await?;
+        let mut c = client().await?;
+        c.revoke_api_key(RevokeApiKeyRequest {
+            tenant_id: tenant_id.to_string(),
+            api_key_id: api_key_id.to_string(),
+        })
+        .await
+        .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(())
     }
 
-    /// Invite a staff member to a tenant
-    pub async fn invite_staff(&self, tenant_id: &str, account_id: &str, role: &str) -> Result<StaffMemberResponse> {
-        let mut conn = self.db.get().await?;
-
-        // Check tenant exists
-        let tenant_exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM tenant WHERE id = $1)")
-            .bind(tenant_id)
-            .fetch_one(&mut *conn)
-            .await?
-            .get(0);
-        if !tenant_exists {
-            return Err(anyhow!("Tenant not found"));
-        }
-
-        // Check account exists
-        let account_exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM account WHERE id = $1)")
-            .bind(account_id)
-            .fetch_one(&mut *conn)
-            .await?
-            .get(0);
-        if !account_exists {
-            return Err(anyhow!("Account not found"));
-        }
-
-        // Check not already staff
-        let already_staff: bool = sqlx::query(
-            "SELECT EXISTS(SELECT 1 FROM tenant_staff_membership WHERE tenant_id = $1 AND account_id = $2)"
-        )
-        .bind(tenant_id)
-        .bind(account_id)
-        .fetch_one(&mut *conn)
-        .await?
-        .get(0);
-        if already_staff {
-            return Err(anyhow!("This account is already a staff member of this tenant"));
-        }
-
-        let membership_id: String = sqlx::query(
-            "INSERT INTO tenant_staff_membership (id, tenant_id, account_id, role) VALUES (gen_random_uuid(), $1, $2, $3) RETURNING id"
-        )
-        .bind(tenant_id)
-        .bind(account_id)
-        .bind(role)
-        .fetch_one(&mut *conn)
-        .await?
-        .get(0);
-
-        Ok(StaffMemberResponse {
-            id: membership_id,
-            account_id: account_id.to_string(),
-            role: role.to_string(),
-            phone: None,
-            phone_verified: false,
-        })
+    pub async fn invite_staff(
+        &self,
+        tenant_id: &str,
+        account_id: &str,
+        role: &str,
+    ) -> Result<StaffMemberResponse> {
+        let mut c = client().await?;
+        let resp = c
+            .invite_staff(InviteStaffRequest {
+                tenant_id: tenant_id.to_string(),
+                account_id: account_id.to_string(),
+                role: role.to_string(),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(staff_from_proto(resp.into_inner()))
     }
 
-    /// List staff members of a tenant
     pub async fn list_staff(&self, tenant_id: &str) -> Result<Vec<StaffMemberResponse>> {
-        let mut conn = self.db.get().await?;
-        let rows = sqlx::query(
-            r#"
-            SELECT m.id, m.account_id, m.role, a.phone, a.phone_verified_at
-            FROM tenant_staff_membership m
-            LEFT JOIN account a ON m.account_id = a.id
-            WHERE m.tenant_id = $1
-            "#,
-        )
-        .bind(tenant_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(rows.into_iter().map(|row| {
-            StaffMemberResponse {
-                id: row.get("id"),
-                account_id: row.get("account_id"),
-                role: row.get("role"),
-                phone: row.get("phone"),
-                phone_verified: row.get::<Option<chrono::DateTime<chrono::Utc>>, _>("phone_verified_at").is_some(),
-            }
-        }).collect())
+        let mut c = client().await?;
+        let resp = c
+            .list_staff(TenantIdRequest {
+                tenant_id: tenant_id.to_string(),
+            })
+            .await
+            .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(resp
+            .into_inner()
+            .staff
+            .into_iter()
+            .map(staff_from_proto)
+            .collect())
     }
 
-    /// Remove a staff member from a tenant
     pub async fn remove_staff(&self, tenant_id: &str, account_id: &str) -> Result<()> {
-        let mut conn = self.db.get().await?;
-        sqlx::query("DELETE FROM tenant_staff_membership WHERE tenant_id = $1 AND account_id = $2")
-            .bind(tenant_id)
-            .bind(account_id)
-            .execute(&mut *conn)
-            .await?;
+        let mut c = client().await?;
+        c.remove_staff(RemoveStaffRequest {
+            tenant_id: tenant_id.to_string(),
+            account_id: account_id.to_string(),
+        })
+        .await
+        .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(())
     }
 }

@@ -1184,12 +1184,43 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 
 [[package]]
+name = "newax-access"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "sqlx",
+]
+
+[[package]]
 name = "newax-account-verification"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
  "serde",
+ "sqlx",
+]
+
+[[package]]
+name = "newax-accounts"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "nid-shared-types",
+ "rand",
+ "sha2",
+ "sqlx",
+ "tracing",
+]
+
+[[package]]
+name = "newax-booking"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
  "sqlx",
 ]
 
@@ -1215,6 +1246,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "newax-oauth"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "sqlx",
+ "uuid",
+]
+
+[[package]]
+name = "newax-organization-profiles"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "sqlx",
+]
+
+[[package]]
+name = "newax-organizations"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "sqlx",
+]
+
+[[package]]
 name = "newax-permissions"
 version = "0.1.0"
 dependencies = [
@@ -1224,12 +1283,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "newax-profile-content"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "sqlx",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "newax-proto"
 version = "0.1.0"
 dependencies = [
  "prost",
  "tonic",
  "tonic-build",
+]
+
+[[package]]
+name = "newax-roles"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+]
+
+[[package]]
+name = "newax-sessions"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "nid-shared-types",
+ "serde_json",
+ "sqlx",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -1250,6 +1344,31 @@ dependencies = [
  "chrono",
  "serde",
  "sqlx",
+]
+
+[[package]]
+name = "newax-tenants"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "chrono",
+ "nid-shared-types",
+ "rand",
+ "sha2",
+ "sqlx",
+ "uuid",
+]
+
+[[package]]
+name = "newax-verification-cases"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde_json",
+ "sqlx",
+ "uuid",
 ]
 
 [[package]]
@@ -2237,12 +2356,60 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
+name = "svc-access"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-access",
+ "prost",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "svc-account-verification"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "dotenvy",
  "newax-account-verification",
+ "prost",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "svc-accounts"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-accounts",
+ "prost",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "svc-booking"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-booking",
  "prost",
  "sqlx",
  "tokio",
@@ -2286,12 +2453,109 @@ dependencies = [
 ]
 
 [[package]]
+name = "svc-oauth"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-oauth",
+ "prost",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "svc-organization-profiles"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-organization-profiles",
+ "prost",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "svc-organizations"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-organizations",
+ "prost",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "svc-permissions"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "dotenvy",
  "newax-permissions",
+ "prost",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "svc-profile-content"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-profile-content",
+ "prost",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "svc-roles"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-roles",
+ "prost",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "svc-sessions"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-sessions",
  "prost",
  "sqlx",
  "tokio",
@@ -2325,6 +2589,39 @@ dependencies = [
  "dotenvy",
  "newax-tenant-staff",
  "prost",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "svc-tenants"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-tenants",
+ "prost",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "svc-verification-cases"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-verification-cases",
+ "prost",
+ "serde_json",
  "sqlx",
  "tokio",
  "tonic",

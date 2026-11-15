@@ -1,0 +1,163 @@
+syntax = "proto3";
+
+package newax.tenants.v1;
+
+service TenantsApiService {
+  rpc GetSelf(GetSelfRequest) returns (TenantSelfResponse);
+  rpc GetMembershipsForAccount(AccountIdRequest) returns (TenantMembershipListResponse);
+  rpc Create(CreateTenantRequest) returns (CreatedTenantResponse);
+  rpc ListAll(Empty) returns (TenantListResponse);
+  rpc GetById(IdRequest) returns (TenantWithCountsResponse);
+  rpc Update(UpdateTenantRequest) returns (TenantResponse);
+  rpc CreateApiKey(CreateApiKeyRequest) returns (NewApiKeyResponse);
+  rpc ListApiKeys(TenantIdRequest) returns (ApiKeyListResponse);
+  rpc RevokeApiKey(RevokeApiKeyRequest) returns (Empty);
+  rpc InviteStaff(InviteStaffRequest) returns (StaffMemberResponse);
+  rpc ListStaff(TenantIdRequest) returns (StaffMemberListResponse);
+  rpc RemoveStaff(RemoveStaffRequest) returns (Empty);
+}
+
+message Empty {}
+
+message TenantIdRequest {
+  string tenant_id = 1;
+}
+
+message AccountIdRequest {
+  string account_id = 1;
+}
+
+message IdRequest {
+  string id = 1;
+}
+
+message GetSelfRequest {
+  string tenant_id = 1;
+  string actor_type = 2;
+}
+
+message CreateTenantRequest {
+  string name = 1;
+  string slug = 2;
+  optional string data_residency_region = 3;
+  optional string webhook_url = 4;
+  optional string billing_webhook_url = 5;
+  optional string initial_staff_account_id = 6;
+}
+
+message UpdateTenantRequest {
+  string id = 1;
+  optional string name = 2;
+  optional string data_residency_region = 3;
+  optional string webhook_url = 4;
+  optional string billing_webhook_url = 5;
+}
+
+message CreateApiKeyRequest {
+  string tenant_id = 1;
+  repeated string scopes = 2;
+  optional int32 rate_limit = 3;
+}
+
+message RevokeApiKeyRequest {
+  string tenant_id = 1;
+  string api_key_id = 2;
+}
+
+message InviteStaffRequest {
+  string tenant_id = 1;
+  string account_id = 2;
+  string role = 3;
+}
+
+message RemoveStaffRequest {
+  string tenant_id = 1;
+  string account_id = 2;
+}
+
+message TenantSelfResponse {
+  string id = 1;
+  string name = 2;
+  string slug = 3;
+  string data_residency_region = 4;
+  string created_at = 5;
+}
+
+message TenantResponse {
+  string id = 1;
+  string name = 2;
+  string slug = 3;
+  string data_residency_region = 4;
+  optional string webhook_url = 5;
+  optional string billing_webhook_url = 6;
+  string created_at = 7;
+  string updated_at = 8;
+}
+
+message TenantWithCountsResponse {
+  string id = 1;
+  string name = 2;
+  string slug = 3;
+  string data_residency_region = 4;
+  optional string webhook_url = 5;
+  optional string billing_webhook_url = 6;
+  int32 staff_count = 7;
+  int32 api_key_count = 8;
+  string created_at = 9;
+  string updated_at = 10;
+}
+
+message TenantListResponse {
+  repeated TenantWithCountsResponse tenants = 1;
+}
+
+message CreatedTenantResponse {
+  string tenant_id = 1;
+  string api_key = 2;
+}
+
+message TenantMembership {
+  string tenant_id = 1;
+  string tenant_name = 2;
+  string tenant_slug = 3;
+  string role = 4;
+  string status = 5;
+}
+
+message TenantMembershipListResponse {
+  repeated TenantMembership memberships = 1;
+}
+
+message ApiKeyResponse {
+  string id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  repeated string scopes = 4;
+  optional int32 rate_limit = 5;
+  string created_at = 6;
+  optional string revoked_at = 7;
+}
+
+message ApiKeyListResponse {
+  repeated ApiKeyResponse apiKeys = 1;
+}
+
+message NewApiKeyResponse {
+  string id = 1;
+  string key = 2;
+}
+
+message StaffMemberResponse {
+  string id = 1;
+  string tenant_id = 2;
+  string account_id = 3;
+  string role = 4;
+  string status = 5;
+  optional string phone = 6;
+  optional string email = 7;
+  string created_at = 8;
+}
+
+message StaffMemberListResponse {
+  repeated StaffMemberResponse staff = 1;
+}

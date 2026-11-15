@@ -269,7 +269,7 @@ discipline, and a final checklist) — this section is just the live
 tracking table and status summary, not the how-to.
 
 The pattern in §3 is now proven working, not just specified —
-twenty-one real modules split so far, each a standalone `tonic` gRPC
+thirty real modules split so far, each a standalone `tonic` gRPC
 service
 with its old monolith route handlers reduced to a thin client, each
 verified with `cargo check --workspace`:
@@ -297,6 +297,15 @@ verified with `cargo check --workspace`:
 | invitations | nID | `crates/invitations` | `services/invitations` | 50079 |
 | oauth | nID | `crates/oauth` | `services/oauth` | 50080 |
 | accounts | nID | `crates/accounts` | `services/accounts` | 50081 |
+| roles | nID | `crates/roles` | `services/roles` | 50082 |
+| booking | nID | `crates/booking` | `services/booking` | 50083 |
+| organization-profiles | nID | `crates/organization_profiles` | `services/organization_profiles` | 50084 |
+| verification-cases | nID | `crates/verification_cases` | `services/verification_cases` | 50085 |
+| access | nID | `crates/access` | `services/access` | 50086 |
+| organizations | nID | `crates/organizations` | `services/organizations` | 50087 |
+| sessions | nID | `crates/sessions` | `services/sessions` | 50088 |
+| tenants | nID | `crates/tenants` | `services/tenants` | 50089 |
+| profile-content | nID | `crates/profile_content` | `services/profile_content` | 50090 |
 
 `reply-integration` is the one case so far where a split module had
 genuine in-process coupling from elsewhere in the monolith
@@ -307,8 +316,8 @@ crate directly as a library, not by routing an internal monolith call
 through gRPC.
 
 Remaining: **~56 more modules in Communicator's `backend-rs`**
-(70 routes/90 services, 142k lines total) and **~12 more in nID's
-`apps/rust-api`**. This is not a mechanical find-and-replace — each
+(70 routes/90 services, 142k lines total) and **~3 more in nID's
+`apps/rust-api`** (brands, profiles, badges). This is not a mechanical find-and-replace — each
 module needs its cross-module Rust calls identified and either kept
 in-process (if it stays in the monolith) or turned into a gRPC call
 (if both sides split). Low-coupling modules (zero

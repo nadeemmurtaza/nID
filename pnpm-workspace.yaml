@@ -13,3 +13,13 @@ onlyBuiltDependencies:
   - tesseract.js
 minimumReleaseAgeExclude:
   - '@nadeemmurtaza/design-system@0.1.0'
+allowBuilds:
+  '@prisma/client': set this to true or false
+  '@prisma/engines': set this to true or false
+  '@swc/core': set this to true or false
+  '@tensorflow/tfjs-node': set this to true or false
+  core-js: set this to true or false
+  esbuild: set this to true or false
+  prisma: set this to true or false
+  protobufjs: set this to true or false
+  tesseract.js: set this to true or false

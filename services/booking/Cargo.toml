@@ -1,0 +1,22 @@
+[package]
+name = "svc-booking"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "svc-booking"
+path = "src/main.rs"
+
+[dependencies]
+newax-booking = { path = "../../crates/booking" }
+tonic = "0.12"
+prost = "0.13"
+tokio = { workspace = true }
+sqlx = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+dotenvy = { workspace = true }
+
+[build-dependencies]
+tonic-build = "0.12"

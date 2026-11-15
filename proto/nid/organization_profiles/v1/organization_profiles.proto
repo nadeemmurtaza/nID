@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package newax.organization_profiles.v1;
+
+service OrganizationProfilesApiService {
+  rpc CreateForOrganization(CreateOrgProfileRequest) returns (OrgProfileResponse);
+  rpc GetForOrganization(OrgIdRequest) returns (OrgProfileResponse);
+  rpc UpdateForOrganization(UpdateOrgProfileRequest) returns (OrgProfileResponse);
+  rpc CreateGrantForOrganization(CreateOrgGrantRequest) returns (OrgProfileFieldGrantResponse);
+  rpc ListGrantsForOrganization(OrgIdRequest) returns (OrgProfileFieldGrantListResponse);
+  rpc RevokeGrantForOrganization(RevokeGrantRequest) returns (OrgProfileFieldGrantResponse);
+}
+
+message Empty {}
+
+message OrgIdRequest {
+  string account_id = 1;
+  string organization_id = 2;
+}
+
+message CreateOrgProfileRequest {
+  string account_id = 1;
+  string organization_id = 2;
+  string slug = 3;
+  string display_name = 4;
+  optional string headline = 5;
+  optional string category = 6;
+  optional string bio = 7;
+  optional string phone = 8;
+  optional string whatsapp = 9;
+  optional string public_email = 10;
+  optional string address_line1 = 11;
+  optional string address_line2 = 12;
+  optional string city = 13;
+  optional string region = 14;
+  optional string country_code = 15;
+  optional double latitude = 16;
+  optional double longitude = 17;
+  optional string timezone = 18;
+  optional bool show_phone = 19;
+  optional bool show_whatsapp = 20;
+  optional bool show_email = 21;
+  optional bool show_address = 22;
+  optional bool show_badges = 23;
+  optional bool show_booking = 24;
+  optional bool show_offers = 25;
+  optional bool show_hours = 26;
+  optional bool is_published = 27;
+}
+
+message UpdateOrgProfileRequest {
+  string account_id = 1;
+  string organization_id = 2;
+  optional string display_name = 3;
+  optional string headline = 4;
+  optional string category = 5;
+  optional string bio = 6;
+  optional string phone = 7;
+  optional string whatsapp = 8;
+  optional string public_email = 9;
+  optional string address_line1 = 10;
+  optional string address_line2 = 11;
+  optional string city = 12;
+  optional string region = 13;
+  optional string country_code = 14;
+  optional double latitude = 15;
+  optional double longitude = 16;
+  optional string timezone = 17;
+  optional bool show_phone = 18;
+  optional bool show_whatsapp = 19;
+  optional bool show_email = 20;
+  optional bool show_address = 21;
+  optional bool show_badges = 22;
+  optional bool show_booking = 23;
+  optional bool show_offers = 24;
+  optional bool show_hours = 25;
+  optional bool is_published = 26;
+}
+
+message CreateOrgGrantRequest {
+  string account_id = 1;
+  string organization_id = 2;
+  string grantee_slug = 3;
+  string field = 4;
+}
+
+message RevokeGrantRequest {
+  string account_id = 1;
+  string organization_id = 2;
+  string grant_id = 3;
+}
+
+message OrgProfileResponse {
+  string id = 1;
+  optional string organization_id = 2;
+  string slug = 3;
+  string display_name = 4;
+  optional string headline = 5;
+  string category = 6;
+  optional string bio = 7;
+  optional string photo_key = 8;
+  optional string phone = 9;
+  optional string whatsapp = 10;
+  optional string public_email = 11;
+  optional string address_line1 = 12;
+  optional string address_line2 = 13;
+  optional string city = 14;
+  optional string region = 15;
+  optional string country_code = 16;
+  optional double latitude = 17;
+  optional double longitude = 18;
+  string timezone = 19;
+  bool show_phone = 20;
+  bool show_whatsapp = 21;
+  bool show_email = 22;
+  bool show_address = 23;
+  bool show_badges = 24;
+  bool show_booking = 25;
+  bool show_offers = 26;
+  bool show_hours = 27;
+  bool is_published = 28;
+  string created_at = 29;
+  string updated_at = 30;
+}
+
+message OrgProfileFieldGrantResponse {
+  string id = 1;
+  string profile_id = 2;
+  string field = 3;
+  optional string grantee_account_id = 4;
+  optional string grantee_organization_id = 5;
+  string created_at = 6;
+  optional string revoked_at = 7;
+}
+
+message OrgProfileFieldGrantListResponse {
+  repeated OrgProfileFieldGrantResponse grants = 1;
+}

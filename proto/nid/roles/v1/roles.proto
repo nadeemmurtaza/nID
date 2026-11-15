@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package newax.roles.v1;
+
+service RolesApiService {
+  rpc CreateRole(CreateRoleRequest) returns (RoleResponse);
+  rpc ListRoles(ListRolesRequest) returns (RoleListResponse);
+  rpc GetRole(GetRoleRequest) returns (RoleResponse);
+  rpc UpdateRole(UpdateRoleRequest) returns (RoleResponse);
+  rpc DeleteRole(DeleteRoleRequest) returns (Empty);
+  rpc AssignRole(AssignRoleRpcRequest) returns (RoleAssignmentResponse);
+  rpc RemoveRoleAssignment(RemoveRoleAssignmentRequest) returns (Empty);
+  rpc GetAccountRoles(GetAccountRolesRequest) returns (RoleAssignmentListResponse);
+}
+
+message Empty {}
+
+message CreateRoleRequest {
+  string account_id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  string slug = 4;
+  string permissions_json = 5;
+  optional string description = 6;
+}
+
+message ListRolesRequest {
+  string account_id = 1;
+  string tenant_id = 2;
+}
+
+message GetRoleRequest {
+  string account_id = 1;
+  string tenant_id = 2;
+  string role_id = 3;
+}
+
+message UpdateRoleRequest {
+  string account_id = 1;
+  string tenant_id = 2;
+  string role_id = 3;
+  optional string name = 4;
+  optional string permissions_json = 5;
+  optional string description = 6;
+}
+
+message DeleteRoleRequest {
+  string account_id = 1;
+  string tenant_id = 2;
+  string role_id = 3;
+}
+
+message AssignRoleRpcRequest {
+  string account_id = 1;
+  string tenant_id = 2;
+  string role_id = 3;
+  string target_account_id = 4;
+  optional string organization_id = 5;
+  optional string brand_id = 6;
+  optional string scope = 7;
+}
+
+message RemoveRoleAssignmentRequest {
+  string caller_account_id = 1;
+  string tenant_id = 2;
+  string role_id = 3;
+  string account_id = 4;
+}
+
+message GetAccountRolesRequest {
+  string caller_account_id = 1;
+  string tenant_id = 2;
+  string account_id = 3;
+}
+
+message RoleResponse {
+  string id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  string slug = 4;
+  string permissions_json = 5;
+  optional string description = 6;
+  bool is_system = 7;
+  string created_at = 8;
+  string updated_at = 9;
+}
+
+message RoleListResponse {
+  repeated RoleResponse roles = 1;
+}
+
+message RoleAssignmentResponse {
+  string id = 1;
+  string account_id = 2;
+  string role_definition_id = 3;
+  string tenant_id = 4;
+  optional string organization_id = 5;
+  optional string brand_id = 6;
+  string scope = 7;
+  string created_at = 8;
+}
+
+message RoleAssignmentListResponse {
+  repeated RoleAssignmentResponse assignments = 1;
+}
