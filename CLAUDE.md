@@ -36,3 +36,11 @@ more, plus a "teach by doing, not by lecturing" product rule — 31
 rules total, identical across every NEWAX repo). These bind
 every UI surface in this repo with no exceptions; read that section
 before building or editing any UI.
+
+See `UX_UI_RULES.md` for the 20 binding rules on how motion,
+feedback, and layout should actually behave (Disney's 12 animation
+principles adapted for interfaces, plus Fitts's/Hick's/Miller's/
+Doherty/Postel's/Jakob's laws and hit-area/frequency-of-use rules) —
+identical across every NEWAX repo, same binding status as
+`CONVENTIONS.md`. Read it before building or editing any interactive
+UI, alongside the anti-patterns section above.
