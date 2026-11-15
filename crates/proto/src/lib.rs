@@ -27,3 +27,9 @@ pub mod subjects {
         tonic::include_proto!("newax.subjects.v1");
     }
 }
+
+pub mod invitations {
+    pub mod v1 {
+        tonic::include_proto!("newax.invitations.v1");
+    }
+}

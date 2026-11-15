@@ -1205,6 +1205,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "newax-invitations"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "sqlx",
+]
+
+[[package]]
 name = "newax-permissions"
 version = "0.1.0"
 dependencies = [
@@ -2251,6 +2261,22 @@ dependencies = [
  "newax-departments",
  "prost",
  "serde_json",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "svc-invitations"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "newax-invitations",
+ "prost",
  "sqlx",
  "tokio",
  "tonic",
