@@ -8,6 +8,7 @@ name = "svc-booking"
 path = "src/main.rs"
 
 [dependencies]
+nid-service-auth = { path = "../../crates/service-auth" }
 newax-booking = { path = "../../crates/booking" }
 tonic = "0.12"
 prost = "0.13"

@@ -8,6 +8,7 @@ name = "svc-invitations"
 path = "src/main.rs"
 
 [dependencies]
+nid-service-auth = { path = "../../crates/service-auth" }
 newax-invitations = { path = "../../crates/invitations" }
 tonic = "0.12"
 prost = "0.13"

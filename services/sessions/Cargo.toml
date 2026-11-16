@@ -8,6 +8,7 @@ name = "svc-sessions"
 path = "src/main.rs"
 
 [dependencies]
+nid-service-auth = { path = "../../crates/service-auth" }
 newax-sessions = { path = "../../crates/sessions" }
 tonic = "0.12"
 prost = "0.13"

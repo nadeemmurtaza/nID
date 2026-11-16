@@ -1479,6 +1479,7 @@ dependencies = [
  "multer",
  "newax-proto",
  "nid-db-schema",
+ "nid-service-auth",
  "nid-shared-types",
  "nid-storage",
  "once_cell",
@@ -1517,6 +1518,16 @@ name = "nid-db-schema"
 version = "0.1.0"
 dependencies = [
  "sqlx",
+]
+
+[[package]]
+name = "nid-service-auth"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "once_cell",
+ "tonic 0.12.3",
+ "tracing",
 ]
 
 [[package]]
@@ -2056,12 +2067,22 @@ version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
+ "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "rustls-pemfile"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dce314e5fee3f39953d46bb63bb8a46d40c2f8fb7cc5a3b6cab2bde9721d6e50"
+dependencies = [
+ "rustls-pki-types",
 ]
 
 [[package]]
@@ -2550,6 +2571,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-access",
+ "nid-service-auth",
  "prost",
  "sqlx",
  "tokio",
@@ -2566,6 +2588,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-account-verification",
+ "nid-service-auth",
  "prost",
  "sqlx",
  "tokio",
@@ -2582,6 +2605,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-accounts",
+ "nid-service-auth",
  "prost",
  "sqlx",
  "tokio",
@@ -2598,6 +2622,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-booking",
+ "nid-service-auth",
  "prost",
  "sqlx",
  "tokio",
@@ -2614,6 +2639,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-departments",
+ "nid-service-auth",
  "prost",
  "serde_json",
  "sqlx",
@@ -2631,6 +2657,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-invitations",
+ "nid-service-auth",
  "prost",
  "sqlx",
  "tokio",
@@ -2647,6 +2674,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-oauth",
+ "nid-service-auth",
  "prost",
  "sqlx",
  "tokio",
@@ -2663,6 +2691,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-organization-profiles",
+ "nid-service-auth",
  "prost",
  "sqlx",
  "tokio",
@@ -2679,6 +2708,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-organizations",
+ "nid-service-auth",
  "prost",
  "sqlx",
  "tokio",
@@ -2695,6 +2725,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-permissions",
+ "nid-service-auth",
  "prost",
  "sqlx",
  "tokio",
@@ -2711,6 +2742,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-profile-content",
+ "nid-service-auth",
  "nid-storage",
  "prost",
  "sqlx",
@@ -2728,6 +2760,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-roles",
+ "nid-service-auth",
  "prost",
  "serde_json",
  "sqlx",
@@ -2745,6 +2778,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-sessions",
+ "nid-service-auth",
  "nid-storage",
  "prost",
  "sqlx",
@@ -2762,6 +2796,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-subjects",
+ "nid-service-auth",
  "prost",
  "sqlx",
  "tokio",
@@ -2778,6 +2813,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-tenant-staff",
+ "nid-service-auth",
  "prost",
  "sqlx",
  "tokio",
@@ -2794,6 +2830,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-tenants",
+ "nid-service-auth",
  "prost",
  "sqlx",
  "tokio",
@@ -2810,6 +2847,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-verification-cases",
+ "nid-service-auth",
  "prost",
  "serde_json",
  "sqlx",
@@ -2966,6 +3004,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-rustls"
+version = "0.26.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9cc2678c2cdd569ef8215e2afd7954ada2ae20b4fdd2c5fe6139a3b02d105db"
+dependencies = [
+ "rustls",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-stream"
 version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3011,8 +3059,10 @@ dependencies = [
  "percent-encoding",
  "pin-project",
  "prost",
+ "rustls-pemfile",
  "socket2 0.5.10",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
  "tower 0.4.13",
  "tower-layer",

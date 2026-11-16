@@ -1,0 +1,11 @@
+[package]
+name = "nid-service-auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tonic = { version = "0.12", features = ["tls"] }
+once_cell = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }

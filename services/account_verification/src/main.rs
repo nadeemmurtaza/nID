@@ -100,8 +100,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grpc = Grpc { service: AccountVerificationService::new(pool) };
 
     info!(port, "svc-account-verification starting (gRPC)");
-    Server::builder()
-        .add_service(AccountVerificationServiceServer::new(grpc))
+    nid_service_auth::server_builder()?
+        .add_service(AccountVerificationServiceServer::with_interceptor(grpc, nid_service_auth::ServerAuth::from_env(&bind)?))
         .serve(addr)
         .await?;
     Ok(())

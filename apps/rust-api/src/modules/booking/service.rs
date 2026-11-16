@@ -75,10 +75,11 @@ fn free_slot_from_proto(p: ProtoFreeSlot) -> FreeSlotResponse {
     }
 }
 
-async fn client() -> Result<BookingApiServiceClient<tonic::transport::Channel>> {
+async fn client() -> Result<BookingApiServiceClient<nid_service_auth::AuthedChannel>> {
     let url = std::env::var("BOOKING_SERVICE_URL").unwrap_or_else(|_| "http://127.0.0.1:50083".to_string());
-    BookingApiServiceClient::connect(url)
+    nid_service_auth::connect(url)
         .await
+        .map(BookingApiServiceClient::new)
         .map_err(|e| anyhow!("booking service unreachable: {e}"))
 }
 

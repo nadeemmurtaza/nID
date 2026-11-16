@@ -91,8 +91,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grpc = PermissionsGrpc { service: PermissionsService::new(pool) };
 
     info!(port, "svc-permissions starting (gRPC)");
-    Server::builder()
-        .add_service(PermissionsServiceServer::new(grpc))
+    nid_service_auth::server_builder()?
+        .add_service(PermissionsServiceServer::with_interceptor(grpc, nid_service_auth::ServerAuth::from_env(&bind)?))
         .serve(addr)
         .await?;
     Ok(())

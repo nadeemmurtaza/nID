@@ -76,9 +76,9 @@ fn attribute_badges_from_proto(b: newax_proto::subjects::v1::AttributeBadgesResp
     }
 }
 
-async fn client() -> Result<SubjectsServiceClient<tonic::transport::Channel>> {
+async fn client() -> Result<SubjectsServiceClient<nid_service_auth::AuthedChannel>> {
     let url = std::env::var("SUBJECTS_SERVICE_URL").unwrap_or_else(|_| "http://127.0.0.1:50077".to_string());
-    SubjectsServiceClient::connect(url).await.map_err(|e| anyhow!("subjects service unreachable: {e}"))
+    nid_service_auth::connect(url).await.map(SubjectsServiceClient::new).map_err(|e| anyhow!("subjects service unreachable: {e}"))
 }
 
 impl SubjectsService {

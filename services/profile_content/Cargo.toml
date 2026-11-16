@@ -8,6 +8,7 @@ name = "svc-profile-content"
 path = "src/main.rs"
 
 [dependencies]
+nid-service-auth = { path = "../../crates/service-auth" }
 nid-storage = { path = "../../crates/storage" }
 newax-profile-content = { path = "../../crates/profile_content" }
 tonic = "0.12"

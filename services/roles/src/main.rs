@@ -142,8 +142,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grpc = RolesGrpc { service: RolesService::new(pool) };
 
     info!(port, "svc-roles starting (gRPC)");
-    Server::builder()
-        .add_service(RolesApiServiceServer::new(grpc))
+    nid_service_auth::server_builder()?
+        .add_service(RolesApiServiceServer::with_interceptor(grpc, nid_service_auth::ServerAuth::from_env(&bind)?))
         .serve(addr)
         .await?;
     Ok(())

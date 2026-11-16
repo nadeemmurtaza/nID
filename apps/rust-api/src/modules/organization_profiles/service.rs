@@ -82,11 +82,12 @@ impl OrganizationProfilesService {
         }
     }
 
-    async fn client() -> Result<OrganizationProfilesApiServiceClient<tonic::transport::Channel>> {
+    async fn client() -> Result<OrganizationProfilesApiServiceClient<nid_service_auth::AuthedChannel>> {
         let url = std::env::var("ORG_PROFILES_SERVICE_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:50084".to_string());
-        OrganizationProfilesApiServiceClient::connect(url)
+        nid_service_auth::connect(url)
             .await
+            .map(OrganizationProfilesApiServiceClient::new)
             .map_err(|e| anyhow!("organization_profiles service unreachable: {e}"))
     }
 

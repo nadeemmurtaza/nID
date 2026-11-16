@@ -168,8 +168,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grpc = AccountsGrpc { service: AccountsService::new(pool), otp_sms_dev_mode };
 
     info!(port, "svc-accounts starting (gRPC)");
-    Server::builder()
-        .add_service(AccountsApiServiceServer::new(grpc))
+    nid_service_auth::server_builder()?
+        .add_service(AccountsApiServiceServer::with_interceptor(grpc, nid_service_auth::ServerAuth::from_env(&bind)?))
         .serve(addr)
         .await?;
     Ok(())

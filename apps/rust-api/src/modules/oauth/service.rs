@@ -38,10 +38,11 @@ fn token_from_proto(p: ProtoTokenResponse) -> TokenResponse {
     }
 }
 
-async fn client() -> Result<OAuthApiServiceClient<tonic::transport::Channel>> {
+async fn client() -> Result<OAuthApiServiceClient<nid_service_auth::AuthedChannel>> {
     let url = std::env::var("OAUTH_SERVICE_URL").unwrap_or_else(|_| "http://127.0.0.1:50080".to_string());
-    OAuthApiServiceClient::connect(url)
+    nid_service_auth::connect(url)
         .await
+        .map(OAuthApiServiceClient::new)
         .map_err(|e| anyhow!("oauth service unreachable: {e}"))
 }
 

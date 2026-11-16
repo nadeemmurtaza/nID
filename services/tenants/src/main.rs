@@ -332,8 +332,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     info!(port, "svc-tenants starting (gRPC)");
-    Server::builder()
-        .add_service(TenantsApiServiceServer::new(grpc))
+    nid_service_auth::server_builder()?
+        .add_service(TenantsApiServiceServer::with_interceptor(grpc, nid_service_auth::ServerAuth::from_env(&bind)?))
         .serve(addr)
         .await?;
     Ok(())

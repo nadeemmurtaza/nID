@@ -157,6 +157,12 @@ pub fn http_error(err: anyhow::Error) -> (axum::http::StatusCode, axum::Json<ser
         return (StatusCode::BAD_REQUEST, axum::Json(serde_json::json!({ "message": "One of the submitted values is not allowed" })));
     }
 
+    // A downstream service that cannot be reached is a temporary outage.
+    if lower.contains("transport error") || lower.contains("connection refused") || lower.contains("unreachable") || lower.contains("deadline has elapsed") || lower.contains("timed out") || lower.contains("certificate") || lower.contains("handshake") {
+        tracing::error!(error = %raw, "Downstream service unavailable");
+        return (StatusCode::SERVICE_UNAVAILABLE, axum::Json(serde_json::json!({ "message": "Service temporarily unavailable" })));
+    }
+
     if lower.contains("not available yet") {
         return (StatusCode::NOT_IMPLEMENTED, axum::Json(serde_json::json!({ "message": msg })));
     }
@@ -169,6 +175,7 @@ pub fn http_error(err: anyhow::Error) -> (axum::http::StatusCode, axum::Json<ser
             "AlreadyExists" => StatusCode::CONFLICT,
             "InvalidArgument" | "FailedPrecondition" | "OutOfRange" => StatusCode::BAD_REQUEST,
             "PermissionDenied" => StatusCode::FORBIDDEN,
+            "Unauthenticated" if lower.contains("service credentials") => StatusCode::INTERNAL_SERVER_ERROR,
             "Unauthenticated" => StatusCode::UNAUTHORIZED,
             _ if lower.contains("not found") || lower.contains("no subject found") || lower.contains("no published profile") => StatusCode::NOT_FOUND,
             _ if lower.contains("already exists") || lower.contains("already ") => StatusCode::CONFLICT,

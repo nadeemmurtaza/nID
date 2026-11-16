@@ -131,6 +131,12 @@ ok "its profile is gone" "$(sql "select count(*) from \"Profile\" where \"accoun
 ok "old session is rejected" "$(code "$API/v1/accounts/me" -H "Authorization: Bearer $S2")" 401
 
 echo "== platform"
+if [ -n "${SERVICE_AUTH_TOKEN:-}" ]; then
+  grpc_status() { printf '\0\0\0\0\0' | curl -s -m 5 --http2-prior-knowledge -D - -o /dev/null -X POST "http://127.0.0.1:${ACCOUNTS_PORT:-50081}/newax.accounts.v1.AccountsApiService/RevokeAllSessions" -H "content-type: application/grpc" -H "te: trailers" "$@" --data-binary @- | tr -d '\r' | grep -i '^grpc-status' | awk '{print $2}'; }
+  ok "service rejects a call with no token" "$(grpc_status)" 16
+  ok "service rejects a wrong token" "$(grpc_status -H 'authorization: Bearer wrong')" 16
+  ok "service accepts the shared token" "$(grpc_status -H "authorization: Bearer $SERVICE_AUTH_TOKEN")" 0
+fi
 ok "health is database-aware" "$(code "$API/health")" 200
 ok "CORS: disallowed origin gets no allow-origin" "$(curl -s -m 5 -D - -o /dev/null -X OPTIONS "$API/v1/accounts/otp/start" -H "Origin: https://evil.example" -H "Access-Control-Request-Method: POST" | grep -ci '^access-control-allow-origin')" 0
 ok "append-only audit log (UPDATE denied to app role)" "$(PGPASSWORD=nid_app psql "${DB/nid:nid@/nid_app:nid_app@}" -tAc 'update "AuditLogEntry" set id=id where false' 2>&1 | grep -c 'permission denied')" 1

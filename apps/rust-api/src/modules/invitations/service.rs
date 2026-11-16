@@ -41,9 +41,9 @@ fn invite_from_proto(i: newax_proto::invitations::v1::InvitationResponse) -> Inv
     }
 }
 
-async fn client() -> Result<InvitationsServiceClient<tonic::transport::Channel>> {
+async fn client() -> Result<InvitationsServiceClient<nid_service_auth::AuthedChannel>> {
     let url = std::env::var("INVITATIONS_SERVICE_URL").unwrap_or_else(|_| "http://127.0.0.1:50079".to_string());
-    InvitationsServiceClient::connect(url).await.map_err(|e| anyhow!("invitations service unreachable: {e}"))
+    nid_service_auth::connect(url).await.map(InvitationsServiceClient::new).map_err(|e| anyhow!("invitations service unreachable: {e}"))
 }
 
 impl InvitationsService {

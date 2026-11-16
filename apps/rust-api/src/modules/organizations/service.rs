@@ -67,11 +67,12 @@ fn bo_from_proto(p: ProtoBeneficialOwnerResponse) -> BeneficialOwnerResponse {
     }
 }
 
-async fn client() -> Result<OrganizationsApiServiceClient<tonic::transport::Channel>> {
+async fn client() -> Result<OrganizationsApiServiceClient<nid_service_auth::AuthedChannel>> {
     let url = std::env::var("ORGANIZATIONS_SERVICE_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:50087".to_string());
-    OrganizationsApiServiceClient::connect(url)
+    nid_service_auth::connect(url)
         .await
+        .map(OrganizationsApiServiceClient::new)
         .map_err(|e| anyhow!("organizations service unreachable: {e}"))
 }
 

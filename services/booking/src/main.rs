@@ -199,8 +199,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grpc = BookingGrpc { service: BookingService::new(pool) };
 
     info!(port, "svc-booking starting (gRPC)");
-    Server::builder()
-        .add_service(BookingApiServiceServer::new(grpc))
+    nid_service_auth::server_builder()?
+        .add_service(BookingApiServiceServer::with_interceptor(grpc, nid_service_auth::ServerAuth::from_env(&bind)?))
         .serve(addr)
         .await?;
     Ok(())

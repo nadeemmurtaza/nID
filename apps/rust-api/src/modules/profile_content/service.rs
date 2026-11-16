@@ -51,11 +51,12 @@ mod inner {
     };
     use crate::core::upload::UploadedFile;
 
-    async fn client() -> Result<ProfileContentApiServiceClient<tonic::transport::Channel>> {
+    async fn client() -> Result<ProfileContentApiServiceClient<nid_service_auth::AuthedChannel>> {
         let url = std::env::var("PROFILE_CONTENT_SERVICE_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:50090".to_string());
-        ProfileContentApiServiceClient::connect(url)
+        nid_service_auth::connect(url)
             .await
+            .map(ProfileContentApiServiceClient::new)
             .map_err(|e| anyhow!("profile-content service unreachable: {e}"))
     }
 

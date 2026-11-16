@@ -30,9 +30,9 @@ fn from_proto(s: newax_proto::tenant_staff::v1::StaffMember) -> StaffMemberRespo
     }
 }
 
-async fn client() -> Result<TenantStaffServiceClient<tonic::transport::Channel>> {
+async fn client() -> Result<TenantStaffServiceClient<nid_service_auth::AuthedChannel>> {
     let url = std::env::var("TENANT_STAFF_SERVICE_URL").unwrap_or_else(|_| "http://127.0.0.1:50072".to_string());
-    TenantStaffServiceClient::connect(url).await.map_err(|e| anyhow!("tenant-staff service unreachable: {e}"))
+    nid_service_auth::connect(url).await.map(TenantStaffServiceClient::new).map_err(|e| anyhow!("tenant-staff service unreachable: {e}"))
 }
 
 impl TenantStaffService {

@@ -130,11 +130,12 @@ fn staff_from_proto(p: ProtoStaffMemberResponse) -> StaffMemberResponse {
     }
 }
 
-async fn client() -> Result<TenantsApiServiceClient<tonic::transport::Channel>> {
+async fn client() -> Result<TenantsApiServiceClient<nid_service_auth::AuthedChannel>> {
     let url = std::env::var("TENANTS_SERVICE_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:50089".to_string());
-    TenantsApiServiceClient::connect(url)
+    nid_service_auth::connect(url)
         .await
+        .map(TenantsApiServiceClient::new)
         .map_err(|e| anyhow!("tenants service unreachable: {e}"))
 }
 

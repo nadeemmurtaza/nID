@@ -75,8 +75,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grpc = Grpc { service: TenantStaffService::new(pool) };
 
     info!(port, "svc-tenant-staff starting (gRPC)");
-    Server::builder()
-        .add_service(TenantStaffServiceServer::new(grpc))
+    nid_service_auth::server_builder()?
+        .add_service(TenantStaffServiceServer::with_interceptor(grpc, nid_service_auth::ServerAuth::from_env(&bind)?))
         .serve(addr)
         .await?;
     Ok(())

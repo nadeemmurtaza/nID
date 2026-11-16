@@ -33,10 +33,11 @@ fn account_from_proto(p: ProtoAccountResponse) -> AccountResponse {
     }
 }
 
-async fn client() -> Result<AccountsApiServiceClient<tonic::transport::Channel>> {
+async fn client() -> Result<AccountsApiServiceClient<nid_service_auth::AuthedChannel>> {
     let url = std::env::var("ACCOUNTS_SERVICE_URL").unwrap_or_else(|_| "http://127.0.0.1:50081".to_string());
-    AccountsApiServiceClient::connect(url)
+    nid_service_auth::connect(url)
         .await
+        .map(AccountsApiServiceClient::new)
         .map_err(|e| anyhow!("accounts service unreachable: {e}"))
 }
 
