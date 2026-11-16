@@ -24,6 +24,7 @@ pub enum AccessGrantStatus {
 /// Request body for POST /v1/access/grant
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateGrantRequest {
     pub account_id: String,
     #[serde(default)]
@@ -38,6 +39,7 @@ pub struct CreateGrantRequest {
 /// Request body for PATCH /v1/access/grant/:id
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UpdateGrantRequest {
     #[serde(default)]
     pub access_type: Option<AccessType>,
@@ -50,6 +52,7 @@ pub struct UpdateGrantRequest {
 /// Request body for POST /v1/access/transfer-ownership
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct TransferOwnershipRequest {
     pub new_owner_id: String,
     #[serde(default)]
@@ -61,6 +64,7 @@ pub struct TransferOwnershipRequest {
 /// Request body for POST /v1/access/partner
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct AddPartnerRequest {
     pub account_id: String,
     pub percentage: f64,

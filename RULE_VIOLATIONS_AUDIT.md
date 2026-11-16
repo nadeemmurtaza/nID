@@ -241,6 +241,29 @@ Added in the second round (same verification):
   not contain the secret, the plaintext columns are gone, and an empty
   database bootstraps (`scripts/e2e-smoke.sh`, 101 checks).
 
+- **Rate limits at every scope, shared across instances** (S5, PR7): counters
+  live in Redis (`crates/rate-limit`, sliding window, one atomic Lua script),
+  so every instance enforces one limit; an unreachable store falls back to an
+  in-process counter, never to no limit, and production refuses to start
+  without `REDIS_URL`. Scopes: whole service, per IP, per route class
+  (sign-in, OTP and OAuth 10 a minute and 60 an hour; writes; uploads), per
+  phone number for OTP start and verify, per API key, per tenant across all
+  its keys, per account, and a lockout after repeated 401/403 or malformed
+  requests. Forwarding headers are trusted only for `TRUSTED_PROXY_HOPS`.
+  Proved with two live instances (`scripts/limits-smoke.sh`, 5 checks).
+- **Every input validated, server and browser** (S6): a gate in front of every
+  route (`core/validation.rs`) checks path segments, query strings and JSON
+  bodies before any handler: size, depth, node and array limits, field-name
+  charset, no control, zero-width or direction-override characters, no HTML
+  tags in short text, and type rules for phone, email, slug, username,
+  country, currency, colour, time zone, ids, URLs (no credentials; public
+  https for webhooks in production), coordinates and ranges. Request DTOs
+  reject unknown fields (68 structs). A wrong content type is refused. In the
+  browser `@newax/design-tokens/formGuard` blocks submit, button saves and
+  file choices until every field passes, with the reason beside the field
+  (`scripts/ui-smoke-validation.js`, 10 checks; 12 server checks in the e2e
+  suite, now 113).
+
 ### Still open: security and core function
 
 1. **Legal and business content** (C1, C2, C11, C15; deliberately not
@@ -260,8 +283,9 @@ Added in the second round (same verification):
 4. **Audit coverage** (S20): departments, invitations, access-grant changes,
    brands and booking are not audited (api keys, staff, roles and tenant
    changes are). Account deletion is logged to the application log only.
-5. **Validation** (S6) beyond profile content: the `validator` crate is
-   unused elsewhere.
+5. **Validation**: rules are by field name plus a strict default, not a
+   hand-written schema per DTO, so a new field with an unusual name gets the
+   default (2000 characters, no control characters) until a rule is added.
 6. **Services accept any caller that holds the shared token.** That is
    service-level authentication, not per-user: a compromised service or the
    token still grants everything its role can do. mTLS with per-service

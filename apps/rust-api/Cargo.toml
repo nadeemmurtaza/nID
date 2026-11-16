@@ -33,11 +33,15 @@ tracing-subscriber = { workspace = true }
 dotenvy = { workspace = true }
 validator = { workspace = true }
 once_cell = { workspace = true }
+url = "2"
+regex = "1"
+urlencoding = "2"
 mime = { workspace = true }
 multer = "3"
 
 # Local crates
 nid-shared-types = { path = "../../crates/shared-types" }
+nid-rate-limit = { path = "../../crates/rate-limit" }
 nid-storage = { path = "../../crates/storage" }
 nid-db-schema = { path = "../../crates/db-schema" }
 nid-service-auth = { path = "../../crates/service-auth" }

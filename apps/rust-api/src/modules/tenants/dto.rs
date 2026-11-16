@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Request body for POST /v1/tenants
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateTenantRequest {
     pub name: String,
     pub slug: String,
@@ -21,6 +22,7 @@ pub struct CreateTenantRequest {
 /// Request body for PUT /v1/tenants/:id
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UpdateTenantRequest {
     #[serde(default)]
     pub name: Option<String>,
@@ -35,6 +37,7 @@ pub struct UpdateTenantRequest {
 /// Request body for POST /v1/tenants/:id/api-keys
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateApiKeyRequest {
     #[serde(default)]
     pub key_prefix: Option<String>,
@@ -47,6 +50,7 @@ pub struct CreateApiKeyRequest {
 /// Request body for POST /v1/tenants/:id/staff
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct InviteStaffRequest {
     pub account_id: String,
     #[serde(default = "default_staff_role")]

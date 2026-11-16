@@ -24,6 +24,7 @@ pub async fn start_otp(
     State(state): State<Arc<AccountsState>>,
     Json(req): Json<StartOtpRequest>,
 ) -> Result<Json<AcceptedResponse>, (StatusCode, Json<serde_json::Value>)> {
+    crate::core::limits::phone_guard(&req.phone, "start").await?;
     state
         .service
         .start_otp(&req.phone)
@@ -37,6 +38,7 @@ pub async fn verify_otp(
     State(state): State<Arc<AccountsState>>,
     Json(req): Json<VerifyOtpRequest>,
 ) -> Result<Json<VerifyOtpResponse>, (StatusCode, Json<serde_json::Value>)> {
+    crate::core::limits::phone_guard(&req.phone, "verify").await?;
     let response = state
         .service
         .verify_otp(&req.phone, &req.code)

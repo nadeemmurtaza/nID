@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateLoginRequestDto {
     pub client_id: String,
     pub redirect_uri: String,
@@ -13,6 +14,7 @@ pub struct CreateLoginRequestDto {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct TokenExchangeDto {
     pub code: String,
     pub client_id: String,

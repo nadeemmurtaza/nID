@@ -22,6 +22,7 @@ pub struct DepartmentsState {
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct DepartmentsQuery {
     #[serde(default)]
     pub tenant_id: String,

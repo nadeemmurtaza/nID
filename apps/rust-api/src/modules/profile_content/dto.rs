@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateOfferRequest {
     pub title: String,
     #[serde(default)]
@@ -16,6 +17,7 @@ pub struct CreateOfferRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UpdateOfferRequest {
     #[serde(default)]
     pub title: Option<String>,
@@ -29,6 +31,7 @@ pub struct UpdateOfferRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UpsertBusinessHourRequest {
     #[serde(default)]
     pub open_minute: Option<i32>,
@@ -40,6 +43,7 @@ pub struct UpsertBusinessHourRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateCustomLinkRequest {
     pub label: String,
     pub url: String,
@@ -49,6 +53,7 @@ pub struct CreateCustomLinkRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateSocialLinkRequest {
     pub platform: String,
     pub url: String,
@@ -58,6 +63,7 @@ pub struct CreateSocialLinkRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UpdateCustomLinkRequest {
     #[serde(default)]
     pub label: Option<String>,
@@ -69,6 +75,7 @@ pub struct UpdateCustomLinkRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UpdateSocialLinkRequest {
     #[serde(default)]
     pub platform: Option<String>,
@@ -80,6 +87,7 @@ pub struct UpdateSocialLinkRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UploadProfileImageRequest {
     #[serde(default)]
     pub kind: Option<String>,
@@ -98,6 +106,7 @@ pub struct ProfileImageResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateContactMessageRequest {
     pub sender_name: String,
     #[serde(default)]

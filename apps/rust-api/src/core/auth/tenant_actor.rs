@@ -84,7 +84,9 @@ where
                     return Err(err(StatusCode::FORBIDDEN, &format!("This API key lacks the '{required}' scope.")));
                 }
             }
-            if !crate::core::auth::api_key::within_rate_limit(&key_id, row.get("rate_limit_per_minute")) {
+            if !crate::core::limits::within_key_quota(&key_id, row.get("rate_limit_per_minute")).await
+                || !crate::core::limits::within_tenant_quota(&row.get::<String, _>("tenant_id")).await
+            {
                 return Err(err(StatusCode::TOO_MANY_REQUESTS, "API key rate limit exceeded."));
             }
             return Ok(AuthenticatedActor {

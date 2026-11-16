@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateServiceRequest {
     pub name: String,
     pub duration_minutes: i32,
@@ -20,6 +21,7 @@ pub struct CreateServiceRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UpdateServiceRequest {
     #[serde(default)]
     pub name: Option<String>,
@@ -37,6 +39,7 @@ pub struct UpdateServiceRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateAvailabilityRuleRequest {
     pub day: String,
     pub start_minute: i32,
@@ -47,6 +50,7 @@ pub struct CreateAvailabilityRuleRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UpdateAvailabilityRuleRequest {
     #[serde(default)]
     pub day: Option<String>,
@@ -60,6 +64,7 @@ pub struct UpdateAvailabilityRuleRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateAppointmentRequest {
     pub service_id: String,
     pub starts_at: String,
@@ -74,6 +79,7 @@ pub struct CreateAppointmentRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct AvailabilityQueryRequest {
     pub service_id: String,
     pub from: String,
