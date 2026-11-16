@@ -29,5 +29,11 @@ for i in $(seq 1 6); do curl -s -o /dev/null "localhost:$((4100 + i % 2))/v1/acc
 ok "repeated failed auth locks the address out on BOTH instances" "$(curl -s -o /dev/null -w '%{http_code}' localhost:4100/v1/accounts/me)$(curl -s -o /dev/null -w '%{http_code}' localhost:4101/v1/profiles/x)" 429429
 ok "health stays reachable during a lockout" "$(curl -s -o /dev/null -w '%{http_code}' localhost:4100/health)" 200
 
+# Tier-1 fallback: with Redis gone the in-process (moka) counters still enforce.
+redis-cli -u "$REDIS_URL" shutdown nosave >/dev/null 2>&1; sleep 1
+allowed=0; for i in $(seq 1 14); do c=$(post 4100 /v1/accounts/otp/verify '{"phone":"+15550009","code":"123456"}'); [ "$c" != 429 ] && allowed=$((allowed+1)); done
+ok "with Redis down the in-process limiter still enforces (never fails open)" "$([ "$allowed" -le 10 ] && [ "$allowed" -ge 1 ] && echo y)" y
+redis-server --port 6379 --save "" --appendonly no --daemonize yes >/dev/null 2>&1
+
 pkill -f "debug/nid-api" 2>/dev/null
 echo; echo "$PASS passed, $FAIL failed"; [ "$FAIL" -eq 0 ]

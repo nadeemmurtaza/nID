@@ -167,7 +167,14 @@ Honest status against the plan above, not papered over:
   depends on Temporal (`@temporalio/core-bridge`). This was never
   part of the ecosystem tech-stack plan — recorded here as a factual
   correction, not a recommendation to change it.
-- **Cache: not implemented.** No `moka`, no Redis, in this repo today.
+- **Cache: partly implemented, for rate limiting only.** Tier 1 (`moka`,
+  in-process) and tier 2 (Redis, shared) both exist, in `crates/rate-limit`,
+  used by the rate limiter and nothing else. Redis is required in
+  production (`REDIS_URL`) because limits must agree across instances; in
+  development, or if Redis is unreachable, the same limits run from `moka`
+  per instance and never fail open. Application data (session lookups,
+  tenant and profile reads) is still uncached; adding that is a separate
+  step, `moka` first per the plan above.
 - **Frontend: not compliant, and not a quick fix.** All four apps
   (`dashboard`, `login-ui`, `profile-ui`, `verify-ui`) are Next.js/
   React, not Svelte, and talk REST, not Connect. These are real,
