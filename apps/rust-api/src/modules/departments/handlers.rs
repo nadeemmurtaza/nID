@@ -122,22 +122,9 @@ pub async fn get_account_departments(
 }
 
 fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
-    let msg = err.to_string();
-    let status = if msg.contains("already") {
-        StatusCode::CONFLICT
-    } else if msg.contains("Only tenant owners") || msg.contains("do not have access") {
-        StatusCode::FORBIDDEN
-    } else {
-        tracing::error!(error = %err, "Internal error");
-        StatusCode::INTERNAL_SERVER_ERROR
-    };
-    (status, Json(serde_json::json!({ "message": msg })))
+    crate::core::error::http_error(err)
 }
 
 fn not_found(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
-    if err.to_string().contains("not found") {
-        (StatusCode::NOT_FOUND, Json(serde_json::json!({ "message": err.to_string() })))
-    } else {
-        internal_error(err)
-    }
+    crate::core::error::http_error(err)
 }

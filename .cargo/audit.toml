@@ -1,0 +1,9 @@
+[advisories]
+# Both crates appear in Cargo.lock only because sqlx-macros-core lists every
+# sqlx driver. `cargo tree -i <crate>` finds neither in the compiled graph
+# (this workspace enables only sqlx's postgres driver), so neither is built
+# or reachable. Re-check if sqlx features change.
+ignore = [
+  "RUSTSEC-2026-0459", # libsqlite3-sys: sqlite driver, not compiled
+  "RUSTSEC-2023-0071", # rsa: mysql driver, not compiled
+]

@@ -39,11 +39,5 @@ pub async fn list(
 }
 
 fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
-    tracing::error!(error = %err, "Internal error");
-    let status = if err.to_string().contains("already") {
-        StatusCode::CONFLICT
-    } else {
-        StatusCode::INTERNAL_SERVER_ERROR
-    };
-    (status, Json(serde_json::json!({ "message": err.to_string() })))
+    crate::core::error::http_error(err)
 }

@@ -159,23 +159,9 @@ pub async fn get_my_permissions(
 // ── Error helpers ──
 
 fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
-    tracing::error!(error = %err, "Internal error");
-    let status = if err.to_string().contains("already") || err.to_string().contains("Only tenant owners") {
-        if err.to_string().contains("already") {
-            StatusCode::CONFLICT
-        } else {
-            StatusCode::FORBIDDEN
-        }
-    } else {
-        StatusCode::INTERNAL_SERVER_ERROR
-    };
-    (status, Json(serde_json::json!({ "message": err.to_string() })))
+    crate::core::error::http_error(err)
 }
 
 fn not_found(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
-    if err.to_string().contains("not found") {
-        (StatusCode::NOT_FOUND, Json(serde_json::json!({ "message": err.to_string() })))
-    } else {
-        internal_error(err)
-    }
+    crate::core::error::http_error(err)
 }

@@ -8,6 +8,24 @@ use anyhow::{anyhow, Result};
 use sqlx::{FromRow, PgPool, Row};
 use uuid::Uuid;
 
+/// Only http(s) links may be stored: these URLs are rendered as hrefs on
+/// public profiles, so `javascript:` and `data:` URLs would be stored XSS.
+fn validate_url(field: &str, url: &str) -> Result<()> {
+    let u = url.trim();
+    if u.len() > 2048 || !(u.starts_with("https://") || u.starts_with("http://")) {
+        return Err(anyhow!("{field} must be an http(s) URL of at most 2048 characters"));
+    }
+    Ok(())
+}
+
+fn validate_len(field: &str, v: &str, min: usize, max: usize) -> Result<()> {
+    let n = v.trim().chars().count();
+    if n < min || n > max {
+        return Err(anyhow!("{field} must be between {min} and {max} characters"));
+    }
+    Ok(())
+}
+
 // ── Row types ──
 
 #[derive(Debug, Clone, FromRow)]
@@ -372,6 +390,8 @@ impl ProfileContentService {
         account_id: &str,
         req: &CreateCustomLinkRequest,
     ) -> Result<CustomLinkResponse> {
+        validate_url("url", &req.url)?;
+        validate_len("label", &req.label, 1, 100)?;
         let profile_id = self.get_profile_id(account_id).await?;
 
         let link: (String, String, String, String, i32) = sqlx::query_as(
@@ -499,6 +519,9 @@ impl ProfileContentService {
         account_id: &str,
         req: &CreateSocialLinkRequest,
     ) -> Result<SocialLinkResponse> {
+        if let Some(u) = &req.url {
+            validate_url("url", u)?;
+        }
         let profile_id = self.get_profile_id(account_id).await?;
 
         let link: (String, String, String, String, Option<String>) = sqlx::query_as(
@@ -776,6 +799,11 @@ impl ProfileContentService {
         slug: &str,
         req: &CreateContactMessageRequest,
     ) -> Result<ContactMessageResponse> {
+        validate_len("name", &req.name, 1, 100)?;
+        validate_len("message", &req.message, 1, 5000)?;
+        if !req.email.contains('@') || req.email.len() > 254 {
+            return Err(anyhow!("email must be a valid address"));
+        }
         let profile_id = self.get_published_profile_id(slug).await?;
 
         let msg: (String, String, String, String, String, bool, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
