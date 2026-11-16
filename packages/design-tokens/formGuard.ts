@@ -8,7 +8,7 @@
  * including ones added later, so no form can be forgotten.
  */
 
-const BAD = /[\u202A-\u202E\u2066-\u2069\u200B-\u200F\uFEFF\u2028\u2029]/;
+const BAD = /[\u202A-\u202E\u2066-\u2069\u200B\uFEFF\u2028\u2029]/;
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 const CONTROL_NO_NL = /[\u0000-\u001F\u007F]/;
 const TAG = /<\s*\/?\s*[a-z!]/i;

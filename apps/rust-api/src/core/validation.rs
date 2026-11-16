@@ -68,12 +68,13 @@ fn snake(key: &str) -> String {
     out
 }
 
-/// Bidi overrides and zero-width characters are used to spoof text, so they
-/// are refused everywhere. Control characters are refused too, except
+/// Bidi overrides and the zero-width space are used to spoof text, so they are
+/// refused everywhere. ZWNJ and ZWJ (U+200C, U+200D) stay allowed: Persian,
+/// Urdu and emoji sequences need them. Control characters are refused too, except
 /// newline, carriage return and tab in long-text fields.
 fn bad_chars(s: &str, allow_newlines: bool) -> bool {
     s.chars().any(|c| {
-        matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{200B}'..='\u{200F}' | '\u{FEFF}' | '\u{2028}' | '\u{2029}')
+        matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{200B}' | '\u{FEFF}' | '\u{2028}' | '\u{2029}')
             || (c.is_control() && !(allow_newlines && matches!(c, '\n' | '\r' | '\t')))
     })
 }
@@ -373,6 +374,11 @@ mod tests {
         assert!(run(serde_json::json!({"phone":"+14155550123","email":"a@b.co","slug":"acme-pay","countryCode":"US","website":"https://example.com/x","latitude":51.5})).is_empty());
     }
     #[test]
+    fn keeps_persian_urdu_and_emoji_working() {
+        assert!(run(serde_json::json!({"name":"می\u{200C}خواهم","displayName":"اردو نام","bio":"family 👨\u{200D}👩\u{200D}👧"})).is_empty());
+    }
+
+    #[test]
     fn rejects_bad_input() {
         for (v, why) in [
             (serde_json::json!({"phone":"4155550123"}), "no plus"),
@@ -381,6 +387,7 @@ mod tests {
             (serde_json::json!({"countryCode":"usa"}), "cc"),
             (serde_json::json!({"name":"<script>alert(1)</script>"}), "tag"),
             (serde_json::json!({"name":"a\u{202E}b"}), "bidi"),
+            (serde_json::json!({"name":"a\u{200B}b"}), "zero-width space"),
             (serde_json::json!({"name":"a\u{0000}b"}), "nul"),
             (serde_json::json!({"website":"javascript:alert(1)"}), "scheme"),
             (serde_json::json!({"website":"https://u:p@example.com"}), "creds"),
