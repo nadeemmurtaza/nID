@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateOrganizationRequest {
     pub subject_id: String,
     pub legal_name: String,
@@ -17,6 +18,7 @@ pub struct CreateOrganizationRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UpdateOrganizationRequest {
     #[serde(default)]
     pub legal_name: Option<String>,
@@ -30,6 +32,7 @@ pub struct UpdateOrganizationRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct InviteMemberRequest {
     pub phone: String,
     #[serde(default)]

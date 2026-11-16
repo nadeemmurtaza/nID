@@ -1,4 +1,4 @@
-/** The nID mark — an "N" for the identity, a checkmark for "verified."
+/** The nID mark, an "N" for the identity, a checkmark for "verified."
  * Updated to match Communicator's Fin Orange accent (#ff5600) so the
  * identity provider shares the same visual language as the platform. */
 export function Logomark({ size = 32 }: { size?: number }) {

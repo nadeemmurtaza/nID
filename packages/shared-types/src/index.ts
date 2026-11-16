@@ -3,3 +3,4 @@ export * from './crypto';
 export * from './session-token';
 export * from './webhook';
 export * from './timezone';
+export * from './secret-box';

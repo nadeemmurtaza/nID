@@ -16,7 +16,6 @@ use tower_http::{
     set_header::SetResponseHeaderLayer,
     trace::TraceLayer,
 };
-use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::core::middleware::request_tracing;
@@ -170,23 +169,8 @@ fn build_router(state: AppState) -> Router {
             HeaderName::from_static("content-security-policy"),
             HeaderValue::from_static("default-src 'none'; frame-ancestors 'none'"),
         ))
-        .layer({
-            // Per-IP rate limit (SECURITY_RULES.md item 5 /
-            // PRODUCTION_READINESS_RULES.md item 7): 10 req/s sustained,
-            // bursts up to 30. Per-user limits on top of this would need a
-            // custom key extractor keyed on the auth token rather than the
-            // peer IP; not yet implemented -- this covers the per-IP half.
-            let config = std::sync::Arc::new(
-                GovernorConfigBuilder::default()
-                    // The builder takes the replenish *interval*, not a rate:
-                    // per_second(10) would mean one request per 10 seconds.
-                    .per_millisecond(100)
-                    .burst_size(30)
-                    .finish()
-                    .expect("valid governor rate-limit config"),
-            );
-            GovernorLayer::new(config)
-        })
+        .layer(middleware::from_fn(crate::core::validation::gate))
+        .layer(middleware::from_fn(crate::core::limits::guard))
         .layer(TraceLayer::new_for_http())
 }
 
@@ -238,6 +222,26 @@ async fn main() -> anyhow::Result<()> {
         .max_connections(1)
         .connect(&migrate_db_url)
         .await?;
+    // Any webhook secret still stored as plaintext is encrypted first: the
+    // migration that drops the plaintext columns refuses to run otherwise.
+    // Only needs the key when there is something to encrypt.
+    let encrypt_legacy = async {
+        let legacy_present: bool = sqlx::query_scalar(
+            r#"SELECT EXISTS (SELECT 1 FROM information_schema.columns
+                              WHERE table_schema = 'public' AND table_name = 'Tenant'
+                                AND column_name = 'webhookSecretPlaintext')"#,
+        )
+        .fetch_one(&migrate_pool)
+        .await?;
+        if legacy_present {
+            let secrets = nid_shared_types::SecretBox::from_env()
+                .context("WEBHOOK_SECRET_KEY is required to encrypt existing tenant webhook secrets")?;
+            let n = nid_db_schema::encrypt_legacy_webhook_secrets(&migrate_pool, &secrets).await?;
+            tracing::info!(tenants = n, "Encrypted legacy plaintext webhook secrets");
+        }
+        anyhow::Ok(())
+    };
+    encrypt_legacy.await?;
     nid_db_schema::MIGRATOR.run(&migrate_pool).await?;
     migrate_pool.close().await;
 
@@ -245,6 +249,8 @@ async fn main() -> anyhow::Result<()> {
     let db = DbPool::connect(&env.app_database_url).await?;
 
     tracing::info!(port = env.api_port, "nID Rust API starting");
+
+    crate::core::limits::init(crate::core::limits::is_production()).await?;
 
     // Build shared services
     let audit = AuditService::new(db.clone());

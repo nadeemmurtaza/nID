@@ -73,7 +73,7 @@ export function BookingWidget({ slug, services }: { slug: string; services: Serv
       setConfirmed(selectedSlot);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setError('That time was just taken — pick another slot.');
+        setError('That time was just taken, pick another slot.');
         setSelectedSlot(null);
         loadSlots(serviceId);
       } else {

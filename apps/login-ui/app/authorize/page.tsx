@@ -11,7 +11,7 @@ import { AlertIcon } from '@newax/design-tokens/icons';
  * /authorize?client_id=...&redirect_uri=...&state=...
  *
  * Creates the OAuthLoginRequest server-side, then hands off to
- * /authorize/[pollToken] — the page that's both the same-device login form
+ * /authorize/[pollToken], the page that's both the same-device login form
  * and, via its own URL, what a QR code scan lands on from another device.
  */
 export default function AuthorizeEntryPage() {
@@ -56,7 +56,7 @@ function AuthorizeEntry() {
       body: JSON.stringify({ clientId, redirectUri, state }),
     })
       .then(({ pollToken }) => {
-        // Marks this tab as the one that originated the request — see
+        // Marks this tab as the one that originated the request, see
         // [pollToken]/page.tsx's note on why only this tab claims/redirects.
         // sessionStorage is tab-local and survives this same-tab
         // client-side navigation, but a different tab/device (a QR scan)

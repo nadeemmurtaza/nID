@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Request body for POST /v1/organizations/:id/profile
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateOrgProfileRequest {
     pub slug: String,
     pub display_name: String,
@@ -59,6 +60,7 @@ pub struct CreateOrgProfileRequest {
 /// Request body for PATCH /v1/organizations/:id/profile
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UpdateOrgProfileRequest {
     #[serde(default)]
     pub slug: Option<String>,
@@ -115,6 +117,7 @@ pub struct UpdateOrgProfileRequest {
 /// Request body for POST /v1/organizations/:id/profile/grants
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateOrgGrantRequest {
     pub grantee_slug: String,
     pub field: String,

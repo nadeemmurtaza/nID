@@ -109,17 +109,17 @@ function CaseDetail({ credential, caseId }: { credential: string; caseId: string
               <dt>Subject type</dt>
               <dd>{kase.subject.type}</dd>
               <dt>Phone</dt>
-              <dd>{kase.subject.phone ?? '—'}</dd>
+              <dd>{kase.subject.phone ?? 'None'}</dd>
               <dt>Email</dt>
-              <dd>{kase.subject.email ?? '—'}</dd>
+              <dd>{kase.subject.email ?? 'None'}</dd>
               <dt>Decision</dt>
-              <dd>{kase.decision ?? '—'}</dd>
+              <dd>{kase.decision ?? 'None'}</dd>
               <dt>Reviewer</dt>
-              <dd>{kase.reviewerId ?? '—'}</dd>
+              <dd>{kase.reviewerId ?? 'None'}</dd>
               <dt>Created</dt>
               <dd className="caption">{new Date(kase.createdAt).toLocaleString()}</dd>
               <dt>Resolved</dt>
-              <dd className="caption">{kase.resolvedAt ? new Date(kase.resolvedAt).toLocaleString() : '—'}</dd>
+              <dd className="caption">{kase.resolvedAt ? new Date(kase.resolvedAt).toLocaleString() : 'None'}</dd>
               <dt>Case ID</dt>
               <dd>
                 <code className="caption">{kase.id}</code>
@@ -147,7 +147,7 @@ function CaseDetail({ credential, caseId }: { credential: string; caseId: string
                       <td>{a.method}</td>
                       <td>{a.status}</td>
                       <td className="caption">{new Date(a.startedAt).toLocaleString()}</td>
-                      <td className="caption">{a.completedAt ? new Date(a.completedAt).toLocaleString() : '—'}</td>
+                      <td className="caption">{a.completedAt ? new Date(a.completedAt).toLocaleString() : 'None'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -163,7 +163,7 @@ function CaseDetail({ credential, caseId }: { credential: string; caseId: string
 }
 
 /**
- * The manual-review queue's one action — a case the automated pipeline
+ * The manual-review queue's one action, a case the automated pipeline
  * correctly stopped at NEEDS_REVIEW rather than guessing. A reason is
  * required: an override with no rationale defeats the point of the audit
  * trail this writes (see VerificationCasesService.resolveCase()).
@@ -191,7 +191,7 @@ function ResolvePanel({ credential, caseId, onResolved }: { credential: string; 
       <h2>Resolve</h2>
       <div className="resolve-panel">
         <textarea
-          placeholder="Why? (required — becomes this case's decision and audit-log entry)"
+          placeholder="Why? (required: becomes this case's decision and audit-log entry)"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           disabled={submitting}
@@ -237,7 +237,7 @@ const CLAIM_TYPE_LABEL: Record<SubjectBadges['badges'][number]['claimType'], str
 
 /**
  * One slot per ClaimType, always in the same order, so a subject's badge
- * wall reads the same across cases — a claim with no passed case yet shows
+ * wall reads the same across cases, a claim with no passed case yet shows
  * "Not verified" rather than disappearing, so it's clear it was checked for
  * and not just absent from this particular case's policy.
  */

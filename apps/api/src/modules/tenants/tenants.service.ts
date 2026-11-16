@@ -4,12 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { generateApiKey } from '@nid/shared-types';
 import { Prisma } from '@nid/db';
 import { PrismaService } from '../../core/db/prisma.service';
 import { AuditService } from '../../core/audit/audit.service';
 import type { ActorType } from '../../core/auth/types';
+import { secretBox, webhookContext, billingWebhookContext } from '@nid/shared-types';
 
 export interface CreateTenantDto {
   name: string;
@@ -25,9 +26,9 @@ export interface UpdateTenantDto {
   name?: string;
   dataResidencyRegion?: string;
   webhookUrl?: string | null;
-  webhookSecretPlaintext?: string | null;
+  webhookSecret?: string | null;
   billingWebhookUrl?: string | null;
-  billingWebhookSecretPlaintext?: string | null;
+  billingWebhookSecret?: string | null;
 }
 
 export interface CreateTenantApiKeyDto {
@@ -129,15 +130,19 @@ export class TenantsService {
     const webhookSecret = randomBytes(32).toString('hex');
     const billingWebhookSecret = randomBytes(32).toString('hex');
 
+    // The id is chosen here, before the insert, because each secret is
+    // encrypted bound to its tenant.
+    const tenantId = randomUUID();
     const tenant = await this.prisma.unscoped.tenant.create({
       data: {
+        id: tenantId,
         name: dto.name,
         slug: dto.slug,
         dataResidencyRegion: dto.dataResidencyRegion ?? 'global',
         webhookUrl: dto.webhookUrl ?? null,
-        webhookSecretPlaintext: webhookSecret,
+        webhookSecretEnc: secretBox().encrypt(webhookContext(tenantId), webhookSecret),
         billingWebhookUrl: dto.billingWebhookUrl ?? null,
-        billingWebhookSecretPlaintext: billingWebhookSecret,
+        billingWebhookSecretEnc: secretBox().encrypt(billingWebhookContext(tenantId), billingWebhookSecret),
       },
     });
 
@@ -266,11 +271,13 @@ export class TenantsService {
         name: dto.name ?? tenant.name,
         dataResidencyRegion: dto.dataResidencyRegion ?? tenant.dataResidencyRegion,
         webhookUrl: dto.webhookUrl,
-        webhookSecretPlaintext:
-          dto.webhookSecretPlaintext ?? tenant.webhookSecretPlaintext,
+        webhookSecretEnc: dto.webhookSecret
+          ? secretBox().encrypt(webhookContext(id), dto.webhookSecret)
+          : tenant.webhookSecretEnc,
         billingWebhookUrl: dto.billingWebhookUrl,
-        billingWebhookSecretPlaintext:
-          dto.billingWebhookSecretPlaintext ?? tenant.billingWebhookSecretPlaintext,
+        billingWebhookSecretEnc: dto.billingWebhookSecret
+          ? secretBox().encrypt(billingWebhookContext(id), dto.billingWebhookSecret)
+          : tenant.billingWebhookSecretEnc,
       },
     });
 
@@ -452,10 +459,10 @@ export class TenantsService {
   private async emitWebhookEvent(tenantId: string, eventType: string, data: Record<string, unknown> | unknown[]) {
     const tenant = await this.prisma.unscoped.tenant.findUnique({
       where: { id: tenantId },
-      select: { webhookUrl: true, webhookSecretPlaintext: true },
+      select: { webhookUrl: true, webhookSecretEnc: true },
     });
 
-    if (!tenant?.webhookUrl || !tenant.webhookSecretPlaintext) {
+    if (!tenant?.webhookUrl || !tenant.webhookSecretEnc) {
       // No webhook configured — not an error, just skip
       return;
     }
@@ -471,7 +478,7 @@ export class TenantsService {
     // Compute HMAC signature
     const crypto = await import('node:crypto');
     const signature = crypto
-      .default.createHmac('sha256', tenant.webhookSecretPlaintext)
+      .default.createHmac('sha256', secretBox().decrypt(webhookContext(tenantId), tenant.webhookSecretEnc))
       .update(payload)
       .digest('hex');
 

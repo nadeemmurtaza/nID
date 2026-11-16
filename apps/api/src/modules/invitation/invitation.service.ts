@@ -6,6 +6,7 @@ import {
 import { Prisma } from '@nid/db';
 import { PrismaService } from '../../core/db/prisma.service';
 import type { Account } from '@nid/db';
+import { secretBox, webhookContext, billingWebhookContext } from '@nid/shared-types';
 
 export interface SendEmailInviteDto {
   email: string;
@@ -368,10 +369,10 @@ export class InvitationService {
   private async emitWebhookEvent(tenantId: string, eventType: string, data: Record<string, unknown> | unknown[]) {
     const tenant = await this.prisma.unscoped.tenant.findUnique({
       where: { id: tenantId },
-      select: { webhookUrl: true, webhookSecretPlaintext: true },
+      select: { webhookUrl: true, webhookSecretEnc: true },
     });
 
-    if (!tenant?.webhookUrl || !tenant.webhookSecretPlaintext) return;
+    if (!tenant?.webhookUrl || !tenant.webhookSecretEnc) return;
 
     const payloadObj = {
       event_type: eventType,
@@ -383,7 +384,7 @@ export class InvitationService {
 
     const crypto = await import('node:crypto');
     const signature = crypto
-      .default.createHmac('sha256', tenant.webhookSecretPlaintext)
+      .default.createHmac('sha256', secretBox().decrypt(webhookContext(tenantId), tenant.webhookSecretEnc))
       .update(payload)
       .digest('hex');
 

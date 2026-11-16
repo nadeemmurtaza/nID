@@ -10,7 +10,7 @@ interface Props {
   onSaved: (profile: OwnerProfile) => void;
 }
 
-/** Photo + the fields that answer "who is this" — deliberately one step,
+/** Photo + the fields that answer "who is this", deliberately one step,
  * not two: the photo control is a single action, not a form section of
  * its own. */
 export function BasicsEditor({ token, profile, onSaved }: Props) {
@@ -42,7 +42,7 @@ export function BasicsEditor({ token, profile, onSaved }: Props) {
     setSaved(false);
     try {
       // A blank optional text input means "cleared", not "an empty string"
-      // — see owner-api.ts's ProfileInput comment.
+      //, see owner-api.ts's ProfileInput comment.
       const sanitized: Record<string, string | undefined> = { ...form };
       for (const key of ['headline', 'bio'] as const) {
         if (sanitized[key] === '') sanitized[key] = undefined;
@@ -81,7 +81,7 @@ export function BasicsEditor({ token, profile, onSaved }: Props) {
         {profile.photoKey ? (
           <img
             src={apiUrl(`/v1/profiles/${profile.slug}/photo`)}
-            alt=""
+            alt={`${profile.displayName || profile.slug} profile photo`}
             style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border)' }}
           />
         ) : (
@@ -95,9 +95,9 @@ export function BasicsEditor({ token, profile, onSaved }: Props) {
             }}
           />
         )}
-        <label className="btn btn-sm btn-secondary" style={{ cursor: 'pointer' }}>
+        <label className="btn btn-sm btn-secondary file-pick" style={{ cursor: 'pointer' }}>
           {uploadingPhoto ? 'Uploading…' : 'Change photo'}
-          <input type="file" accept="image/*" onChange={handlePhoto} disabled={uploadingPhoto} style={{ display: 'none' }} />
+          <input type="file" accept="image/*" onChange={handlePhoto} disabled={uploadingPhoto} className="sr-only" />
         </label>
       </div>
 

@@ -14,7 +14,7 @@ const FIELDS: { id: GrantField; label: string }[] = [
 
 /**
  * "User can show only one specific info to only one person or
- * organization by his own will" — a private exception to the public
+ * organization by his own will", a private exception to the public
  * show* toggles on the Profile tab, granted to one recipient at a time by
  * their own nID username, never anyone else's.
  */
@@ -60,7 +60,7 @@ export function GrantsManager({ token }: { token: string }) {
         Private shares
       </h2>
       <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -8, marginBottom: 16 }}>
-        Share one field with one specific person or organization, by their nID username — without making it public to
+        Share one field with one specific person or organization, by their nID username, without making it public to
         everyone on your page.
       </p>
 

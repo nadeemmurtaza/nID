@@ -7,7 +7,7 @@ export default function HomePage() {
         </p>
         <h1>Your page lives at a URL</h1>
         <p className="lead" style={{ color: 'var(--muted)', fontSize: 14, lineHeight: 1.5 }}>
-          Every nID profile is published at its own address — nid.example/your-slug. There&apos;s nothing to browse
+          Every nID profile is published at its own address, which is the slug its owner picked. There&apos;s nothing to browse
           from here.
         </p>
       </div>

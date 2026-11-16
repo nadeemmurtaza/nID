@@ -45,7 +45,7 @@ export default async function ProfilePage({ params }: PageProps) {
   return (
     <main className="page">
       {banner && (
-        <img className="banner-img" src={apiUrl(`/v1/profiles/${slug}/images/${banner.id}`)} alt="" />
+        <img className="banner-img" src={apiUrl(`/v1/profiles/${slug}/images/${banner.id}`)} alt={`${profile.displayName || slug} banner`} />
       )}
 
       <div className="hero">
@@ -56,7 +56,7 @@ export default async function ProfilePage({ params }: PageProps) {
             <div className="hero-photo-fallback">{initials || '?'}</div>
           )}
           {/* No mechanism in this system ties an uploaded profile photo to
-              any verified identity evidence — always shown as unverified,
+              any verified identity evidence, always shown as unverified,
               never implied otherwise. */}
           <span className="verify-tag unverified" title="This photo has not been independently verified">
             ○ Unverified photo
@@ -131,7 +131,7 @@ export default async function ProfilePage({ params }: PageProps) {
               Email
             </a>
             {/* No email verification exists anywhere in this system (no
-                confirm-email flow) — always unverified, never implied
+                confirm-email flow), always unverified, never implied
                 otherwise. */}
             <span className="verify-tag unverified" title="This email address has not been independently verified">
               ○ Unverified
@@ -221,8 +221,8 @@ export default async function ProfilePage({ params }: PageProps) {
         <section className="section">
           <h2>Gallery</h2>
           <div className="gallery-grid">
-            {gallery.map((img) => (
-              <img key={img.id} src={apiUrl(`/v1/profiles/${slug}/images/${img.id}`)} alt="" />
+            {gallery.map((img, i) => (
+              <img key={img.id} src={apiUrl(`/v1/profiles/${slug}/images/${img.id}`)} alt={`${profile.displayName || slug} gallery photo ${i + 1}`} />
             ))}
           </div>
         </section>

@@ -9,8 +9,10 @@ pub mod crypto;
 pub mod session_token;
 pub mod api_key;
 pub mod webhook;
+pub mod secret_box;
 
 pub use crypto::{sha256_hex, constant_time_equal_hex};
 pub use session_token::{GeneratedSessionToken, generate_session_token, generate_checkout_token};
 pub use api_key::{GeneratedApiKey, generate_api_key, hash_api_key};
 pub use webhook::{sign_webhook, verify_webhook};
+pub use secret_box::{SecretBox, SecretBoxError};

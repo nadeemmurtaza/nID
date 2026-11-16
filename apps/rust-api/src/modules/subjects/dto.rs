@@ -13,6 +13,7 @@ pub enum SubjectType {
 /// Request body for POST /v1/subjects
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateSubjectRequest {
     pub r#type: SubjectType,
     #[serde(default)]

@@ -8,6 +8,7 @@ name = "svc-tenants"
 path = "src/main.rs"
 
 [dependencies]
+nid-shared-types = { path = "../../crates/shared-types" }
 nid-service-auth = { path = "../../crates/service-auth" }
 newax-tenants = { path = "../../crates/tenants" }
 tonic = "0.12"

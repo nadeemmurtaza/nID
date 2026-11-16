@@ -125,7 +125,9 @@ where
                 return Err(forbidden(&format!("This API key lacks the '{required}' scope.")));
             }
         }
-        if !within_rate_limit(&api_key.id, api_key.rate_limit_per_minute) {
+        if !crate::core::limits::within_key_quota(&api_key.id, api_key.rate_limit_per_minute).await
+            || !crate::core::limits::within_tenant_quota(&api_key.tenant_id).await
+        {
             return Err((
                 StatusCode::TOO_MANY_REQUESTS,
                 Json(AuthError { message: "API key rate limit exceeded.".to_string() }),
@@ -171,31 +173,6 @@ pub fn scope_allows(scopes: &[String], required: &str) -> bool {
     false
 }
 
-/// Per-key fixed-window limit (requests per minute). In-process, so each
-/// replica counts separately; a shared limiter belongs in Redis.
-pub fn within_rate_limit(key_id: &str, limit: i32) -> bool {
-    use once_cell::sync::Lazy;
-    use std::collections::HashMap;
-    use std::sync::Mutex;
-    use std::time::{Duration, Instant};
-    static WINDOWS: Lazy<Mutex<HashMap<String, (Instant, i32)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-    let limit = limit.max(1);
-    let now = Instant::now();
-    let mut map = match WINDOWS.lock() {
-        Ok(m) => m,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    if map.len() > 10_000 {
-        map.retain(|_, (start, _)| now.duration_since(*start) < Duration::from_secs(60));
-    }
-    let entry = map.entry(key_id.to_string()).or_insert((now, 0));
-    if now.duration_since(entry.0) >= Duration::from_secs(60) {
-        *entry = (now, 0);
-    }
-    entry.1 += 1;
-    entry.1 <= limit
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,11 +204,4 @@ mod tests {
         assert!(!scope_allows(&v(&["organizations:*"]), "subjects:read"));
     }
 
-    #[test]
-    fn rate_limit_blocks_after_the_quota() {
-        let id = format!("test-key-{}", std::process::id());
-        assert!(within_rate_limit(&id, 2));
-        assert!(within_rate_limit(&id, 2));
-        assert!(!within_rate_limit(&id, 2));
-    }
 }

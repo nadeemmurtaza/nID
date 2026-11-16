@@ -15,13 +15,13 @@ interface Props {
   policyName: SelfServicePolicy;
   title: string;
   description: string;
-  /** cnic-phone-link needs the CNIC (estamp_registry's referenceId) at case-creation time — identity does not. */
+  /** cnic-phone-link needs the CNIC (estamp_registry's referenceId) at case-creation time, identity does not. */
   requiresReferenceId?: boolean;
   referenceIdLabel?: string;
 }
 
 /**
- * Shared by the Identity and CNIC+Phone pages — same "start a check, get
+ * Shared by the Identity and CNIC+Phone pages, same "start a check, get
  * redirected to apps/verify-ui to actually do it, see your case history"
  * shape for both, just a different policy/required input. Deliberately
  * does NOT rebuild document-upload/liveness-capture/OTP UI here: that
@@ -56,7 +56,7 @@ export function SelfServiceCheck({ token, policyName, title, description, requir
         window.location.href = created.hostedUrl;
         return;
       }
-      setError('The check was created but no hosted link came back — try again.');
+      setError('The check was created but no hosted link came back, try again.');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not start this check.');
     } finally {

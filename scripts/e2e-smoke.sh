@@ -31,6 +31,12 @@ echo "== bootstrap: two tenants, each gets a first API key"
 A=$(mk e2e-a); B=$(mk e2e-b)
 TA=$(echo "$A"|j id); KA=$(echo "$A"|j apiKey); KB=$(echo "$B"|j apiKey)
 [ -n "$KA" ] && [ -n "$KB" ] && ok "tenant create returns an API key" a a || ok "tenant create returns an API key" missing a
+WS=$(echo "$A"|j webhookSecret)
+ok "tenant create returns the webhook secret once" "$([ -n "$WS" ] && echo y)" y
+STORED=$(psql "$DB" -tAc "select \"webhookSecretEnc\" from \"Tenant\" where id='$TA'")
+ok "webhook secret is stored as v1 ciphertext" "$(case "$STORED" in v1.*) echo y;; esac)" y
+ok "stored value does not contain the secret" "$(case "$STORED" in *"$WS"*) echo leak;; *) echo y;; esac)" y
+ok "plaintext webhook columns are gone" "$(psql "$DB" -tAc "select count(*) from information_schema.columns where table_name='Tenant' and column_name ilike '%SecretPlaintext'")" 0
 ok "no credentials is rejected" "$(code "$API/v1/tenants/me")" 401
 ok "API key authenticates" "$(code "$API/v1/tenants/me" -H "Authorization: Bearer $KA")" 200
 
@@ -128,7 +134,7 @@ ok "public sees the offer" "$(curl -s -m 10 "$API/v1/profiles/$PSLUG/offers" | g
 ok "owner sets Monday hours" "$(code -X PUT "$API/v1/profiles/me/business-hours/MONDAY" -H "$OH" -H "$H" -d '{"openMinute":540,"closeMinute":1020,"isClosed":false}')" 200
 ok "public sees the hours" "$(curl -s -m 10 "$API/v1/profiles/$PSLUG/business-hours" | grep -c MONDAY)" 1
 ok "owner adds a custom link" "$(code -X POST "$API/v1/profiles/me/links/custom" -H "$OH" -H "$H" -d '{"label":"Site","url":"https://example.com"}')" 200
-ok "a javascript: link is rejected" "$(code -X POST "$API/v1/profiles/me/links/custom" -H "$OH" -H "$H" -d '{"label":"x","url":"javascript:alert(1)"}')" 400
+ok "a javascript: link is rejected" "$(code -X POST "$API/v1/profiles/me/links/custom" -H "$OH" -H "$H" -d '{"label":"x","url":"javascript:alert(1)"}')" 422
 ok "owner adds a social link" "$(code -X POST "$API/v1/profiles/me/links/social" -H "$OH" -H "$H" -d '{"platform":"INSTAGRAM","url":"https://instagram.com/e2e"}')" 200
 ok "public sees both link kinds" "$(curl -s -m 10 "$API/v1/profiles/$PSLUG/links" | grep -c 'example.com')" 1
 ok "visitor sends a contact message" "$(code -X POST "$API/v1/profiles/$PSLUG/contact-messages" -H "$H" -d '{"senderName":"Vee","senderEmail":"v@example.com","message":"Hello there"}')" 200
@@ -199,6 +205,21 @@ ok "DELETE /v1/accounts/me" "$(code -X DELETE "$API/v1/accounts/me" -H "Authoriz
 ok "account row is gone" "$(sql "select count(*) from \"Account\" where id='$AID'")" 0
 ok "its profile is gone" "$(sql "select count(*) from \"Profile\" where \"accountId\"='$AID'")" 0
 ok "old session is rejected" "$(code "$API/v1/accounts/me" -H "Authorization: Bearer $S2")" 401
+
+echo "== strict input validation (every request, before any handler)"
+vj() { code -X POST "$API/v1/accounts/otp/start" -H "$H" -d "$1"; }
+ok "phone without a plus is rejected" "$(vj '{"phone":"4155550123"}')" 422
+ok "letters in a phone are rejected" "$(vj '{"phone":"+1415abc0123"}')" 422
+ok "unknown field is rejected" "$(vj '{"phone":"+14155550123","isAdmin":true}')" 422
+ok "NUL byte is rejected" "$(vj '{"phone":"+1415555\u00000123"}')" 422
+ok "bad JSON is rejected" "$(vj '{"phone":')" 400
+ok "wrong content type is rejected" "$(code -X POST "$API/v1/accounts/otp/start" -H "Content-Type: text/plain" -d '{"phone":"+14155550123"}')" 415
+ok "oversized body is rejected" "$(python3 -I -c "print('{\"phone\":\"+1' + '5'*1200000 + '\"}')" | code -X POST "$API/v1/accounts/otp/start" -H "$H" --data-binary @-)" 413
+ok "path traversal segment is rejected" "$(code "$API/v1/profiles/..%2F..%2Fetc")" 400
+ok "control character in the query is rejected" "$(code "$API/v1/profiles?q=a%00b")" 400
+ok "deeply nested JSON is rejected" "$(vj '{"a":{"a":{"a":{"a":{"a":{"a":{"a":{"a":{"a":{"a":1}}}}}}}}}}')" 422
+ok "HTML tag in a name is rejected" "$(code -X POST "$API/v1/tenants" -H "Authorization: Bearer $AD" -H "$H" -d '{"name":"<script>x</script>","slug":"valid-slug-1"}')" 422
+ok "bad slug is rejected" "$(code -X POST "$API/v1/tenants" -H "Authorization: Bearer $AD" -H "$H" -d '{"name":"ok","slug":"Bad Slug!"}')" 422
 
 echo "== platform"
 if [ -n "${SERVICE_AUTH_TOKEN:-}" ]; then
