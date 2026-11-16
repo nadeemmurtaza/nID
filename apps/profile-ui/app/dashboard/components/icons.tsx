@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-/** Small, hand-drawn nav icons — no icon library dependency. 18x18, stroke-only,
+/** Small, hand-drawn nav icons, no icon library dependency. 18x18, stroke-only,
  * so they inherit the current text color (muted normally, accent when active). */
 function Icon({ children }: { children: ReactNode }) {
   return (
@@ -114,5 +114,5 @@ export function PrivacyIcon() {
   );
 }
 
-/** Same shield-check shape as PrivacyIcon, used for the top-level "Verification" nav item — Privacy is now one of its sub-pages, not a separate top-level concept. */
+/** Same shield-check shape as PrivacyIcon, used for the top-level "Verification" nav item, Privacy is now one of its sub-pages, not a separate top-level concept. */
 export const VerificationIcon = PrivacyIcon;

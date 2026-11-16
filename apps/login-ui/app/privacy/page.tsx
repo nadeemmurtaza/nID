@@ -49,7 +49,7 @@ export default function PrivacyPage() {
         <h2>4. Who we share it with</h2>
         <p>
           We do not sell your data. Verification results may be shared with the connected app
-          that requested the verification, in the form of a pass/fail status only — not the
+          that requested the verification, in the form of a pass/fail status only, not the
           underlying document or biometric data. Third-party SDKs used in this product are listed
           below with their own privacy policies.
         </p>

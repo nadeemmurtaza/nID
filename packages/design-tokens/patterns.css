@@ -1,0 +1,77 @@
+/* Shared UX pattern styles: command palette, data table, fields, states,
+   mobile breakpoints. Flat surfaces, borders not shadows. */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.nid-palette { font-family: var(--font-sans); border: 1px solid var(--color-border); border-radius: var(--radius-xl); background: var(--color-surface); color: var(--color-ink); padding: 0; width: min(36rem, calc(100vw - 2rem)); margin-top: 12vh; }
+.nid-palette::backdrop { background: rgb(17 17 17 / 0.5); }
+.nid-palette-input { width: 100%; min-height: 48px; border: 0; border-bottom: 1px solid var(--color-border); background: transparent; color: inherit; font: inherit; font-size: 16px; padding: 0 var(--space-4); }
+.nid-palette-input:focus { outline: none; }
+.nid-palette-list { list-style: none; margin: 0; padding: var(--space-2); max-height: 50vh; overflow: auto; }
+.nid-palette-group { font-size: 12px; color: var(--color-ink-muted); padding: var(--space-2) var(--space-3) var(--space-1); text-transform: uppercase; letter-spacing: 0.04em; }
+.nid-palette-item { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 40px; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-md); background: transparent; color: inherit; font: inherit; font-size: 14px; font-weight: 400; text-align: left; cursor: pointer; }
+.nid-palette-item[aria-selected="true"] { background: var(--color-accent-soft); }
+.nid-palette-item kbd { font-family: var(--font-mono); font-size: 12px; color: var(--color-ink-muted); }
+.nid-palette-empty, .nid-palette-foot { color: var(--color-ink-muted); font-size: 13px; padding: var(--space-3); margin: 0; }
+.nid-palette-foot { border-top: 1px solid var(--color-border); }
+
+.nid-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: var(--space-4); }
+.nid-field label { font-size: 13px; font-weight: 600; }
+.nid-field input { min-height: 44px; }
+.nid-field.has-error input { border-color: var(--color-negative); }
+.nid-field-error { margin: 0; font-size: 13px; color: var(--color-negative); }
+.nid-field-hint { margin: 0; font-size: 13px; color: var(--color-ink-muted); }
+
+.nid-state { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-6); border: 1px dashed var(--color-border-strong); border-radius: var(--radius-lg); }
+.nid-state p { margin: 0; color: var(--color-ink-muted); }
+.nid-state .nid-state-title { color: var(--color-ink); font-weight: 600; }
+.nid-page-state { min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: var(--space-3); max-width: 32rem; margin: 0 auto; padding: var(--space-6); }
+.nid-page-state h1 { margin: 0; font-size: 1.5rem; }
+.nid-page-state p { margin: 0; color: var(--color-ink-muted); line-height: 1.5; }
+.nid-page-state-actions { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.nid-link-button { display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--space-5); border-radius: var(--radius-md); background: var(--color-accent); color: var(--color-on-accent); text-decoration: none; font-weight: 600; }
+.nid-link-button.secondary { background: var(--color-surface); color: var(--color-ink); border: 1px solid var(--color-border-strong); }
+
+.nid-table-bar { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: end; justify-content: space-between; margin-bottom: var(--space-3); }
+.nid-table-filter { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
+.nid-table-filter input { min-height: 44px; min-width: 14rem; }
+.nid-table-bulk { display: flex; gap: var(--space-2); align-items: center; font-size: 14px; }
+.nid-table-scroll { overflow-x: auto; }
+.nid-table-check { width: 44px; }
+.nid-table-check input { width: 20px; height: 20px; }
+.nid-th-sort { min-height: 44px; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.data-table td.num, .data-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Mobile: single column, scrollable tables, 44px targets already set above. */
+@media (max-width: 720px) {
+  .nid-table-filter input { min-width: 0; width: 100%; }
+  .nid-table-filter { width: 100%; }
+  .nid-palette { margin-top: 4vh; }
+}
+
+@media (max-width: 480px) {
+  main { padding: 12px; }
+  .card { padding: 24px 16px; border-radius: var(--radius-lg); }
+  .entry-card, .card { max-width: 100%; }
+  .otp-input { gap: 6px; }
+  .otp-input input { width: 40px; }
+  .entry-topbar { flex-wrap: wrap; gap: 8px; }
+}
+img, video { max-width: 100%; height: auto; }
+
+.nid-table-filter input,
+.nid-field input,
+.nid-palette-input { border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); padding: 0 var(--space-3); background: var(--color-surface); color: var(--color-ink); font: inherit; font-size: 14px; }
+.nid-table-bulk button { min-height: 44px; padding: 0 var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--color-border-strong); background: var(--color-surface); color: var(--color-ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.nid-table-bulk button.nid-dialog-danger { background: var(--color-negative); border-color: var(--color-negative); color: var(--color-on-negative); }
+.nid-table-bulk button:disabled { opacity: 0.55; cursor: not-allowed; }
+.nid-state button.secondary, .nid-page-state button { min-height: 44px; padding: 0 var(--space-5); border-radius: var(--radius-md); border: 1px solid var(--color-border-strong); background: var(--color-surface); color: var(--color-ink); font: inherit; font-weight: 600; cursor: pointer; }
+.nid-page-state button:first-child:not(.secondary) { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
+.nid-table-scroll table { width: 100%; border-collapse: collapse; }
+.nid-table-scroll th, .nid-table-scroll td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+.nid-table-scroll .data-table { overflow: visible; min-width: 100%; }
+.nid-table-scroll td:last-child { white-space: nowrap; }
+.nid-table-scroll td { overflow-wrap: break-word; }
+
+h1, h2, h3 { text-wrap: balance; }
+p, li { text-wrap: pretty; }
+table, .num { font-variant-numeric: tabular-nums; }

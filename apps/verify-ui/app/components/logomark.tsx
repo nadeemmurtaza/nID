@@ -1,4 +1,4 @@
-/** The nID mark — an "N" for the identity, a checkmark for "verified." Same source as app/icon.svg (the favicon), just inline so it can sit next to the wordmark at any size without a network request. */
+/** The nID mark, an "N" for the identity, a checkmark for "verified." Same source as app/icon.svg (the favicon), just inline so it can sit next to the wordmark at any size without a network request. */
 export function Logomark({ size = 32 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 128 128" fill="none" aria-hidden="true">

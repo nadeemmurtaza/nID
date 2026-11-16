@@ -29,8 +29,8 @@ type Phase =
  * link: opened directly (same device, via the URL /authorize sent it to),
  * or reached by scanning a QR code of this exact URL on another device.
  *
- * Only the tab that *originated* the request — the one /authorize's entry
- * page redirected from, marked via sessionStorage — ever claims the code
+ * Only the tab that *originated* the request, the one /authorize's entry
+ * page redirected from, marked via sessionStorage, ever claims the code
  * and redirects. A tab reached fresh (a QR scan on another device) that
  * approves here must NOT also race to claim: it isn't the tab driving the
  * RP's browser session, and if it claimed first the originating tab would
@@ -48,7 +48,7 @@ export default function AuthorizePage() {
   const [approving, setApproving] = useState(false);
   const [isOriginatingTab, setIsOriginatingTab] = useState(false);
   // Which sign-in method is on screen in the `pending` phase. Purely a local
-  // view concern — the approval-polling effect below is keyed on pollToken,
+  // view concern, the approval-polling effect below is keyed on pollToken,
   // not on this, so switching between the two views never affects whether a
   // QR scan on another device (or a cached-account continue) gets noticed.
   const [view, setView] = useState<'qr' | 'phone'>('qr');
@@ -193,7 +193,7 @@ export default function AuthorizePage() {
               <CircleCheckIcon size={56} className="nid-icon" />
             </div>
             <h1>You&apos;re approved</h1>
-            <p className="lead">Go back to the device where you started signing in to {clientName || 'the app'} — it will continue automatically.</p>
+            <p className="lead">Go back to the device where you started signing in to {clientName || 'the app'}, it will continue automatically.</p>
           </>
         )}
 

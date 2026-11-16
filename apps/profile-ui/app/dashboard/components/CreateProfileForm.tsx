@@ -29,7 +29,7 @@ export function CreateProfileForm({ token, onCreated }: { token: string; onCreat
       <div className="card" style={{ maxWidth: 440, textAlign: 'left' }}>
         <h1 style={{ textAlign: 'center' }}>Create your page</h1>
         <p className="lead" style={{ color: 'var(--muted)', fontSize: 14, textAlign: 'center', marginBottom: 16 }}>
-          Pick a URL and a name — everything else can be filled in after.
+          Pick a URL and a name, everything else can be filled in after.
         </p>
         <form onSubmit={handleSubmit}>
           <label htmlFor="slug">Your URL</label>

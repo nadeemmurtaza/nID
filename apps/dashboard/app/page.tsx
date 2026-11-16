@@ -2,6 +2,10 @@
 
 import { Skeleton } from '@newax/design-tokens/Skeleton';
 import { useConfirm } from '@newax/design-tokens/ConfirmDialog';
+import { DataTable } from '@newax/design-tokens/DataTable';
+import { Field, v } from '@newax/design-tokens/Field';
+import { CommandPalette, type Command } from '@newax/design-tokens/CommandPalette';
+import { useHotkeys } from '@newax/design-tokens/hooks';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
@@ -83,8 +87,39 @@ export default function DashboardHome() {
   );
 }
 
+type TabId = 'overview' | 'organizations' | 'brands' | 'api-keys' | 'staff' | 'access' | 'departments' | 'roles' | 'invitations' | 'settings';
+
+// Grouped so ten flat items become three short lists (Hick's law). `key` is
+// the second key of the "g then ..." shortcut.
+const NAV: Array<{ heading: string; items: Array<{ id: TabId; label: string; key: string }> }> = [
+  { heading: 'Workspace', items: [
+    { id: 'overview', label: 'Overview', key: 'o' },
+    { id: 'organizations', label: 'Organizations', key: 'z' },
+    { id: 'brands', label: 'Brands', key: 'b' },
+  ] },
+  { heading: 'People', items: [
+    { id: 'staff', label: 'Staff', key: 's' },
+    { id: 'access', label: 'Access', key: 'a' },
+    { id: 'departments', label: 'Departments', key: 'd' },
+    { id: 'roles', label: 'Roles', key: 'r' },
+    { id: 'invitations', label: 'Invitations', key: 'i' },
+  ] },
+  { heading: 'Developer', items: [
+    { id: 'api-keys', label: 'API keys', key: 'k' },
+    { id: 'settings', label: 'Settings', key: 'e' },
+  ] },
+];
+const TAB_IDS = NAV.flatMap((g) => g.items.map((i) => i.id));
+
+function tabFromHash(): TabId {
+  const h = typeof window === 'undefined' ? '' : window.location.hash.replace(/^#\/?/, '');
+  return (TAB_IDS as string[]).includes(h) ? (h as TabId) : 'overview';
+}
+
 function DashboardLayout({ credential }: { credential: string }) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'organizations' | 'brands' | 'api-keys' | 'staff' | 'access' | 'departments' | 'roles' | 'invitations' | 'settings'>('overview');
+  // The tab lives in the URL hash, so Back and Forward move between tabs
+  // and a tab can be bookmarked or shared.
+  const [activeTab, setActiveTabState] = useState<TabId>('overview');
   const [platformSecret, setPlatformSecret] = useState<string | null>(null);
   const [showCreateTenant, setShowCreateTenant] = useState(false);
   const [showCreateOrganization, setShowCreateOrganization] = useState(false);
@@ -93,85 +128,62 @@ function DashboardLayout({ credential }: { credential: string }) {
 
   useEffect(() => {
     setPlatformSecret(getPlatformAdminSecret());
+    setActiveTabState(tabFromHash());
+    const onHash = () => setActiveTabState(tabFromHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
   }, []);
+
+  const setActiveTab = (id: TabId) => {
+    setShowCreateOrganization(false);
+    setShowCreateBrand(false);
+    setShowCreateTenant(false);
+    window.location.hash = id;
+  };
+
+  useHotkeys(NAV.flatMap((g) => g.items.map((i) => ({ keys: `g ${i.key}`, run: () => setActiveTab(i.id) }))));
+
+  const commands: Command[] = [
+    ...NAV.flatMap((g) => g.items.map((i) => ({ id: `go-${i.id}`, group: 'Go to', label: i.label, shortcut: `g ${i.key}`, run: () => setActiveTab(i.id) }))),
+    { id: 'new-org', group: 'Actions', label: 'Create organization', run: () => { setActiveTab('organizations'); setShowCreateOrganization(true); } },
+    { id: 'new-brand', group: 'Actions', label: 'Create brand', run: () => { setActiveTab('brands'); setShowCreateBrand(true); } },
+    { id: 'new-key', group: 'Actions', label: 'Go to API keys to create a key', run: () => setActiveTab('api-keys') },
+  ];
 
   return (
     <div className="dashboard-layout">
+      <CommandPalette commands={commands} />
       <aside className="dashboard-sidebar">
-        <nav className="sidebar-nav">
-          <button
-            className={`nav-item ${activeTab === 'overview' ? 'active' : ''}`}
-            onClick={() => setActiveTab('overview')}
-          >
-            Overview
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'organizations' ? 'active' : ''}`}
-            onClick={() => setActiveTab('organizations')}
-          >
-            Organizations
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'brands' ? 'active' : ''}`}
-            onClick={() => setActiveTab('brands')}
-          >
-            Brands
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'api-keys' ? 'active' : ''}`}
-            onClick={() => setActiveTab('api-keys')}
-          >
-            API Keys
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'staff' ? 'active' : ''}`}
-            onClick={() => setActiveTab('staff')}
-          >
-            Staff
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'access' ? 'active' : ''}`}
-            onClick={() => setActiveTab('access')}
-          >
-            Access
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'departments' ? 'active' : ''}`}
-            onClick={() => setActiveTab('departments')}
-          >
-            Departments
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'roles' ? 'active' : ''}`}
-            onClick={() => setActiveTab('roles')}
-          >
-            Roles
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'invitations' ? 'active' : ''}`}
-            onClick={() => setActiveTab('invitations')}
-          >
-            Invitations
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('settings')}
-          >
-            Settings
-          </button>
+        <nav className="sidebar-nav" aria-label="Dashboard sections">
+          {NAV.map((group) => (
+            <div key={group.heading} className="nav-group">
+              <p className="nav-heading">{group.heading}</p>
+              {group.items.map((item) => (
+                <button
+                  key={item.id}
+                  className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
+                  aria-current={activeTab === item.id ? 'page' : undefined}
+                  onClick={() => setActiveTab(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          ))}
+          <p className="nav-hint">Press <kbd>/</kbd> for the command palette</p>
         </nav>
 
         {platformSecret && (
           <div className="sidebar-platform-admin">
-            <h3>Platform Admin</h3>
+            <h3>Platform admin</h3>
             <button
               className="create-tenant-btn"
               onClick={() => setShowCreateTenant(true)}
             >
-              + Create Tenant
+              Create tenant
             </button>
             <Link href="/tenants" className="view-tenants-link">
-              View All Tenants
+              View all tenants
             </Link>
           </div>
         )}
@@ -190,6 +202,12 @@ function DashboardLayout({ credential }: { credential: string }) {
             onSuccess={() => setShowCreateOrganization(false)}
             onCancel={() => setShowCreateOrganization(false)}
           />
+        ) : showCreateBrand ? (
+          <CreateBrandForm
+            credential={credential}
+            onSuccess={() => setShowCreateBrand(false)}
+            onCancel={() => setShowCreateBrand(false)}
+          />
         ) : activeTab === 'overview' ? (
           <OverviewTab credential={credential} />
         ) : activeTab === 'organizations' ? (
@@ -206,12 +224,6 @@ function DashboardLayout({ credential }: { credential: string }) {
             credential={credential}
             onCreateNew={() => setShowCreateBrand(true)}
             preselectedOrgId={selectedOrgForBrands}
-          />
-        ) : showCreateBrand ? (
-          <CreateBrandForm
-            credential={credential}
-            onSuccess={() => setShowCreateBrand(false)}
-            onCancel={() => setShowCreateBrand(false)}
           />
         ) : activeTab === 'api-keys' ? (
           <ApiKeysTab credential={credential} />
@@ -282,10 +294,11 @@ function OverviewTab({ credential }: { credential: string }) {
 
 function ApiKeysTab({ credential }: { credential: string }) {
   const { confirm, dialog } = useConfirm();
-  const [keys, setKeys] = useState<TenantApiKey[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [keys, setKeys] = useState<TenantApiKey[] | null>(null);
   const [newKeyPlaintext, setNewKeyPlaintext] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [reload, setReload] = useState(0);
 
   const tenantId = typeof window !== 'undefined'
     ? JSON.parse(window.localStorage.getItem('nid_dashboard_tenant') || '{}').id
@@ -293,14 +306,9 @@ function ApiKeysTab({ credential }: { credential: string }) {
 
   useEffect(() => {
     if (!tenantId) return;
-    listApiKeys(credential, tenantId).then((data) => {
-      setKeys(data);
-      setLoading(false);
-    }).catch((err) => {
-      setError(err.message);
-      setLoading(false);
-    });
-  }, [credential, tenantId]);
+    setLoadError('');
+    listApiKeys(credential, tenantId).then(setKeys).catch((err) => setLoadError(err.message || 'Could not load API keys.'));
+  }, [credential, tenantId, reload]);
 
   async function handleCreateKey() {
     if (!tenantId) return;
@@ -308,37 +316,39 @@ function ApiKeysTab({ credential }: { credential: string }) {
     try {
       const result = await createApiKey(credential, tenantId);
       setNewKeyPlaintext(result.plaintext);
+      setReload((n) => n + 1);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create API key');
     }
   }
 
-  async function handleRevoke(id: string) {
-    if (!(await confirm({ title: 'Revoke this API key?', body: 'Integrations that use it stop working immediately. This cannot be undone.', confirmLabel: 'Revoke key' }))) return;
-    if (!tenantId) return;
+  async function revokeMany(rows: TenantApiKey[]) {
     try {
-      await revokeApiKey(credential, tenantId, id);
-      setKeys(keys.filter((k) => k.id !== id));
+      for (const k of rows) await revokeApiKey(credential, tenantId, k.id);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to revoke key');
     }
+    setReload((n) => n + 1);
   }
 
-  if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
+  async function handleRevoke(key: TenantApiKey) {
+    if (!(await confirm({ title: 'Revoke this API key?', body: 'Integrations that use it stop working immediately. This cannot be undone.', confirmLabel: 'Revoke key' }))) return;
+    await revokeMany([key]);
+  }
 
   return (
     <div className="tab-content">
       {dialog}
       <div className="tab-header">
-        <h1>API Keys</h1>
+        <h1>API keys</h1>
         <button className="primary-btn" onClick={handleCreateKey}>
-          + Create API Key
+          Create API key
         </button>
       </div>
 
       {newKeyPlaintext && (
         <div className="alert alert-warning">
-          <strong>New API key created!</strong> Save this key now — it cannot be recovered:
+          <strong>New API key created.</strong> Save it now, it cannot be recovered:
           <pre className="key-display">{newKeyPlaintext}</pre>
           <button onClick={() => setNewKeyPlaintext(null)}>Dismiss</button>
         </div>
@@ -346,48 +356,39 @@ function ApiKeysTab({ credential }: { credential: string }) {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Prefix</th>
-            <th>Scopes</th>
-            <th>Rate Limit</th>
-            <th>Status</th>
-            <th>Created</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {keys.map((key) => (
-            <tr key={key.id}>
-              <td>{key.keyPrefix}</td>
-              <td>{key.scopes.join(', ')}</td>
-              <td>{key.rateLimitPerMinute}/min</td>
-              <td>{key.revokedAt ? 'Revoked' : 'Active'}</td>
-              <td>{new Date(key.createdAt).toLocaleDateString()}</td>
-              <td>
-                {!key.revokedAt && (
-                  <button className="danger-btn" onClick={() => handleRevoke(key.id)}>
-                    Revoke
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable<TenantApiKey>
+        caption="API keys"
+        rows={keys}
+        error={loadError}
+        onRetry={() => setReload((n) => n + 1)}
+        rowId={(k) => k.id}
+        filterLabel="Filter keys"
+        empty={{ title: 'No API keys yet', hint: 'Create a key to let a server call the nID API for this tenant.' }}
+        columns={[
+          { key: 'prefix', header: 'Prefix', value: (k) => k.keyPrefix, render: (k) => k.keyPrefix },
+          { key: 'scopes', header: 'Scopes', value: (k) => k.scopes.join(', '), render: (k) => k.scopes.join(', ') },
+          { key: 'rate', header: 'Rate limit', numeric: true, value: (k) => k.rateLimitPerMinute, render: (k) => `${k.rateLimitPerMinute}/min` },
+          { key: 'status', header: 'Status', value: (k) => (k.revokedAt ? 'Revoked' : 'Active'), render: (k) => (k.revokedAt ? 'Revoked' : 'Active') },
+          { key: 'created', header: 'Created', value: (k) => k.createdAt, render: (k) => new Date(k.createdAt).toLocaleDateString() },
+        ]}
+        bulkActions={[{ label: 'Revoke', destructive: true, run: (rows) => revokeMany(rows.filter((k) => !k.revokedAt)) }]}
+        rowActions={(k) => !k.revokedAt && (
+          <button className="danger-btn" onClick={() => handleRevoke(k)}>Revoke</button>
+        )}
+      />
     </div>
   );
 }
 
 function StaffTab({ credential }: { credential: string }) {
   const { confirm, dialog } = useConfirm();
-  const [staff, setStaff] = useState<TenantStaffMember[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [staff, setStaff] = useState<TenantStaffMember[] | null>(null);
   const [accountId, setAccountId] = useState('');
   const [role, setRole] = useState<'STAFF' | 'ADMIN'>('STAFF');
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [success, setSuccess] = useState('');
+  const [reload, setReload] = useState(0);
 
   const tenantId = typeof window !== 'undefined'
     ? JSON.parse(window.localStorage.getItem('nid_dashboard_tenant') || '{}').id
@@ -395,14 +396,9 @@ function StaffTab({ credential }: { credential: string }) {
 
   useEffect(() => {
     if (!tenantId) return;
-    listStaff(credential, tenantId).then((data) => {
-      setStaff(data);
-      setLoading(false);
-    }).catch((err) => {
-      setError(err.message);
-      setLoading(false);
-    });
-  }, [credential, tenantId]);
+    setLoadError('');
+    listStaff(credential, tenantId).then(setStaff).catch((err) => setLoadError(err.message || 'Could not load staff.'));
+  }, [credential, tenantId, reload]);
 
   async function handleInvite() {
     if (!tenantId || !accountId.trim()) return;
@@ -410,79 +406,76 @@ function StaffTab({ credential }: { credential: string }) {
     setSuccess('');
     try {
       await inviteStaff(credential, tenantId, accountId.trim(), role);
-      setSuccess('Staff member invited successfully.');
+      setSuccess('Staff member invited.');
       setAccountId('');
-      setStaff(await listStaff(credential, tenantId));
+      setReload((n) => n + 1);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to invite staff');
     }
   }
 
-  async function handleRemove(accountId: string) {
-    if (!(await confirm({ title: 'Remove this staff member?', body: 'They lose access to this tenant.', confirmLabel: 'Remove staff member' }))) return;
-    if (!tenantId) return;
+  async function removeMany(rows: TenantStaffMember[]) {
+    setError('');
     try {
-      await removeStaff(credential, tenantId, accountId);
-      setStaff(staff.filter((s) => s.accountId !== accountId));
-      setSuccess('Staff member removed.');
+      for (const m of rows) await removeStaff(credential, tenantId, m.accountId);
+      setSuccess(rows.length === 1 ? 'Staff member removed.' : `${rows.length} staff members removed.`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to remove staff');
     }
+    setReload((n) => n + 1);
   }
 
-  if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
+  async function handleRemove(m: TenantStaffMember) {
+    if (!(await confirm({ title: 'Remove this staff member?', body: 'They lose access to this tenant.', confirmLabel: 'Remove staff member' }))) return;
+    await removeMany([m]);
+  }
 
   return (
     <div className="tab-content">
       {dialog}
-      <h1>Staff Members</h1>
+      <h1>Staff</h1>
 
       <div className="invite-form">
-        <h3>Invite Staff</h3>
-        <input
-          type="text"
-          placeholder="Account ID"
+        <h3>Invite staff</h3>
+        <Field
+          label="Account ID"
           value={accountId}
-          onChange={(e) => setAccountId(e.target.value)}
+          onChange={setAccountId}
+          validate={v.required('Account ID')}
+          hint="The person's nID account ID, from their account page."
         />
-        <select value={role} onChange={(e) => setRole(e.target.value as 'STAFF' | 'ADMIN')}>
-          <option value="STAFF">Staff</option>
-          <option value="ADMIN">Admin</option>
-        </select>
-        <button className="primary-btn" onClick={handleInvite}>
+        <label>
+          Role
+          <select value={role} onChange={(e) => setRole(e.target.value as 'STAFF' | 'ADMIN')}>
+            <option value="STAFF">Staff</option>
+            <option value="ADMIN">Admin</option>
+          </select>
+        </label>
+        <button className="primary-btn" onClick={handleInvite} disabled={!accountId.trim()}>
           Invite
         </button>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
-      {success && <div className="alert alert-success">{success}</div>}
+      {success && <div className="alert alert-success" role="status">{success}</div>}
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Account ID</th>
-            <th>Role</th>
-            <th>Phone</th>
-            <th>Verified</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {staff.map((member) => (
-            <tr key={member.id}>
-              <td>{member.accountId.slice(0, 12)}…</td>
-              <td>{member.role}</td>
-              <td>{member.phone ?? 'N/A'}</td>
-              <td>{member.phoneVerified ? 'Yes' : 'No'}</td>
-              <td>
-                <button className="danger-btn" onClick={() => handleRemove(member.accountId)}>
-                  Remove
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable<TenantStaffMember>
+        caption="Staff members"
+        rows={staff}
+        error={loadError}
+        onRetry={() => setReload((n) => n + 1)}
+        rowId={(m) => m.id}
+        filterLabel="Filter staff"
+        empty={{ title: 'No staff yet', hint: 'Invite someone above by their account ID.' }}
+        columns={[
+          { key: 'acct', header: 'Account ID', value: (m) => m.accountId, render: (m) => `${m.accountId.slice(0, 12)}...` },
+          { key: 'role', header: 'Role', value: (m) => m.role, render: (m) => m.role },
+          { key: 'phone', header: 'Phone', value: (m) => m.phone ?? '', render: (m) => m.phone ?? 'None' },
+          { key: 'ver', header: 'Verified', value: (m) => (m.phoneVerified ? 'Yes' : 'No'), render: (m) => (m.phoneVerified ? 'Yes' : 'No') },
+        ]}
+        bulkActions={[{ label: 'Remove', destructive: true, run: removeMany }]}
+        rowActions={(m) => <button className="danger-btn" onClick={() => handleRemove(m)}>Remove</button>}
+      />
     </div>
   );
 }
@@ -539,26 +532,9 @@ function SettingsTab({ credential }: { credential: string }) {
       <h1>Tenant Settings</h1>
 
       <div className="settings-form">
-        <div className="form-group">
-          <label>Tenant Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="My Brand"
-          />
-        </div>
+        <Field label="Tenant Name" value={name} onChange={(val) => setName(val)} validate={v.required('Name')} placeholder="My Brand" />
 
-        <div className="form-group">
-          <label>Webhook URL</label>
-          <input
-            type="url"
-            value={webhookUrl}
-            onChange={(e) => setWebhookUrl(e.target.value)}
-            placeholder="https://your-app.com/webhooks/nid"
-          />
-          <small>URL for receiving real-time tenant events (used by Communicator sync)</small>
-        </div>
+        <Field label="Webhook URL" type="url" value={webhookUrl} onChange={(val) => setWebhookUrl(val)} validate={v.url()} placeholder="https://your-app.com/webhooks/nid" hint="URL for receiving real-time tenant events (used by Communicator sync)" />
 
         <div className="form-group">
           <label>Platform Admin Secret</label>
@@ -598,87 +574,56 @@ function SettingsTab({ credential }: { credential: string }) {
   );
 }
 
-function OrganizationsTab({ credential, onCreateNew, onSelectOrg }: { 
-  credential: string; 
+function OrganizationsTab({ credential, onCreateNew, onSelectOrg }: {
+  credential: string;
   onCreateNew: () => void;
   onSelectOrg?: (orgId: string) => void;
 }) {
-  const [organizations, setOrganizations] = useState<OrganizationRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [organizations, setOrganizations] = useState<OrganizationRecord[] | null>(null);
   const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
-    listOrganizations(credential).then((data) => {
-      setOrganizations(data);
-      setLoading(false);
-    }).catch((err) => {
+    setError('');
+    listOrganizations(credential).then(setOrganizations).catch((err) => {
       setError(err instanceof ApiError ? err.message : 'Failed to load organizations');
-      setLoading(false);
     });
-  }, [credential]);
-
-  if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
+  }, [credential, reload]);
 
   return (
     <div className="tab-content">
       <div className="tab-header">
         <h1>Organizations</h1>
         <button className="primary-btn" onClick={onCreateNew}>
-          + Create Organization
+          Create organization
         </button>
       </div>
 
-      {error && <div className="alert alert-error">{error}</div>}
-
-      {organizations.length === 0 ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: 8 }}>
-          <p style={{ fontSize: 16, marginBottom: 8 }}>No organizations yet</p>
-          <p style={{ fontSize: 13 }}>
-            Create an organization to manage employees, verification, and brand profiles.
-          </p>
-        </div>
-      ) : (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Legal Name</th>
-              <th>Registration #</th>
-              <th>Country</th>
-              <th>Verified</th>
-              <th>Created</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {organizations.map((org) => (
-              <tr key={org.id}>
-                <td>{org.legalName}</td>
-                <td>{org.registrationNumber ?? '—'}</td>
-                <td>{org.countryCode ?? '—'}</td>
-                <td>
-                  {org.isVerified ? (
-                    <span style={{ color: '#10b981', fontWeight: 500 }}>✓ {org.verifiedLevel ?? 'Verified'}</span>
-                  ) : (
-                    <span style={{ color: 'var(--muted)' }}>Not verified</span>
-                  )}
-                </td>
-                <td>{new Date(org.createdAt).toLocaleDateString()}</td>
-                <td>
-                  <button className="primary-btn" onClick={() => {
-                    if (onSelectOrg) {
-                      onSelectOrg(org.id);
-                    } else {
-                      window.location.hash = `#org-${org.id}`;
-                    }
-                  }}>
-                    Manage Brands
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <DataTable<OrganizationRecord>
+        caption="Organizations"
+        rows={organizations}
+        error={error}
+        onRetry={() => setReload((n) => n + 1)}
+        rowId={(o) => o.id}
+        filterLabel="Filter organizations"
+        empty={{
+          title: 'No organizations yet',
+          hint: 'Create an organization to manage employees, verification and brand profiles.',
+          action: <button className="primary-btn" onClick={onCreateNew}>Create organization</button>,
+        }}
+        columns={[
+          { key: 'name', header: 'Legal name', value: (o) => o.legalName, render: (o) => o.legalName },
+          { key: 'reg', header: 'Registration number', value: (o) => o.registrationNumber ?? '', render: (o) => o.registrationNumber ?? 'None' },
+          { key: 'cc', header: 'Country', value: (o) => o.countryCode ?? '', render: (o) => o.countryCode ?? 'None' },
+          { key: 'ver', header: 'Verified', value: (o) => (o.isVerified ? 1 : 0), render: (o) => (o.isVerified ? (o.verifiedLevel ?? 'Verified') : 'Not verified') },
+          { key: 'created', header: 'Created', value: (o) => o.createdAt, render: (o) => new Date(o.createdAt).toLocaleDateString() },
+        ]}
+        rowActions={(o) => (
+          <button className="primary-btn" onClick={() => (onSelectOrg ? onSelectOrg(o.id) : (window.location.hash = `#org-${o.id}`))}>
+            Manage brands
+          </button>
+        )}
+      />
     </div>
   );
 }
@@ -757,16 +702,7 @@ function CreateOrganizationForm({
       </div>
 
       <form onSubmit={handleSubmit} className="create-tenant-form">
-        <div className="form-group">
-          <label>Legal Name *</label>
-          <input
-            type="text"
-            value={legalName}
-            onChange={(e) => setLegalName(e.target.value)}
-            placeholder="Acme Corporation Ltd."
-            required
-          />
-        </div>
+        <Field label="Legal Name" value={legalName} onChange={(val) => setLegalName(val)} validate={v.required('Legal name')} placeholder="Acme Corporation Ltd." />
 
         <div className="form-group">
           <label>Registration Number</label>
@@ -779,22 +715,12 @@ function CreateOrganizationForm({
           <small>Business registration or tax ID number (optional but recommended for verification)</small>
         </div>
 
-        <div className="form-group">
-          <label>Country Code</label>
-          <input
-            type="text"
-            value={countryCode}
-            onChange={(e) => setCountryCode(e.target.value.toUpperCase())}
-            placeholder="US"
-            maxLength={2}
-          />
-          <small>ISO 3166-1 alpha-2 country code (e.g., US, GB, DE)</small>
-        </div>
+        <Field label="Country Code" value={countryCode} onChange={(val) => setCountryCode(val.toUpperCase())} validate={v.all((x) => (!x || /^[A-Z]{2}$/.test(x) ? null : 'Use two letters, like US.'))} placeholder="US" hint="ISO 3166-1 alpha-2 country code (e.g., US, GB, DE)" />
 
         {error && <div className="alert alert-error">{error}</div>}
 
-        <button type="submit" className="primary-btn" disabled={loading}>
-          {loading ? 'Creating…' : 'Create Organization'}
+        <button type="submit" className="primary-btn" disabled={loading || !legalName.trim()}>
+          {loading ? 'Creating…' : 'Create organization'}
         </button>
       </form>
     </div>
@@ -864,7 +790,7 @@ function CreateTenantForm({
               <span className="value">{result.billingWebhookSecret}</span>
             </div>
           </div>
-          <p className="warning">Save the webhook secrets — they cannot be recovered.</p>
+          <p className="warning">Save the webhook secrets, they cannot be recovered.</p>
         </div>
         <button className="primary-btn" onClick={onSuccess}>
           Done
@@ -881,29 +807,9 @@ function CreateTenantForm({
       </div>
 
       <form onSubmit={handleSubmit} className="create-tenant-form">
-        <div className="form-group">
-          <label>Tenant Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="My Brand"
-            required
-          />
-        </div>
+        <Field label="Tenant Name" value={name} onChange={(val) => setName(val)} validate={v.required('Name')} placeholder="My Brand" />
 
-        <div className="form-group">
-          <label>Slug</label>
-          <input
-            type="text"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value.toLowerCase())}
-            placeholder="my-brand"
-            required
-            pattern="[a-z0-9][a-z0-9-]{2,63}"
-          />
-          <small>3-64 lowercase alphanumeric characters or hyphens</small>
-        </div>
+        <Field label="Slug" value={slug} onChange={(val) => setSlug(val.toLowerCase())} validate={v.slug()} placeholder="my-brand" hint="3-64 lowercase alphanumeric characters or hyphens" />
 
         <div className="form-group">
           <label>Data Residency Region</label>
@@ -914,21 +820,12 @@ function CreateTenantForm({
           />
         </div>
 
-        <div className="form-group">
-          <label>Webhook URL (optional)</label>
-          <input
-            type="url"
-            value={webhookUrl}
-            onChange={(e) => setWebhookUrl(e.target.value)}
-            placeholder="https://communicator.example.com/webhooks/nid"
-          />
-          <small>URL for real-time sync to Communicator</small>
-        </div>
+        <Field label="Webhook URL" type="url" value={webhookUrl} onChange={(val) => setWebhookUrl(val)} validate={v.url()} placeholder="https://communicator.example.com/webhooks/nid" hint="URL for real-time sync to Communicator" />
 
         {error && <div className="alert alert-error">{error}</div>}
 
-        <button type="submit" className="primary-btn" disabled={loading}>
-          {loading ? 'Creating…' : 'Create Tenant'}
+        <button type="submit" className="primary-btn" disabled={loading || !name.trim() || !slug.trim()}>
+          {loading ? 'Creating…' : 'Create tenant'}
         </button>
       </form>
     </div>
@@ -1089,9 +986,12 @@ function BrandsTab({
 }) {
   const [organizations, setOrganizations] = useState<OrganizationRecord[]>([]);
   const [selectedOrg, setSelectedOrg] = useState<string | null>(null);
-  const [brands, setBrands] = useState<BrandRecord[]>([]);
+  const { confirm, dialog } = useConfirm();
+  const [brands, setBrands] = useState<BrandRecord[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [brandError, setBrandError] = useState('');
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     listOrganizations(credential).then((data) => {
@@ -1110,29 +1010,36 @@ function BrandsTab({
 
   useEffect(() => {
     if (!selectedOrg) return;
+    setBrandError('');
+    setBrands(null);
     listBrands(credential, selectedOrg)
       .then((data) => setBrands(data))
-      .catch(() => setBrands([]));
-  }, [credential, selectedOrg]);
+      .catch((err) => setBrandError(err instanceof ApiError ? err.message : 'Could not load brands.'));
+  }, [credential, selectedOrg, reload]);
 
-  async function handleDeactivate(brandId: string, brandName: string) {
-    if (!confirm(`Deactivate brand "${brandName}"? This cannot be easily undone.`)) return;
+  async function deactivateMany(rows: BrandRecord[]) {
     try {
-      await deactivateBrand(credential, brandId);
-      setBrands((prev) => prev.filter((b) => b.id !== brandId));
+      for (const b of rows) await deactivateBrand(credential, b.id);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to deactivate brand');
     }
+    setReload((n) => n + 1);
+  }
+
+  async function handleDeactivate(brand: BrandRecord) {
+    if (!(await confirm({ title: `Deactivate ${brand.name}?`, body: 'The brand stops appearing in verification flows. This cannot be easily undone.', confirmLabel: 'Deactivate brand' }))) return;
+    await deactivateMany([brand]);
   }
 
   if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
 
   return (
     <div className="tab-content">
+      {dialog}
       <div className="tab-header">
         <h1>Brands</h1>
         <button className="primary-btn" onClick={onCreateNew} disabled={!selectedOrg}>
-          + Create Brand
+          Create brand
         </button>
       </div>
 
@@ -1154,56 +1061,30 @@ function BrandsTab({
       </div>
 
       {!selectedOrg ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: 8 }}>
-          <p style={{ fontSize: 16, marginBottom: 8 }}>No organizations found</p>
-          <p style={{ fontSize: 13 }}>Create an organization first, then add brands under it.</p>
-        </div>
-      ) : brands.length === 0 ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: 8 }}>
-          <p style={{ fontSize: 16, marginBottom: 8 }}>No brands yet</p>
-          <p style={{ fontSize: 13 }}>
-            Create a brand to manage its identity, products, AI config, and communication channels.
-          </p>
+        <div className="nid-state nid-state-empty">
+          <p className="nid-state-title">No organizations found</p>
+          <p>Create an organization first, then add brands under it.</p>
         </div>
       ) : (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Slug</th>
-              <th>Description</th>
-              <th>Website</th>
-              <th>Active</th>
-              <th>Created</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {brands.map((brand) => (
-              <tr key={brand.id}>
-                <td style={{ fontWeight: 500 }}>{brand.name}</td>
-                <td><code style={{ fontSize: 12 }}>{brand.slug}</code></td>
-                <td>{brand.description ?? '—'}</td>
-                <td>{brand.website ?? '—'}</td>
-                <td>
-                  <span style={{ color: brand.active ? '#10b981' : 'var(--muted)', fontWeight: 500 }}>
-                    {brand.active ? '✓ Active' : 'Inactive'}
-                  </span>
-                </td>
-                <td>{new Date(brand.createdAt).toLocaleDateString()}</td>
-                <td>
-                  <button
-                    className="primary-btn"
-                    style={{ backgroundColor: '#ef4444' }}
-                    onClick={() => handleDeactivate(brand.id, brand.name)}
-                  >
-                    Deactivate
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable<BrandRecord>
+          caption="Brands"
+          rows={brands}
+          error={brandError}
+          onRetry={() => setReload((n) => n + 1)}
+          rowId={(b) => b.id}
+          filterLabel="Filter brands"
+          empty={{ title: 'No brands yet', hint: 'Create a brand to manage its identity, products and channels.', action: <button className="primary-btn" onClick={onCreateNew}>Create brand</button> }}
+          columns={[
+            { key: 'name', header: 'Name', value: (b) => b.name, render: (b) => b.name },
+            { key: 'slug', header: 'Slug', value: (b) => b.slug, render: (b) => <code>{b.slug}</code> },
+            { key: 'desc', header: 'Description', value: (b) => b.description ?? '', render: (b) => b.description ?? 'None' },
+            { key: 'site', header: 'Website', value: (b) => b.website ?? '', render: (b) => b.website ?? 'None' },
+            { key: 'active', header: 'Active', value: (b) => (b.active ? 'Active' : 'Inactive'), render: (b) => (b.active ? 'Active' : 'Inactive') },
+            { key: 'created', header: 'Created', value: (b) => b.createdAt, render: (b) => new Date(b.createdAt).toLocaleDateString() },
+          ]}
+          bulkActions={[{ label: 'Deactivate', destructive: true, run: deactivateMany }]}
+          rowActions={(b) => <button className="danger-btn" onClick={() => handleDeactivate(b)}>Deactivate</button>}
+        />
       )}
     </div>
   );
@@ -1327,27 +1208,9 @@ function CreateBrandForm({
           <small>The organization this brand will belong to</small>
         </div>
 
-        <div className="form-group">
-          <label>Brand Name *</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="My Clothing Brand"
-            required
-          />
-        </div>
+        <Field label="Brand Name" value={name} onChange={(val) => setName(val)} validate={v.required('Name')} placeholder="My Clothing Brand" />
 
-        <div className="form-group">
-          <label>Slug</label>
-          <input
-            type="text"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value)}
-            placeholder="my-clothing-brand"
-          />
-          <small>URL-friendly identifier (auto-generated from name, editable)</small>
-        </div>
+        <Field label="Slug" value={slug} onChange={(val) => setSlug(val)} validate={v.slug()} placeholder="my-clothing-brand" hint="URL-friendly identifier (auto-generated from name, editable)" />
 
         <div className="form-group">
           <label>Description</label>
@@ -1359,35 +1222,11 @@ function CreateBrandForm({
           />
         </div>
 
-        <div className="form-group">
-          <label>Website</label>
-          <input
-            type="url"
-            value={website}
-            onChange={(e) => setWebsite(e.target.value)}
-            placeholder="https://mybrand.com"
-          />
-        </div>
+        <Field label="Website" type="url" value={website} onChange={(val) => setWebsite(val)} validate={v.url()} placeholder="https://mybrand.com" />
 
-        <div className="form-group">
-          <label>Contact Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="hello@mybrand.com"
-          />
-        </div>
+        <Field label="Contact Email" type="email" value={email} onChange={(val) => setEmail(val)} validate={v.email()} placeholder="hello@mybrand.com" />
 
-        <div className="form-group">
-          <label>Contact Phone</label>
-          <input
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="+1234567890"
-          />
-        </div>
+        <Field label="Contact Phone" type="tel" value={phone} onChange={(val) => setPhone(val)} validate={v.phone()} placeholder="+1234567890" />
 
         {error && <div className="alert alert-error">{error}</div>}
 
@@ -1511,10 +1350,10 @@ function AccessTab({ credential }: { credential: string }) {
           <div className="form-group">
             <label>Access Type *</label>
             <select value={accessType} onChange={(e) => setAccessType(e.target.value as any)}>
-              <option value="MEMBER">Member — Basic access with role-defined permissions</option>
-              <option value="ADMIN">Admin — Full access to entity and sub-entities</option>
-              <option value="PARTNER">Partner — Percentage-based ownership share</option>
-              <option value="OWNER">Owner — Full tenant access (except ownership transfer)</option>
+              <option value="MEMBER">Member: Basic access with role-defined permissions</option>
+              <option value="ADMIN">Admin: Full access to entity and sub-entities</option>
+              <option value="PARTNER">Partner: Percentage-based ownership share</option>
+              <option value="OWNER">Owner: Full tenant access (except ownership transfer)</option>
             </select>
           </div>
           {accessType === 'PARTNER' && (
@@ -1557,7 +1396,7 @@ function AccessTab({ credential }: { credential: string }) {
                   </div>
                 </td>
                 <td><span className={`badge badge-${grant.accessType.toLowerCase()}`}>{grant.accessType}</span></td>
-                <td>{grant.partnershipPercentage ? `${grant.partnershipPercentage}%` : '—'}</td>
+                <td>{grant.partnershipPercentage ? `${grant.partnershipPercentage}%` : 'None'}</td>
                 <td><span className={`badge badge-${grant.status.toLowerCase()}`}>{grant.status}</span></td>
                 <td>{new Date(grant.createdAt).toLocaleDateString()}</td>
                 <td>
@@ -1677,14 +1516,10 @@ function DepartmentsTab({ credential }: { credential: string }) {
               required
             />
           </div>
-          <div className="form-group">
-            <label>Slug</label>
-            <input type="text" value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="finance" />
-            <small>URL-friendly identifier (auto-generated)</small>
-          </div>
+          <Field label="Slug" value={slug} onChange={(val) => setSlug(val)} validate={v.slug()} placeholder="finance" hint="URL-friendly identifier (auto-generated)" />
           <div className="form-group">
             <label>Icon</label>
-            <input type="text" value={icon} onChange={(e) => setIcon(e.target.value)} placeholder="💰" />
+            <input type="text" value={icon} onChange={(e) => setIcon(e.target.value)} placeholder="finance" />
           </div>
           <div className="form-group">
             <label>Color</label>
@@ -1840,10 +1675,7 @@ function RolesTab({ credential }: { credential: string }) {
       {showForm && (
         <form onSubmit={handleSubmit} className="create-tenant-form">
           <h3>Create Custom Role</h3>
-          <div className="form-group">
-            <label>Role Name *</label>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Finance Manager" required />
-          </div>
+          <Field label="Role Name" value={name} onChange={(val) => setName(val)} validate={v.required('Name')} placeholder="Finance Manager" />
           <div className="form-group">
             <label>Description</label>
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Manages all finance-related operations" rows={2} />
@@ -2027,10 +1859,7 @@ function InvitationsTab({ credential }: { credential: string }) {
           </div>
         </div>
         {inviteType === 'email' ? (
-          <div className="form-group">
-            <label>Email Address *</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="user@example.com" required />
-          </div>
+          <Field label="Email Address" type="email" value={email} onChange={(val) => setEmail(val)} validate={v.email()} placeholder="user@example.com" />
         ) : (
           <div className="form-group">
             <label>Username *</label>
@@ -2043,36 +1872,30 @@ function InvitationsTab({ credential }: { credential: string }) {
         </button>
       </form>
 
-      <div className="data-table">
-        <h3>Pending Invitations</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Email / Username</th>
-              <th>Scope</th>
-              <th>Status</th>
-              <th>Expires</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {invitations.filter(inv => inv.status === 'PENDING').map(inv => (
-              <tr key={inv.id}>
-                <td>{inv.email || inv.username || '—'}</td>
-                <td><span className="badge badge-info">{inv.scope}</span></td>
-                <td><span className="badge badge-pending">{inv.status}</span></td>
-                <td>{new Date(inv.expiresAt).toLocaleDateString()}</td>
-                <td>
-                  <button className="btn-danger" onClick={() => handleRevoke(inv.id)}>Revoke</button>
-                </td>
-              </tr>
-            ))}
-            {invitations.filter(inv => inv.status === 'PENDING').length === 0 && (
-              <tr><td colSpan={5}>No pending invitations.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <h3>Pending invitations</h3>
+      <DataTable<InvitationRecord>
+        caption="Pending invitations"
+        rows={invitations.filter((inv) => inv.status === 'PENDING')}
+        rowId={(i) => i.id}
+        filterLabel="Filter invitations"
+        empty={{ title: 'No pending invitations', hint: 'Invitations you send appear here until they are accepted or expire.' }}
+        columns={[
+          { key: 'who', header: 'Email or username', value: (i) => i.email || i.username || '', render: (i) => i.email || i.username || 'None' },
+          { key: 'scope', header: 'Scope', value: (i) => i.scope, render: (i) => i.scope },
+          { key: 'status', header: 'Status', value: (i) => i.status, render: (i) => i.status },
+          { key: 'exp', header: 'Expires', value: (i) => i.expiresAt, render: (i) => new Date(i.expiresAt).toLocaleDateString() },
+        ]}
+        bulkActions={[{
+          label: 'Revoke',
+          destructive: true,
+          run: async (rows) => {
+            try { for (const i of rows) await revokeInvitation(credential, tenant.id, i.id); setSuccess(`${rows.length} revoked`); }
+            catch (e) { setError((e as Error).message); }
+            await loadInvitations(tenant.id);
+          },
+        }]}
+        rowActions={(i) => <button className="danger-btn" onClick={() => handleRevoke(i.id)}>Revoke</button>}
+      />
     </div>
   );
 }

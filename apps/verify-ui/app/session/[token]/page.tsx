@@ -30,7 +30,7 @@ type LoadState =
 
 const TERMINAL_STATUSES: CaseStatus[] = ['APPROVED', 'REJECTED', 'EXPIRED', 'NEEDS_REVIEW'];
 
-/** Route segment for each single-file upload method's submit endpoint — liveness has its own
+/** Route segment for each single-file upload method's submit endpoint, liveness has its own
  * multi-frame route (submitFrames below), the per-claim document methods share one generic route. */
 const UPLOAD_ROUTE_FOR_METHOD: Record<string, string> = {
   document_ocr: 'document',
@@ -39,9 +39,9 @@ const UPLOAD_ROUTE_FOR_METHOD: Record<string, string> = {
   employment_document: 'claims/employment_document',
 };
 
-/** education_registry / employment_registry resolve automatically, server-side — no upload here. */
+/** education_registry / employment_registry resolve automatically, server-side, no upload here. */
 const REGISTRY_CHECK_METHODS = new Set(['education_registry', 'employment_registry']);
-/** ecp_voter_registration — the subject types back what a government SMS shortcode told them; see SelfReportedCheckProvider. */
+/** ecp_voter_registration, the subject types back what a government SMS shortcode told them; see SelfReportedCheckProvider. */
 const SELF_REPORT_METHODS = new Set(['ecp_voter_registration']);
 
 export default function SessionPage() {
@@ -75,7 +75,7 @@ export default function SessionPage() {
   }, [fetchStatus]);
 
   // Poll while the case is still in flight, not just while this tab just
-  // submitted something — the case can move on to its next method (e.g.
+  // submitted something, the case can move on to its next method (e.g.
   // document_ocr finishing while this page is idle) and the UI needs to
   // pick that up on its own.
   useEffect(() => {
@@ -147,7 +147,7 @@ export default function SessionPage() {
     }
   }
 
-  /** liveness only — a burst of frames, not one file. See LivenessStep and SessionsService.submitLiveness(). */
+  /** liveness only, a burst of frames, not one file. See LivenessStep and SessionsService.submitLiveness(). */
   async function submitFrames(frames: Blob[]): Promise<void> {
     setSubmitError(null);
     setSubmitting(true);
@@ -224,7 +224,7 @@ async function errorMessageFrom(res: Response): Promise<string> {
 }
 
 /** A thin top-accent color on the outer card for a terminal outcome, matching the
- * result panel's icon/heading color below — so the outcome reads at a glance. */
+ * result panel's icon/heading color below, so the outcome reads at a glance. */
 function resultCardClass(status: CaseStatus): string {
   if (status === 'APPROVED') return 'card-success';
   if (status === 'REJECTED') return 'card-danger';
@@ -303,7 +303,7 @@ function ResultView({
 
   if (!current) {
     // Every attempt in the policy already resolved but the case status
-    // hasn't caught up on this poll tick yet — the next tick will show the
+    // hasn't caught up on this poll tick yet, the next tick will show the
     // terminal view above.
     return (
       <>
@@ -369,7 +369,7 @@ function ResultView({
       <>
         {stepLabel}
         <h1>Checking with the registry…</h1>
-        <p className="lead">We&apos;re confirming this automatically — nothing to do here.</p>
+        <p className="lead">We&apos;re confirming this automatically, nothing to do here.</p>
         <div className="status-line">
           <span className="dot pending" />
           <span>This can take a moment</span>
@@ -432,7 +432,7 @@ const SELF_REPORT_STEP_CONFIG: Record<
     title: 'Check your voter registration',
     description:
       'Text your CNIC number to 8300 to check with the Election Commission of Pakistan, then type back exactly what they replied.',
-    placeholder: 'e.g. "Registered — Lahore NA-130" or the full reply text',
+    placeholder: 'e.g. "Registered, Lahore NA-130" or the full reply text',
     buttonLabel: 'Submit reply',
   },
 };
@@ -529,12 +529,12 @@ function UploadStep({
   );
 }
 
-/** How many frames a burst captures, and how far apart — real blink detection
+/** How many frames a burst captures, and how far apart, real blink detection
  * (@nid/liveness-engine) needs an open->closed->open sequence, which needs more
  * than one snapshot; ~1.8s total gives the subject a real window to blink in. */
 const LIVENESS_FRAME_COUNT = 6;
 const LIVENESS_FRAME_INTERVAL_MS = 300;
-/** The frame index (0-based) the "Blink now" prompt appears at — roughly the middle of the burst. */
+/** The frame index (0-based) the "Blink now" prompt appears at, roughly the middle of the burst. */
 const LIVENESS_BLINK_PROMPT_FRAME = 2;
 
 function LivenessStep({

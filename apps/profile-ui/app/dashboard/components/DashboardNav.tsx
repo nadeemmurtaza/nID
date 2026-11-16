@@ -35,7 +35,7 @@ interface Props {
 }
 
 /** The persistent dashboard app shell: a brand header, one link per dashboard
- * route (reusing the app's existing .tabs/.tab-btn visual style — a
+ * route (reusing the app's existing .tabs/.tab-btn visual style, a
  * horizontally-scrolling strip on narrow screens, a proper left sidebar from
  * 880px up via the media query in globals.css), and sign-out/view-page
  * actions. Active state is driven by the real route (usePathname in the

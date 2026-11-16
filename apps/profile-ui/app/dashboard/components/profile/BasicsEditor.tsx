@@ -10,7 +10,7 @@ interface Props {
   onSaved: (profile: OwnerProfile) => void;
 }
 
-/** Photo + the fields that answer "who is this" — deliberately one step,
+/** Photo + the fields that answer "who is this", deliberately one step,
  * not two: the photo control is a single action, not a form section of
  * its own. */
 export function BasicsEditor({ token, profile, onSaved }: Props) {
@@ -42,7 +42,7 @@ export function BasicsEditor({ token, profile, onSaved }: Props) {
     setSaved(false);
     try {
       // A blank optional text input means "cleared", not "an empty string"
-      // — see owner-api.ts's ProfileInput comment.
+      //, see owner-api.ts's ProfileInput comment.
       const sanitized: Record<string, string | undefined> = { ...form };
       for (const key of ['headline', 'bio'] as const) {
         if (sanitized[key] === '') sanitized[key] = undefined;

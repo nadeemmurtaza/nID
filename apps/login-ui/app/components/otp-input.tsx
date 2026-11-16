@@ -11,7 +11,7 @@ interface OtpInputProps {
 }
 
 /**
- * Six separate boxes instead of one plain text field — the standard OTP
+ * Six separate boxes instead of one plain text field, the standard OTP
  * pattern (auto-advance on digit entry, backspace steps back, arrow-key
  * navigation, and pasting a full code fills every box at once) rather than
  * a bare `<input maxLength={6}>`. Real interaction behavior, not just a

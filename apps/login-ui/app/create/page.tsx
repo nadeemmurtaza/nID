@@ -10,7 +10,7 @@ import { Logomark } from '../components/logomark';
 type Step = 'details' | 'code';
 
 /**
- * Screen 3 (Create NEWAX ID) — redesigned to match Communicator's Login page
+ * Screen 3 (Create NEWAX ID), redesigned to match Communicator's Login page
  * with logo circle header, Fin Orange accent, and sharp 4 px geometry.
  */
 export default function CreateAccountPage() {

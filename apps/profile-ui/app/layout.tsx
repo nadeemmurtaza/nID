@@ -5,7 +5,7 @@ import { ConsentBanner } from '@newax/design-tokens/ConsentBanner';
 
 export const metadata: Metadata = {
   title: 'nID Profiles',
-  description: 'Public profiles, verified badges, booking, and contact — powered by nID.',
+  description: 'Public profiles, verified badges, booking, and contact, powered by nID.',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

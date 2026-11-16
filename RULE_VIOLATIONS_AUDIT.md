@@ -363,28 +363,49 @@ Added in the second round (same verification):
 
 ### Design and UX (what is left)
 
-Fixed this round: Inter, Lucide, card shadows, skeleton loaders, one-click
-destructive actions, motion preferences and focus rings (D2, D5, D10, D21,
-`UX_UI_RULES.md` reduced motion). Still open:
+Fixed earlier: Inter, Lucide, card shadows, skeleton loaders, one-click
+destructive actions, motion preferences and focus rings (D2, D5, D10, D21).
 
-- **Copy and decoration**: about 50 em dashes in UI strings (D9), emojis
-  (`dashboard/app/page.tsx:1676`), two coloured left stripes (D11), hover
-  animations on a filter brightness (D28), and the headline "Your work,
-  connected." (UNSLOP 9).
-- **Missing SaaS patterns**: command palette and shortcuts, debounce and
-  throttle, inline validation, bulk actions, a shared data table, filtering,
-  an app-level 404 and `error.tsx`, retry on error states, and a mobile layout
-  (one `@media` rule in the whole repo).
-- **`UX_UI_RULES.md`**: literal durations instead of motion tokens, a linear
-  easing (`dashboard/app/globals.css:161`), hit areas of 24 to 36 px on small
-  buttons, 10 flat navigation items, dashboard tabs held in state so Back
-  does not work.
+Fixed 2026-11-16 (checked in a browser by `scripts/ui-smoke-dashboard.js`,
+14 checks, plus typecheck and production build of all four apps):
+
+- **Missing SaaS patterns, now in `@newax/design-tokens`**: a command palette
+  (Ctrl/Cmd+K or `/`) with `g` then letter shortcuts, `useDebouncedValue` and
+  `useThrottledCallback`, a `Field` component with inline validation (error on
+  blur, then live, wired with `htmlFor` and `aria-describedby`), a `DataTable`
+  with sortable headers (`aria-sort`), debounced filtering, row selection and
+  confirmed bulk actions, `ErrorState` with retry, `EmptyState`, and an
+  app-level `not-found.tsx` and `error.tsx` in all four apps.
+- **Dashboard**: tabs live in the URL hash, so Back, Forward and deep links
+  work; ten flat items are three groups; API keys, staff, organizations,
+  brands and invitations use the shared table with filter, sort, retry and
+  bulk revoke, remove or deactivate; the brand form had a render-order bug
+  that made "Create brand" do nothing, now fixed; brand deactivation used the
+  native `confirm()`, now the shared dialog.
+- **Mobile and hit areas**: sidebar becomes a scrolling strip under 720 px,
+  tables scroll inside their wrapper, baseline small-screen rules in all four
+  apps, and dashboard controls are 44 px.
+- **Copy and decoration**: em dashes removed from UI strings (D9), the emoji
+  placeholder, both coloured left stripes (D11), filter-brightness hovers
+  (D28), the headline "Your work, connected." (UNSLOP 9), and the fake
+  `nid.example/your-slug` placeholder. `text-wrap` and tabular numbers added.
+
+Still open:
+
+- **Forms outside the dashboard create flows** (login, profile-ui managers,
+  verify-ui) still use plain inputs; only the dashboard create and invite
+  forms use `Field`. The dashboard has about 20 labels without `htmlFor`
+  left in the access, departments and roles tabs, and the access and roles
+  tabs still use hand-written tables, not `DataTable`.
+- **Not exercised in a browser**: the palette and table in profile-ui and
+  verify-ui (they only got the 404, error page and small-screen rules).
+- **`UX_UI_RULES.md`**: literal durations instead of motion tokens in older
+  rules (the one linear easing is the spinner, which is correct).
 - **`UNSLOP_DESIGN_RULES.md`**: literal px and hex outside tokens, a parallel
-  palette in `login-ui/app/brand.ts`, mixed icon sets in places, no
-  `text-wrap` or `tabular-nums`, hex tokens instead of OKLCH.
-- **Placeholders shipped**: `/security` reads "This page is a placeholder."
-  (`login-ui/app/security/page.tsx:10`); `profile-ui/app/page.tsx:10` shows
-  `nid.example/your-slug`.
+  palette in `login-ui/app/brand.ts`, mixed icon sets in places, hex tokens
+  instead of OKLCH.
+- **Placeholder**: `/security` reads "This page is a placeholder."
+  (legal and policy copy, out of scope here).
 
 ### Confirmed followed
 

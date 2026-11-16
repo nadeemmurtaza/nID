@@ -11,7 +11,13 @@
     "./Skeleton": "./Skeleton.tsx",
     "./ConsentBanner": "./ConsentBanner.tsx",
     "./ConfirmDialog": "./ConfirmDialog.tsx",
-    "./consent": "./consent.ts"
+    "./consent": "./consent.ts",
+    "./hooks": "./hooks.ts",
+    "./CommandPalette": "./CommandPalette.tsx",
+    "./DataTable": "./DataTable.tsx",
+    "./Field": "./Field.tsx",
+    "./StatePages": "./StatePages.tsx",
+    "./patterns.css": "./patterns.css"
   },
   "files": [
     "tokens.css",
@@ -20,7 +26,13 @@
     "ConsentBanner.tsx",
     "ConfirmDialog.tsx",
     "consent.ts",
-    "check-contrast.mjs"
+    "check-contrast.mjs",
+    "hooks.ts",
+    "CommandPalette.tsx",
+    "DataTable.tsx",
+    "Field.tsx",
+    "StatePages.tsx",
+    "patterns.css"
   ],
   "scripts": {
     "check-contrast": "node check-contrast.mjs"

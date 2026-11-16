@@ -56,7 +56,7 @@ export default async function ProfilePage({ params }: PageProps) {
             <div className="hero-photo-fallback">{initials || '?'}</div>
           )}
           {/* No mechanism in this system ties an uploaded profile photo to
-              any verified identity evidence — always shown as unverified,
+              any verified identity evidence, always shown as unverified,
               never implied otherwise. */}
           <span className="verify-tag unverified" title="This photo has not been independently verified">
             ○ Unverified photo
@@ -131,7 +131,7 @@ export default async function ProfilePage({ params }: PageProps) {
               Email
             </a>
             {/* No email verification exists anywhere in this system (no
-                confirm-email flow) — always unverified, never implied
+                confirm-email flow), always unverified, never implied
                 otherwise. */}
             <span className="verify-tag unverified" title="This email address has not been independently verified">
               ○ Unverified

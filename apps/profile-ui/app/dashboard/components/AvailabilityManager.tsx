@@ -73,9 +73,9 @@ export function AvailabilityManager({ token }: { token: string }) {
         Bookable hours
       </h2>
       <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 10 }}>
-        When visitors can actually book a service — separate from the display-only hours below.
+        When visitors can actually book a service, separate from the display-only hours below.
       </p>
-      {rules?.length === 0 && <p className="empty-state">No recurring windows yet — add one below.</p>}
+      {rules?.length === 0 && <p className="empty-state">No recurring windows yet, add one below.</p>}
       {rules?.map((rule) => (
         <div className="data-row" key={rule.id}>
           <span>
