@@ -35,3 +35,57 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: cargo audit
         run: cargo install cargo-audit --locked && cargo audit
+
+  schema:
+    name: SQL matches the schema
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nid
+          POSTGRES_PASSWORD: nid
+          POSTGRES_DB: nid
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U nid" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPASSWORD: nid
+      DATABASE_URL: postgresql://nid:nid@localhost:5432/nid
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply migrations
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f packages/db/sql/001-app-role-bootstrap.sql
+          for f in $(ls crates/db-schema/migrations/*.sql | sort); do
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+      # Every static SQL string in the Rust code must PREPARE against the real
+      # schema: catches a renamed or missing column before runtime.
+      - name: Validate SQL
+        run: python3 scripts/validate-sql.py
+
+  frontend:
+    name: Frontend typecheck, build and contrast
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: >-
+          pnpm install --frozen-lockfile --ignore-scripts
+          --filter "./apps/login-ui..." --filter "./apps/dashboard..."
+          --filter "./apps/verify-ui..." --filter "./apps/profile-ui..."
+      - name: Colour contrast
+        run: node packages/design-tokens/check-contrast.mjs
+      - name: Typecheck and build
+        run: |
+          for app in login-ui dashboard verify-ui profile-ui; do
+            (cd apps/$app && pnpm typecheck && NEXT_TELEMETRY_DISABLED=1 pnpm build)
+          done
