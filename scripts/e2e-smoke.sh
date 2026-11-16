@@ -91,6 +91,20 @@ ok "read-only key cannot mint keys" "$(code -X POST "$API/v1/tenants/$TA/api-key
 ok "admin key cannot mint a wildcard key" "$(code -X POST "$API/v1/tenants/$TA/api-keys" -H "Authorization: Bearer $KA" -H "$H" -d '{"scopes":["*"]}')" 403
 ok "per-key rate limit returns 429" "$(for _ in 1 2 3 4 5; do code "$API/v1/subjects/$SID" -H "Authorization: Bearer $RK"; echo; done | grep -c 429)" 3
 
+echo "== verification session uploads"
+STOK=$(echo "$CASE"|j sessionToken)
+STORE=${LOCAL_STORAGE_DIR:-/tmp/nid-storage-data}
+printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00' > /tmp/e2e-doc.png
+printf '\xff\xd8\xff\xe0\x00\x10JFIF\x00' > /tmp/e2e-frame.jpg
+ok "session status is readable by its token" "$(code "$API/v1/sessions/$STOK")" 200
+ok "a document that is really a script is rejected" "$(code -X POST "$API/v1/sessions/$STOK/document/submit" -F "file=@/tmp/e2e-evil.png;type=image/png")" 400
+ok "a real document is accepted" "$(code -X POST "$API/v1/sessions/$STOK/document/submit" -F "file=@/tmp/e2e-doc.png;type=image/png")" 200
+ok "the document is stored on disk" "$(find "$STORE/verification-document" -type f 2>/dev/null | wc -l | tr -d ' ')" 1
+ok "liveness frames are accepted" "$(code -X POST "$API/v1/sessions/$STOK/liveness/submit" -F "frames=@/tmp/e2e-frame.jpg;type=image/jpeg" -F "frames=@/tmp/e2e-frame.jpg;type=image/jpeg")" 200
+ok "the frames are stored on disk" "$(find "$STORE/verification-liveness" -type f 2>/dev/null | wc -l | tr -d ' ')" 2
+ok "the attempts record storage keys" "$(( $(sql "select count(*) from verification_method_attempt where result_meta ? 'storageKey' or result_meta ? 'storageKeys'") >= 2 ))" 1
+ok "an unknown session token is rejected" "$(code -X POST "$API/v1/sessions/nope/document/submit" -F "file=@/tmp/e2e-doc.png;type=image/png")" 400
+
 echo "== self-service verification cases"
 VS=$(login); SS=$(echo "$VS"|j sessionToken)
 ok "unknown claim type is a clean 400" "$(code -X POST "$API/v1/accounts/me/verification/cases" -H "Authorization: Bearer $SS" -H "$H" -d '{"claimType":"PHONE"}')" 400

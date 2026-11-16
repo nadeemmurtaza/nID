@@ -164,15 +164,12 @@ pub struct MessageResponse {
 
 // --- Session token generation (simplified) ---
 
+/// Plaintext token for the hosted verification link and the SHA-256 hash
+/// stored for it. Must be the shared generator: the sessions service looks the
+/// token up by `sha256_hex`, so any other hash means no link ever resolves.
 fn generate_session_token() -> (String, String) {
-    let plaintext = uuid::Uuid::new_v4().to_string();
-    // Simple hash: SHA-256 hex using std-only approach
-    let hash_bytes: Vec<u8> = plaintext.as_bytes().chunks(2).map(|c| c.iter().fold(0u8, |a, &b| a.wrapping_add(b))).collect();
-    let hash = hash_bytes.iter().fold(String::new(), |mut s, b| {
-        s.push_str(&format!("{:02x}", b));
-        s
-    });
-    (plaintext, hash)
+    let t = nid_shared_types::generate_session_token();
+    (t.plaintext, t.hash)
 }
 
 // --- Service ---

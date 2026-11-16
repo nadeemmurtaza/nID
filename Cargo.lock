@@ -1528,6 +1528,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "nid-shared-types",
  "serde_json",
  "sqlx",
  "uuid",

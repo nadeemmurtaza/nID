@@ -43,7 +43,7 @@ struct MethodAttemptRow {
 
 #[derive(Debug, Clone, FromRow)]
 struct SubjectPhoneRow {
-    phone: String,
+    phone: Option<String>,
 }
 
 /// Inline replacement for monolith's `core::upload::UploadedFile`.
@@ -97,6 +97,41 @@ impl SessionsService {
 
     /// Persist an upload and return its storage key. The type is decided by
     /// the file's leading bytes, never by the client-supplied MIME type.
+    /// Record an upload on the case's attempt for `method`. Case creation
+    /// already makes a PENDING attempt per policy method, so this fills its
+    /// `result_meta`; a method the policy did not list gets a new PENDING one.
+    /// The workflow, not the upload, decides pass or fail.
+    async fn record_attempt(
+        conn: &mut sqlx::PgConnection,
+        tenant_id: &str,
+        case_id: &str,
+        method: &str,
+        meta: serde_json::Value,
+    ) -> Result<()> {
+        let updated = sqlx::query(
+            "UPDATE verification_method_attempt SET result_meta = $3::jsonb, started_at = COALESCE(started_at, NOW())
+             WHERE case_id = $1 AND method = $2",
+        )
+        .bind(case_id)
+        .bind(method)
+        .bind(meta.to_string())
+        .execute(&mut *conn)
+        .await?;
+        if updated.rows_affected() == 0 {
+            sqlx::query(
+                "INSERT INTO verification_method_attempt (id, tenant_id, case_id, method, provider_key, status, result_meta, started_at)
+                 VALUES (gen_random_uuid(), $1, $2, $3, $3, 'PENDING', $4::jsonb, NOW())",
+            )
+            .bind(tenant_id)
+            .bind(case_id)
+            .bind(method)
+            .bind(meta.to_string())
+            .execute(&mut *conn)
+            .await?;
+        }
+        Ok(())
+    }
+
     async fn store_file(&self, case_id: &str, kind: &str, file: &UploadedFile) -> Result<String> {
         use nid_storage::StorageDriver;
         let storage = self
@@ -185,7 +220,7 @@ impl SessionsService {
                     status: a.status,
                 })
                 .collect(),
-            phone: subject.phone,
+            phone: subject.phone.unwrap_or_default(),
         })
     }
 
@@ -223,33 +258,29 @@ impl SessionsService {
         let url = self.store_file(&session.case_id, "document", &file).await?;
 
         let now = chrono::Utc::now();
-        sqlx::query(
-            "INSERT INTO verification_method_attempt (case_id, method, status, metadata, started_at)
-             VALUES ($1, 'document', 'submitted', $2, $3)",
-        )
-        .bind(&session.case_id)
-        .bind(
+        Self::record_attempt(
+            &mut conn,
+            &session.tenant_id,
+            &session.case_id,
+            "document_ocr",
             serde_json::json!({
-                "url": url,
-                "contentType": file.content_type,
+                "storageKey": url,
+                "contentType": nid_storage::sniff_content_type(&file.buffer),
                 "filename": file.filename,
                 "size": file.buffer.len(),
-            })
-            .to_string(),
+            }),
         )
-        .bind(now)
-        .execute(&mut *conn)
         .await?;
 
         sqlx::query(
-            "INSERT INTO audit_log_entry (tenant_id, actor_type, actor_id, action, subject_id, case_id, metadata, created_at)
-             VALUES ($1, 'SUBJECT', $2, 'verification_case.submit_document', $3, $4, $5, $6)",
+            "INSERT INTO audit_log_entry (id, tenant_id, actor_type, actor_id, action, subject_id, case_id, metadata, created_at)
+             VALUES (gen_random_uuid(), $1, 'SUBJECT', $2, 'verification_case.submit_document', $3, $4, $5::jsonb, $6)",
         )
         .bind(&session.tenant_id)
         .bind(&kase.subject_id)
         .bind(&kase.subject_id)
         .bind(&session.case_id)
-        .bind(serde_json::json!({"url": url}).to_string())
+        .bind(serde_json::json!({"storageKey": url}).to_string())
         .bind(now)
         .execute(&mut *conn)
         .await?;
@@ -291,21 +322,13 @@ impl SessionsService {
             frame_urls.push(self.store_file(&session.case_id, "liveness", f).await?);
         }
 
-        let now = chrono::Utc::now();
-        sqlx::query(
-            "INSERT INTO verification_method_attempt (case_id, method, status, metadata, started_at)
-             VALUES ($1, 'liveness', 'submitted', $2, $3)",
+        Self::record_attempt(
+            &mut conn,
+            &session.tenant_id,
+            &session.case_id,
+            "liveness",
+            serde_json::json!({ "frameCount": files.len(), "storageKeys": frame_urls }),
         )
-        .bind(&session.case_id)
-        .bind(
-            serde_json::json!({
-                "frameCount": files.len(),
-                "urls": frame_urls,
-            })
-            .to_string(),
-        )
-        .bind(now)
-        .execute(&mut *conn)
         .await?;
 
         info!(
@@ -350,24 +373,18 @@ impl SessionsService {
 
         let url = self.store_file(&session.case_id, "claim", &file).await?;
 
-        let now = chrono::Utc::now();
-        sqlx::query(
-            "INSERT INTO verification_method_attempt (case_id, method, status, metadata, started_at)
-             VALUES ($1, $2, 'submitted', $3, $4)",
-        )
-        .bind(&session.case_id)
-        .bind(method)
-        .bind(
+        Self::record_attempt(
+            &mut conn,
+            &session.tenant_id,
+            &session.case_id,
+            method,
             serde_json::json!({
-                "url": url,
-                "contentType": file.content_type,
+                "storageKey": url,
+                "contentType": nid_storage::sniff_content_type(&file.buffer),
                 "filename": file.filename,
                 "size": file.buffer.len(),
-            })
-            .to_string(),
+            }),
         )
-        .bind(now)
-        .execute(&mut *conn)
         .await?;
 
         info!(
@@ -460,8 +477,8 @@ impl SessionsService {
 
         let now = chrono::Utc::now();
         sqlx::query(
-            "INSERT INTO audit_log_entry (tenant_id, actor_type, actor_id, action, subject_id, case_id, metadata, created_at)
-             VALUES ($1, 'SUBJECT', $2, $3, $4, $5, $6, $7)",
+            "INSERT INTO audit_log_entry (id, tenant_id, actor_type, actor_id, action, subject_id, case_id, metadata, created_at)
+             VALUES (gen_random_uuid(), $1, 'SUBJECT', $2, $3, $4, $5, $6::jsonb, $7)",
         )
         .bind(&session.tenant_id)
         .bind(&kase.subject_id)
