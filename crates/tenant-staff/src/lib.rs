@@ -33,15 +33,31 @@ pub struct TenantStaffService {
 }
 
 impl TenantStaffService {
+    /// Open a transaction with RLS context settings applied. They are
+    /// transaction-local (`set_config(.., true)`), so they must be set on the
+    /// transaction itself and are gone once it ends.
+    async fn scoped(&self, settings: &[(&str, &str)]) -> Result<sqlx::Transaction<'_, sqlx::Postgres>> {
+        let mut tx = self.db.begin().await?;
+        for (k, v) in settings {
+            sqlx::query("SELECT set_config($1, $2, true)")
+                .bind(*k)
+                .bind(*v)
+                .execute(&mut *tx)
+                .await?;
+        }
+        Ok(tx)
+    }
+
     pub fn new(db: PgPool) -> Self {
         Self { db }
     }
 
     pub async fn invite(&self, tenant_id: &str, account_id: &str, role: &str) -> Result<StaffMemberResponse> {
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id)]).await?;
         let existing = sqlx::query("SELECT id FROM tenant_staff_membership WHERE tenant_id = $1 AND account_id = $2")
             .bind(tenant_id)
             .bind(account_id)
-            .fetch_optional(&self.db)
+            .fetch_optional(&mut *conn)
             .await?;
 
         if existing.is_some() {
@@ -58,14 +74,15 @@ impl TenantStaffService {
         .bind(tenant_id)
         .bind(account_id)
         .bind(role)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *conn)
         .await?;
 
-        let account = sqlx::query("SELECT phone, phone_verified FROM account WHERE id = $1")
+        let account = sqlx::query("SELECT phone, (phone_verified_at IS NOT NULL) AS phone_verified FROM account WHERE id = $1")
             .bind(&staff.account_id)
-            .fetch_optional(&self.db)
+            .fetch_optional(&mut *conn)
             .await?;
 
+        conn.commit().await?;
         Ok(StaffMemberResponse {
             id: staff.id,
             tenant_id: staff.tenant_id,
@@ -78,12 +95,13 @@ impl TenantStaffService {
     }
 
     pub async fn list(&self, tenant_id: &str) -> Result<Vec<StaffMemberResponse>> {
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id)]).await?;
         let rows: Vec<(String, String, String, String, Option<String>, bool, chrono::DateTime<chrono::Utc>)> =
             sqlx::query_as(
-                "SELECT m.id, m.tenant_id, m.account_id, m.role, a.phone, COALESCE(a.phone_verified, false), m.created_at FROM tenant_staff_membership m LEFT JOIN account a ON m.account_id = a.id WHERE m.tenant_id = $1 ORDER BY m.created_at",
+                "SELECT m.id, m.tenant_id, m.account_id, m.role, a.phone, (a.phone_verified_at IS NOT NULL), m.created_at FROM tenant_staff_membership m LEFT JOIN account a ON m.account_id = a.id WHERE m.tenant_id = $1 ORDER BY m.created_at",
             )
             .bind(tenant_id)
-            .fetch_all(&self.db)
+            .fetch_all(&mut *conn)
             .await?;
 
         Ok(rows

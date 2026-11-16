@@ -1,5 +1,6 @@
 'use client';
 
+import { useConfirm } from '@newax/design-tokens/ConfirmDialog';
 import { useEffect, useState } from 'react';
 import {
   ApiError,
@@ -11,6 +12,7 @@ import {
 } from '../../../lib/owner-api';
 
 export function ServicesManager({ token }: { token: string }) {
+  const { confirm, dialog } = useConfirm();
   const [services, setServices] = useState<OwnerService[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -53,6 +55,7 @@ export function ServicesManager({ token }: { token: string }) {
   }
 
   async function handleDelete(id: string): Promise<void> {
+    if (!(await confirm({ title: 'Delete this service?', body: 'It is removed from your public profile and cannot be restored.', confirmLabel: 'Delete service' }))) return;
     try {
       await deleteService(token, id);
       setServices((prev) => prev?.filter((s) => s.id !== id) ?? null);
@@ -63,6 +66,7 @@ export function ServicesManager({ token }: { token: string }) {
 
   return (
     <div>
+      {dialog}
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Services
       </h2>

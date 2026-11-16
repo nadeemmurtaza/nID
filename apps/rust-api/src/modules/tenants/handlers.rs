@@ -6,6 +6,9 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
+use axum::Extension;
+use crate::core::audit::{log_admin_action, AuditActorType};
+use crate::core::db::DbPool;
 
 use crate::core::auth::api_key::AuthenticatedApiKey;
 use crate::core::auth::platform_admin::PlatformAdmin;
@@ -60,6 +63,7 @@ pub async fn get_my_memberships(
 /// POST /v1/tenants
 pub async fn create(
     _admin: PlatformAdmin,
+    Extension(db): Extension<DbPool>,
     State(state): State<Arc<TenantsState>>,
     Json(req): Json<CreateTenantRequest>,
 ) -> Result<Json<CreatedTenantResponse>, (StatusCode, Json<serde_json::Value>)> {
@@ -72,6 +76,7 @@ pub async fn create(
     )
     .await
     .map_err(internal_error)?;
+    log_admin_action(&db, &tenant.id, AuditActorType::System, "platform-admin", "tenant.create", serde_json::json!({ "slug": tenant.slug })).await;
     Ok(Json(tenant))
 }
 
@@ -101,6 +106,7 @@ pub async fn get_by_id(
 /// PUT /v1/tenants/:id
 pub async fn update(
     _admin: PlatformAdmin,
+    Extension(db): Extension<DbPool>,
     Path(id): Path<String>,
     State(state): State<Arc<TenantsState>>,
     Json(req): Json<UpdateTenantRequest>,
@@ -114,6 +120,7 @@ pub async fn update(
     )
     .await
     .map_err(not_found)?;
+    log_admin_action(&db, &id, AuditActorType::System, "platform-admin", "tenant.update", serde_json::json!({})).await;
     Ok(Json(tenant))
 }
 
@@ -122,6 +129,7 @@ pub async fn update(
 /// POST /v1/tenants/:id/api-keys
 pub async fn create_api_key(
     tenant: AuthenticatedApiKey,
+    Extension(db): Extension<DbPool>,
     Path(id): Path<String>,
     State(state): State<Arc<TenantsState>>,
     Json(req): Json<CreateApiKeyRequest>,
@@ -129,9 +137,20 @@ pub async fn create_api_key(
     if tenant.tenant_id != id {
         return Err(forbidden());
     }
-    let key = state.service.create_api_key(&id, req.scopes, req.rate_limit_per_minute)
+    // A key can mint keys no more powerful than itself.
+    let scopes = match req.scopes {
+        Some(requested) => {
+            if let Some(extra) = requested.iter().find(|r| !crate::core::auth::api_key::scope_allows(&tenant.scopes, r)) {
+                return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({ "message": format!("This key cannot grant the '{extra}' scope.") }))));
+            }
+            Some(requested)
+        }
+        None => Some(tenant.scopes.iter().filter(|s| s.as_str() != "tenant-admin" && s.as_str() != "*").cloned().collect::<Vec<_>>()).filter(|v| !v.is_empty()),
+    };
+    let key = state.service.create_api_key(&id, scopes, req.rate_limit_per_minute)
         .await
         .map_err(not_found)?;
+    log_admin_action(&db, &id, AuditActorType::ApiKey, &tenant.id, "tenant.api_key.create", serde_json::json!({ "prefix": key.prefix })).await;
     Ok(Json(key))
 }
 
@@ -153,6 +172,7 @@ pub async fn list_api_keys(
 /// DELETE /v1/tenants/:id/api-keys/:apiKeyId
 pub async fn revoke_api_key(
     tenant: AuthenticatedApiKey,
+    Extension(db): Extension<DbPool>,
     Path((id, api_key_id)): Path<(String, String)>,
     State(state): State<Arc<TenantsState>>,
 ) -> Result<Json<MessageResponse>, (StatusCode, Json<serde_json::Value>)> {
@@ -162,6 +182,7 @@ pub async fn revoke_api_key(
     state.service.revoke_api_key(&id, &api_key_id)
         .await
         .map_err(internal_error)?;
+    log_admin_action(&db, &id, AuditActorType::ApiKey, &tenant.id, "tenant.api_key.revoke", serde_json::json!({ "apiKeyId": api_key_id })).await;
     Ok(Json(MessageResponse {
         message: "API key revoked.".to_string(),
     }))
@@ -172,6 +193,7 @@ pub async fn revoke_api_key(
 /// POST /v1/tenants/:id/staff
 pub async fn invite_staff(
     tenant: AuthenticatedApiKey,
+    Extension(db): Extension<DbPool>,
     Path(id): Path<String>,
     State(state): State<Arc<TenantsState>>,
     Json(req): Json<InviteStaffRequest>,
@@ -182,6 +204,7 @@ pub async fn invite_staff(
     let staff = state.service.invite_staff(&id, &req.account_id, &req.role)
         .await
         .map_err(internal_error)?;
+    log_admin_action(&db, &id, AuditActorType::ApiKey, &tenant.id, "tenant.staff.add", serde_json::json!({ "accountId": req.account_id, "role": req.role })).await;
     Ok(Json(staff))
 }
 
@@ -203,6 +226,7 @@ pub async fn list_staff(
 /// DELETE /v1/tenants/:id/staff/:accountId
 pub async fn remove_staff(
     tenant: AuthenticatedApiKey,
+    Extension(db): Extension<DbPool>,
     Path((id, account_id)): Path<(String, String)>,
     State(state): State<Arc<TenantsState>>,
 ) -> Result<Json<MessageResponse>, (StatusCode, Json<serde_json::Value>)> {
@@ -212,6 +236,7 @@ pub async fn remove_staff(
     state.service.remove_staff(&id, &account_id)
         .await
         .map_err(internal_error)?;
+    log_admin_action(&db, &id, AuditActorType::ApiKey, &tenant.id, "tenant.staff.remove", serde_json::json!({ "accountId": account_id })).await;
     Ok(Json(MessageResponse {
         message: "Staff member removed.".to_string(),
     }))
@@ -220,19 +245,9 @@ pub async fn remove_staff(
 // ── Error helpers ──
 
 fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
-    tracing::error!(error = %err, "Internal error");
-    let status = if err.to_string().contains("already exists") || err.to_string().contains("already a staff") {
-        StatusCode::CONFLICT
-    } else {
-        StatusCode::INTERNAL_SERVER_ERROR
-    };
-    (status, Json(serde_json::json!({ "message": err.to_string() })))
+    crate::core::error::http_error(err)
 }
 
 fn not_found(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
-    if err.to_string().contains("not found") {
-        (StatusCode::NOT_FOUND, Json(serde_json::json!({ "message": err.to_string() })))
-    } else {
-        internal_error(err)
-    }
+    crate::core::error::http_error(err)
 }

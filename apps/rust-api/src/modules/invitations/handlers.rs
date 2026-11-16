@@ -95,27 +95,9 @@ pub async fn revoke(
 }
 
 fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
-    let msg = err.to_string();
-    let status = if msg.contains("already exists") {
-        StatusCode::BAD_REQUEST
-    } else if msg.contains("Only tenant owners") || msg.contains("do not have access") {
-        StatusCode::FORBIDDEN
-    } else if msg.contains("No account found") {
-        StatusCode::NOT_FOUND
-    } else {
-        tracing::error!(error = %err, "Internal error");
-        StatusCode::INTERNAL_SERVER_ERROR
-    };
-    (status, Json(serde_json::json!({ "message": msg })))
+    crate::core::error::http_error(err)
 }
 
 fn not_found(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
-    let msg = err.to_string();
-    if msg.contains("not found") {
-        (StatusCode::NOT_FOUND, Json(serde_json::json!({ "message": msg })))
-    } else if msg.contains("expired") || msg.contains("no longer pending") || msg.contains("not for your account") || msg.contains("Only pending") {
-        (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "message": msg })))
-    } else {
-        internal_error(err)
-    }
+    crate::core::error::http_error(err)
 }

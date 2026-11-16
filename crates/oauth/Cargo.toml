@@ -8,3 +8,4 @@ sqlx = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
+nid-shared-types = { path = "../shared-types" }

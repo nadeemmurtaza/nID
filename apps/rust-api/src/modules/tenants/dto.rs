@@ -151,6 +151,7 @@ pub struct CreatedTenantResponse {
     pub webhook_secret: String,
     pub billing_webhook_url: Option<String>,
     pub billing_webhook_secret: String,
+    pub api_key: String,
     pub created_at: String,
     pub message: String,
 }

@@ -72,17 +72,32 @@ pub struct InvitationsService {
 }
 
 impl InvitationsService {
+    /// Open a transaction with RLS context settings applied. They are
+    /// transaction-local (`set_config(.., true)`), so they must be set on the
+    /// transaction itself and are gone once it ends.
+    async fn scoped(&self, settings: &[(&str, &str)]) -> Result<sqlx::Transaction<'_, sqlx::Postgres>> {
+        let mut tx = self.db.begin().await?;
+        for (k, v) in settings {
+            sqlx::query("SELECT set_config($1, $2, true)")
+                .bind(*k)
+                .bind(*v)
+                .execute(&mut *tx)
+                .await?;
+        }
+        Ok(tx)
+    }
+
     pub fn new(db: PgPool) -> Self {
         Self { db }
     }
 
-    async fn require_owner_or_partner(&self, account_id: &str, tenant_id: &str) -> Result<()> {
+    async fn require_owner_or_partner(&self, conn: &mut sqlx::PgConnection, account_id: &str, tenant_id: &str) -> Result<()> {
         let grant = sqlx::query(
             "SELECT id FROM access_grant WHERE account_id = $1 AND tenant_id = $2 AND access_type IN ('OWNER', 'PARTNER') AND status = 'ACTIVE'",
         )
         .bind(account_id)
         .bind(tenant_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if grant.is_none() {
@@ -91,13 +106,13 @@ impl InvitationsService {
         Ok(())
     }
 
-    async fn require_access(&self, account_id: &str, tenant_id: &str) -> Result<()> {
+    async fn require_access(&self, conn: &mut sqlx::PgConnection, account_id: &str, tenant_id: &str) -> Result<()> {
         let grant = sqlx::query(
             "SELECT id FROM access_grant WHERE account_id = $1 AND tenant_id = $2 AND status = 'ACTIVE'",
         )
         .bind(account_id)
         .bind(tenant_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if grant.is_none() {
@@ -131,14 +146,15 @@ impl InvitationsService {
         tenant_id: &str,
         req: &SendEmailInviteRequest,
     ) -> Result<InvitationResponse> {
-        self.require_owner_or_partner(caller_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", caller_id)]).await?;
+        self.require_owner_or_partner(&mut conn, caller_id, tenant_id).await?;
 
         let existing = sqlx::query(
             "SELECT id FROM invitation WHERE email = $1 AND tenant_id = $2 AND status = 'PENDING'",
         )
         .bind(&req.email)
         .bind(tenant_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut *conn)
         .await?;
         if existing.is_some() {
             return Err(anyhow!("A pending invitation already exists for this email."));
@@ -163,9 +179,10 @@ impl InvitationsService {
         .bind(&req.role_definition_id)
         .bind(&req.department_id)
         .bind(expires_at)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(invite))
     }
 
@@ -175,11 +192,12 @@ impl InvitationsService {
         tenant_id: &str,
         req: &SendUsernameInviteRequest,
     ) -> Result<InvitationResponse> {
-        self.require_owner_or_partner(caller_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", caller_id)]).await?;
+        self.require_owner_or_partner(&mut conn, caller_id, tenant_id).await?;
 
         let target = sqlx::query("SELECT id FROM account WHERE phone = $1 OR email = $1")
             .bind(&req.username)
-            .fetch_optional(&self.db)
+            .fetch_optional(&mut *conn)
             .await?;
         if target.is_none() {
             return Err(anyhow!("No account found with this username."));
@@ -190,7 +208,7 @@ impl InvitationsService {
         )
         .bind(&req.username)
         .bind(tenant_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut *conn)
         .await?;
         if existing.is_some() {
             return Err(anyhow!("A pending invitation already exists for this username."));
@@ -215,9 +233,10 @@ impl InvitationsService {
         .bind(&req.role_definition_id)
         .bind(&req.department_id)
         .bind(expires_at)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(invite))
     }
 
@@ -226,13 +245,22 @@ impl InvitationsService {
         account_id: &str,
         invitation_id: &str,
     ) -> Result<InvitationResponse> {
+        // One transaction so a failure part-way cannot leave an invitation
+        // accepted without its grant. The invitee has no tenant context, so
+        // it is taken from the invitation row (readable by lookup policy).
+        let mut conn = self.scoped(&[("app.account_id", account_id)]).await?;
         let invite: InvitationRow = sqlx::query_as(
             "SELECT id, tenant_id, email, username, invited_by, organization_id, brand_id, scope, role_definition_id, department_id, status, expires_at, accepted_at, created_at FROM invitation WHERE id = $1",
         )
         .bind(invitation_id)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|_| anyhow!("Invitation not found."))?;
+
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(&invite.tenant_id)
+            .execute(&mut *conn)
+            .await?;
 
         if invite.status != "PENDING" {
             return Err(anyhow!("This invitation is no longer pending."));
@@ -241,8 +269,9 @@ impl InvitationsService {
         if invite.expires_at < Utc::now() {
             sqlx::query("UPDATE invitation SET status = 'EXPIRED' WHERE id = $1")
                 .bind(invitation_id)
-                .execute(&self.db)
+                .execute(&mut *conn)
                 .await?;
+            conn.commit().await?;
             return Err(anyhow!("This invitation has expired."));
         }
 
@@ -250,7 +279,7 @@ impl InvitationsService {
             "SELECT email, phone FROM account WHERE id = $1",
         )
         .bind(account_id)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|_| anyhow!("Account not found."))?;
         let (account_email, account_phone) = account;
@@ -271,7 +300,7 @@ impl InvitationsService {
         )
         .bind(account_id)
         .bind(invitation_id)
-        .execute(&self.db)
+        .execute(&mut *conn)
         .await?;
 
         // Create access grant
@@ -287,7 +316,7 @@ impl InvitationsService {
         .bind(&invite.organization_id)
         .bind(&invite.brand_id)
         .bind(&invite.invited_by)
-        .execute(&self.db)
+        .execute(&mut *conn)
         .await?;
 
         if let Some(ref role_definition_id) = invite.role_definition_id {
@@ -303,7 +332,7 @@ impl InvitationsService {
             .bind(&invite.organization_id)
             .bind(&invite.brand_id)
             .bind(&invite.scope)
-            .execute(&self.db)
+            .execute(&mut *conn)
             .await?;
         }
 
@@ -320,13 +349,14 @@ impl InvitationsService {
             .bind(&invite.organization_id)
             .bind(&invite.brand_id)
             .bind(&invite.scope)
-            .execute(&self.db)
+            .execute(&mut *conn)
             .await?;
         }
 
         let mut response = Self::row_to_response(invite);
         response.status = "ACCEPTED".to_string();
         response.accepted_at = Some(Utc::now().to_rfc3339());
+        conn.commit().await?;
         Ok(response)
     }
 
@@ -336,7 +366,8 @@ impl InvitationsService {
         tenant_id: &str,
         status: Option<&str>,
     ) -> Result<Vec<InvitationResponse>> {
-        self.require_access(caller_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", caller_id)]).await?;
+        self.require_access(&mut conn, caller_id, tenant_id).await?;
 
         let rows: Vec<InvitationRow> = if let Some(s) = status {
             sqlx::query_as(
@@ -344,35 +375,38 @@ impl InvitationsService {
             )
             .bind(tenant_id)
             .bind(s)
-            .fetch_all(&self.db)
+            .fetch_all(&mut *conn)
             .await?
         } else {
             sqlx::query_as(
                 "SELECT id, tenant_id, email, username, invited_by, organization_id, brand_id, scope, role_definition_id, department_id, status, expires_at, accepted_at, created_at FROM invitation WHERE tenant_id = $1 ORDER BY created_at DESC",
             )
             .bind(tenant_id)
-            .fetch_all(&self.db)
+            .fetch_all(&mut *conn)
             .await?
         };
 
+        conn.commit().await?;
         Ok(rows.into_iter().map(Self::row_to_response).collect())
     }
 
     pub async fn revoke_invitation(&self, caller_id: &str, tenant_id: &str, invitation_id: &str) -> Result<()> {
-        self.require_owner_or_partner(caller_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", caller_id)]).await?;
+        self.require_owner_or_partner(&mut conn, caller_id, tenant_id).await?;
 
         let result = sqlx::query(
             "UPDATE invitation SET status = 'REVOKED' WHERE id = $1 AND tenant_id = $2 AND status = 'PENDING'",
         )
         .bind(invitation_id)
         .bind(tenant_id)
-        .execute(&self.db)
+        .execute(&mut *conn)
         .await?;
 
         if result.rows_affected() == 0 {
             return Err(anyhow!("Invitation not found or already processed."));
         }
 
+        conn.commit().await?;
         Ok(())
     }
 }

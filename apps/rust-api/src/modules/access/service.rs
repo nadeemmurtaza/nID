@@ -73,11 +73,12 @@ fn permission_from_proto(p: ProtoPermissionEntry) -> PermissionEntry {
     }
 }
 
-async fn client() -> Result<AccessApiServiceClient<tonic::transport::Channel>> {
+async fn client() -> Result<AccessApiServiceClient<nid_service_auth::AuthedChannel>> {
     let url = std::env::var("ACCESS_SERVICE_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:50086".to_string());
-    AccessApiServiceClient::connect(url)
+    nid_service_auth::connect(url)
         .await
+        .map(AccessApiServiceClient::new)
         .map_err(|e| anyhow!("access service unreachable: {e}"))
 }
 

@@ -120,3 +120,75 @@ impl From<anyhow::Error> for ApiError {
         ApiError::Internal(format!("Internal error: {}", err))
     }
 }
+
+/// Turn an error from a module service (usually a gRPC status flattened into
+/// an anyhow message) into an HTTP status and a message that is safe to show.
+///
+/// Domain errors keep their message and get a meaningful 4xx; anything that
+/// looks like infrastructure (database, transport, tonic internals) is logged
+/// in full and returned as a generic 500, so SQL and gRPC details never reach
+/// a client.
+pub fn http_error(err: anyhow::Error) -> (axum::http::StatusCode, axum::Json<serde_json::Value>) {
+    use axum::http::StatusCode;
+
+    let raw = err.to_string();
+    // Pull the inner message out of "status: Code, message: \"...\", details: ..."
+    let (code, msg) = match raw.find("status: ") {
+        Some(i) => {
+            let rest = &raw[i + "status: ".len()..];
+            let code = rest.split(',').next().unwrap_or("").trim().to_string();
+            let msg = rest
+                .split_once("message: \"")
+                .and_then(|(_, m)| m.split_once("\", details"))
+                .map(|(m, _)| m.to_string())
+                .unwrap_or_else(|| raw.clone());
+            (code, msg)
+        }
+        None => (String::new(), raw.clone()),
+    };
+
+    let lower = msg.to_lowercase();
+    let infra = ["error returned from database", "sqlstate", "relation \"", "connection refused", "transport error", "tonic", "unreachable", "pool timed out", "tcp connect"]
+        .iter()
+        .any(|k| lower.contains(k));
+
+    // A value outside a Postgres enum is bad client input, not a server fault.
+    if lower.contains("invalid input value for enum") {
+        return (StatusCode::BAD_REQUEST, axum::Json(serde_json::json!({ "message": "One of the submitted values is not allowed" })));
+    }
+
+    // A downstream service that cannot be reached is a temporary outage.
+    if lower.contains("transport error") || lower.contains("connection refused") || lower.contains("unreachable") || lower.contains("deadline has elapsed") || lower.contains("timed out") || lower.contains("certificate") || lower.contains("handshake") {
+        tracing::error!(error = %raw, "Downstream service unavailable");
+        return (StatusCode::SERVICE_UNAVAILABLE, axum::Json(serde_json::json!({ "message": "Service temporarily unavailable" })));
+    }
+
+    if lower.contains("not available yet") {
+        return (StatusCode::NOT_IMPLEMENTED, axum::Json(serde_json::json!({ "message": msg })));
+    }
+
+    let status = if infra {
+        StatusCode::INTERNAL_SERVER_ERROR
+    } else {
+        match code.as_str() {
+            "NotFound" => StatusCode::NOT_FOUND,
+            "AlreadyExists" => StatusCode::CONFLICT,
+            "InvalidArgument" | "FailedPrecondition" | "OutOfRange" => StatusCode::BAD_REQUEST,
+            "PermissionDenied" => StatusCode::FORBIDDEN,
+            "Unauthenticated" if lower.contains("service credentials") => StatusCode::INTERNAL_SERVER_ERROR,
+            "Unauthenticated" => StatusCode::UNAUTHORIZED,
+            _ if lower.contains("not found") || lower.contains("no subject found") || lower.contains("no published profile") => StatusCode::NOT_FOUND,
+            _ if lower.contains("already exists") || lower.contains("already ") => StatusCode::CONFLICT,
+            _ if lower.contains("not allowed") || lower.contains("not authorized") || lower.contains("forbidden") || lower.contains("not staff") || lower.contains("do not have access") => StatusCode::FORBIDDEN,
+            _ if lower.contains("must ") || lower.contains("invalid") || lower.contains("required") || lower.contains("not registered") || lower.contains("unsupported") || lower.contains("at most") || lower.contains("not accepting") || lower.contains("not approved") || lower.contains("expired") => StatusCode::BAD_REQUEST,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    };
+
+    if status == StatusCode::INTERNAL_SERVER_ERROR {
+        tracing::error!(error = %raw, "Internal error");
+        (status, axum::Json(serde_json::json!({ "message": "Internal server error" })))
+    } else {
+        (status, axum::Json(serde_json::json!({ "message": msg })))
+    }
+}

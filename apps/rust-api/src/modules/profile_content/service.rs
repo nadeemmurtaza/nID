@@ -51,11 +51,12 @@ mod inner {
     };
     use crate::core::upload::UploadedFile;
 
-    async fn client() -> Result<ProfileContentApiServiceClient<tonic::transport::Channel>> {
+    async fn client() -> Result<ProfileContentApiServiceClient<nid_service_auth::AuthedChannel>> {
         let url = std::env::var("PROFILE_CONTENT_SERVICE_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:50090".to_string());
-        ProfileContentApiServiceClient::connect(url)
+        nid_service_auth::connect(url)
             .await
+            .map(ProfileContentApiServiceClient::new)
             .map_err(|e| anyhow!("profile-content service unreachable: {e}"))
     }
 
@@ -64,9 +65,8 @@ mod inner {
             id: p.id,
             profile_id: p.profile_id,
             title: p.title,
-            price_minor: p.price_minor,
-            currency: p.currency,
             description: p.description,
+            valid_until: p.valid_until,
             is_active: p.is_active,
         }
     }
@@ -75,9 +75,9 @@ mod inner {
         BusinessHourResponse {
             id: p.id,
             profile_id: p.profile_id,
-            weekday: p.weekday,
-            start_time: p.start_time,
-            end_time: p.end_time,
+            day: p.day,
+            open_minute: p.open_minute,
+            close_minute: p.close_minute,
             is_closed: p.is_closed,
         }
     }
@@ -97,8 +97,8 @@ mod inner {
             id: p.id,
             profile_id: p.profile_id,
             platform: p.platform,
-            username: p.username,
             url: p.url,
+            order: p.order_idx,
         }
     }
 
@@ -117,10 +117,11 @@ mod inner {
         ContactMessageResponse {
             id: p.id,
             profile_id: p.profile_id,
-            name: p.name,
-            email: p.email,
+            sender_name: p.sender_name,
+            sender_phone: p.sender_phone,
+            sender_email: p.sender_email,
             message: p.message,
-            is_read: p.is_read,
+            read_at: p.read_at,
             created_at: p.created_at,
         }
     }
@@ -139,9 +140,9 @@ mod inner {
             let resp = c.create_offer(GrpcCreateOffer {
                 account_id: account_id.to_string(),
                 title: req.title.clone(),
-                price_minor: req.price_minor,
-                currency: req.currency.clone(),
                 description: req.description.clone(),
+                valid_until: req.valid_until.clone(),
+                is_active: req.is_active,
             }).await?.into_inner();
             Ok(offer_from_proto(resp))
         }
@@ -165,7 +166,8 @@ mod inner {
                 account_id: account_id.to_string(),
                 offer_id: offer_id.to_string(),
                 title: req.title.clone(),
-                price_minor: req.price_minor,
+                description: req.description.clone(),
+                valid_until: req.valid_until.clone(),
                 is_active: req.is_active,
             }).await?.into_inner();
             Ok(offer_from_proto(resp))
@@ -192,8 +194,8 @@ mod inner {
             let resp = c.upsert_business_hour(GrpcUpsertBusinessHour {
                 account_id: account_id.to_string(),
                 day: day.to_string(),
-                start_time: req.start_time.clone(),
-                end_time: req.end_time.clone(),
+                open_minute: req.open_minute,
+                close_minute: req.close_minute,
                 is_closed: req.is_closed,
             }).await?.into_inner();
             Ok(business_hour_from_proto(resp))
@@ -278,8 +280,8 @@ mod inner {
             let resp = c.create_social_link(GrpcCreateSocialLink {
                 account_id: account_id.to_string(),
                 platform: req.platform.clone(),
-                username: req.username.clone(),
                 url: req.url.clone(),
+                order_idx: req.order,
             }).await?.into_inner();
             Ok(social_link_from_proto(resp))
         }
@@ -312,8 +314,8 @@ mod inner {
                 account_id: account_id.to_string(),
                 link_id: link_id.to_string(),
                 platform: req.platform.clone(),
-                username: req.username.clone(),
                 url: req.url.clone(),
+                order_idx: req.order,
             }).await?.into_inner();
             Ok(social_link_from_proto(resp))
         }
@@ -402,8 +404,9 @@ mod inner {
             let mut c = client().await?;
             let resp = c.create_public_contact_message(CreatePublicContactMessageRequest {
                 slug: slug.to_string(),
-                name: req.name.clone(),
-                email: req.email.clone(),
+                sender_name: req.sender_name.clone(),
+                sender_phone: req.sender_phone.clone(),
+                sender_email: req.sender_email.clone(),
                 message: req.message.clone(),
             }).await?.into_inner();
             Ok(contact_message_from_proto(resp))

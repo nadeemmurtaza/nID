@@ -5,9 +5,8 @@
 
 use anyhow::{anyhow, Result};
 use nid_shared_types::sha256_hex;
-use sqlx::{FromRow, PgPool, Row};
+use sqlx::{FromRow, PgPool};
 use tracing::info;
-use uuid::Uuid;
 
 const CLAIM_DOCUMENT_METHODS: &[&str] =
     &["dob_document", "education_document", "employment_document", "address_utility_bill"];
@@ -44,7 +43,7 @@ struct MethodAttemptRow {
 
 #[derive(Debug, Clone, FromRow)]
 struct SubjectPhoneRow {
-    phone: String,
+    phone: Option<String>,
 }
 
 /// Inline replacement for monolith's `core::upload::UploadedFile`.
@@ -83,11 +82,75 @@ pub struct AcceptedResponse {
 
 pub struct SessionsService {
     db: PgPool,
+    storage: Option<std::sync::Arc<nid_storage::LocalStorageDriver>>,
 }
 
 impl SessionsService {
     pub fn new(db: PgPool) -> Self {
-        Self { db }
+        Self { db, storage: None }
+    }
+
+    pub fn with_storage(mut self, storage: std::sync::Arc<nid_storage::LocalStorageDriver>) -> Self {
+        self.storage = Some(storage);
+        self
+    }
+
+    /// Persist an upload and return its storage key. The type is decided by
+    /// the file's leading bytes, never by the client-supplied MIME type.
+    /// Record an upload on the case's attempt for `method`. Case creation
+    /// already makes a PENDING attempt per policy method, so this fills its
+    /// `result_meta`; a method the policy did not list gets a new PENDING one.
+    /// The workflow, not the upload, decides pass or fail.
+    async fn record_attempt(
+        conn: &mut sqlx::PgConnection,
+        tenant_id: &str,
+        case_id: &str,
+        method: &str,
+        meta: serde_json::Value,
+    ) -> Result<()> {
+        let updated = sqlx::query(
+            "UPDATE verification_method_attempt SET result_meta = $3::jsonb, started_at = COALESCE(started_at, NOW())
+             WHERE case_id = $1 AND method = $2",
+        )
+        .bind(case_id)
+        .bind(method)
+        .bind(meta.to_string())
+        .execute(&mut *conn)
+        .await?;
+        if updated.rows_affected() == 0 {
+            sqlx::query(
+                "INSERT INTO verification_method_attempt (id, tenant_id, case_id, method, provider_key, status, result_meta, started_at)
+                 VALUES (gen_random_uuid(), $1, $2, $3, $3, 'PENDING', $4::jsonb, NOW())",
+            )
+            .bind(tenant_id)
+            .bind(case_id)
+            .bind(method)
+            .bind(meta.to_string())
+            .execute(&mut *conn)
+            .await?;
+        }
+        Ok(())
+    }
+
+    async fn store_file(&self, case_id: &str, kind: &str, file: &UploadedFile) -> Result<String> {
+        use nid_storage::StorageDriver;
+        let storage = self
+            .storage
+            .as_ref()
+            .ok_or_else(|| anyhow!("File storage is not configured"))?;
+        let content_type = nid_storage::sniff_content_type(&file.buffer)
+            .ok_or_else(|| anyhow!("Unsupported file type: upload a JPEG, PNG, WebP or PDF"))?;
+        let stored = storage
+            .put(nid_storage::PutDocumentInput {
+                namespace: format!("verification-{kind}"),
+                group_id: case_id.to_string(),
+                filename: file.filename.clone(),
+                content_type: content_type.to_string(),
+                body: file.buffer.clone(),
+            })
+            .await
+            .map_err(|e| anyhow!("Failed to store file: {e}"))?;
+        Ok(stored.key)
     }
 
     async fn resolve(&self, token: &str) -> Result<VerificationSessionRow> {
@@ -111,7 +174,7 @@ impl SessionsService {
 
     pub async fn get_status(&self, token: &str) -> Result<SessionStatusResponse> {
         let session = self.resolve(token).await?;
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
 
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&session.tenant_id)
@@ -143,6 +206,7 @@ impl SessionsService {
         .await
         .map_err(|_| anyhow!("Subject not found"))?;
 
+        conn.commit().await?;
         Ok(SessionStatusResponse {
             case_id: session.case_id,
             status: kase.status,
@@ -156,7 +220,7 @@ impl SessionsService {
                     status: a.status,
                 })
                 .collect(),
-            phone: subject.phone,
+            phone: subject.phone.unwrap_or_default(),
         })
     }
 
@@ -172,7 +236,7 @@ impl SessionsService {
 
     pub async fn submit_document(&self, token: &str, file: UploadedFile) -> Result<AcceptedResponse> {
         let session = self.resolve(token).await?;
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&session.tenant_id)
             .execute(&mut *conn)
@@ -191,54 +255,50 @@ impl SessionsService {
             return Err(anyhow!("This verification is no longer accepting submissions."));
         }
 
-        let file_id = Uuid::new_v4().to_string();
-        let url = format!("verification/{}/document/{}", session.case_id, file_id);
+        let url = self.store_file(&session.case_id, "document", &file).await?;
 
         let now = chrono::Utc::now();
-        sqlx::query(
-            "INSERT INTO verification_method_attempt (case_id, method, status, metadata, started_at)
-             VALUES ($1, 'document', 'submitted', $2, $3)",
-        )
-        .bind(&session.case_id)
-        .bind(
+        Self::record_attempt(
+            &mut conn,
+            &session.tenant_id,
+            &session.case_id,
+            "document_ocr",
             serde_json::json!({
-                "url": url,
-                "contentType": file.content_type,
+                "storageKey": url,
+                "contentType": nid_storage::sniff_content_type(&file.buffer),
                 "filename": file.filename,
                 "size": file.buffer.len(),
-            })
-            .to_string(),
+            }),
         )
-        .bind(now)
-        .execute(&mut *conn)
         .await?;
 
         sqlx::query(
-            "INSERT INTO audit_log_entry (tenant_id, actor_type, actor_id, action, subject_id, case_id, metadata, created_at)
-             VALUES ($1, 'SUBJECT', $2, 'verification_case.submit_document', $3, $4, $5, $6)",
+            "INSERT INTO audit_log_entry (id, tenant_id, actor_type, actor_id, action, subject_id, case_id, metadata, created_at)
+             VALUES (gen_random_uuid(), $1, 'SUBJECT', $2, 'verification_case.submit_document', $3, $4, $5::jsonb, $6)",
         )
         .bind(&session.tenant_id)
         .bind(&kase.subject_id)
         .bind(&kase.subject_id)
         .bind(&session.case_id)
-        .bind(serde_json::json!({"url": url}).to_string())
+        .bind(serde_json::json!({"storageKey": url}).to_string())
         .bind(now)
         .execute(&mut *conn)
         .await?;
 
         info!(
             case_id = session.case_id,
-            file_id = %file_id,
+            file_key = %url,
             filename = %file.filename,
             "Document uploaded successfully"
         );
 
+        conn.commit().await?;
         Ok(AcceptedResponse { accepted: true })
     }
 
     pub async fn submit_liveness(&self, token: &str, files: Vec<UploadedFile>) -> Result<AcceptedResponse> {
         let session = self.resolve(token).await?;
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&session.tenant_id)
             .execute(&mut *conn)
@@ -257,27 +317,18 @@ impl SessionsService {
             return Err(anyhow!("This verification is no longer accepting submissions."));
         }
 
-        let frame_urls: Vec<String> = files
-            .iter()
-            .enumerate()
-            .map(|(i, _)| format!("verification/{}/liveness/{}", session.case_id, i))
-            .collect();
+        let mut frame_urls: Vec<String> = Vec::with_capacity(files.len());
+        for f in &files {
+            frame_urls.push(self.store_file(&session.case_id, "liveness", f).await?);
+        }
 
-        let now = chrono::Utc::now();
-        sqlx::query(
-            "INSERT INTO verification_method_attempt (case_id, method, status, metadata, started_at)
-             VALUES ($1, 'liveness', 'submitted', $2, $3)",
+        Self::record_attempt(
+            &mut conn,
+            &session.tenant_id,
+            &session.case_id,
+            "liveness",
+            serde_json::json!({ "frameCount": files.len(), "storageKeys": frame_urls }),
         )
-        .bind(&session.case_id)
-        .bind(
-            serde_json::json!({
-                "frameCount": files.len(),
-                "urls": frame_urls,
-            })
-            .to_string(),
-        )
-        .bind(now)
-        .execute(&mut *conn)
         .await?;
 
         info!(
@@ -286,6 +337,7 @@ impl SessionsService {
             "Liveness frames uploaded successfully"
         );
 
+        conn.commit().await?;
         Ok(AcceptedResponse { accepted: true })
     }
 
@@ -300,7 +352,7 @@ impl SessionsService {
         }
 
         let session = self.resolve(token).await?;
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&session.tenant_id)
             .execute(&mut *conn)
@@ -319,39 +371,30 @@ impl SessionsService {
             return Err(anyhow!("This verification is no longer accepting submissions."));
         }
 
-        let file_id = Uuid::new_v4().to_string();
-        let url = format!(
-            "verification/{}/claim/{}/{}",
-            session.case_id, method, file_id
-        );
+        let url = self.store_file(&session.case_id, "claim", &file).await?;
 
-        let now = chrono::Utc::now();
-        sqlx::query(
-            "INSERT INTO verification_method_attempt (case_id, method, status, metadata, started_at)
-             VALUES ($1, $2, 'submitted', $3, $4)",
-        )
-        .bind(&session.case_id)
-        .bind(method)
-        .bind(
+        Self::record_attempt(
+            &mut conn,
+            &session.tenant_id,
+            &session.case_id,
+            method,
             serde_json::json!({
-                "url": url,
-                "contentType": file.content_type,
+                "storageKey": url,
+                "contentType": nid_storage::sniff_content_type(&file.buffer),
                 "filename": file.filename,
                 "size": file.buffer.len(),
-            })
-            .to_string(),
+            }),
         )
-        .bind(now)
-        .execute(&mut *conn)
         .await?;
 
         info!(
             case_id = session.case_id,
             method,
-            file_id = %file_id,
+            file_key = %url,
             "Claim document uploaded successfully"
         );
 
+        conn.commit().await?;
         Ok(AcceptedResponse { accepted: true })
     }
 
@@ -413,7 +456,7 @@ impl SessionsService {
         payload: &serde_json::Value,
     ) -> Result<AcceptedResponse> {
         let session = self.resolve(token).await?;
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&session.tenant_id)
             .execute(&mut *conn)
@@ -434,8 +477,8 @@ impl SessionsService {
 
         let now = chrono::Utc::now();
         sqlx::query(
-            "INSERT INTO audit_log_entry (tenant_id, actor_type, actor_id, action, subject_id, case_id, metadata, created_at)
-             VALUES ($1, 'SUBJECT', $2, $3, $4, $5, $6, $7)",
+            "INSERT INTO audit_log_entry (id, tenant_id, actor_type, actor_id, action, subject_id, case_id, metadata, created_at)
+             VALUES (gen_random_uuid(), $1, 'SUBJECT', $2, $3, $4, $5, $6::jsonb, $7)",
         )
         .bind(&session.tenant_id)
         .bind(&kase.subject_id)
@@ -454,6 +497,7 @@ impl SessionsService {
             "Method submission — Temporal signaling not yet implemented"
         );
 
+        conn.commit().await?;
         Ok(AcceptedResponse { accepted: true })
     }
 }

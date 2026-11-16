@@ -1,5 +1,6 @@
 'use client';
 
+import { Skeleton } from '@newax/design-tokens/Skeleton';
 import { useEffect, useState } from 'react';
 import { ApiError } from '../../../../lib/api';
 import {
@@ -89,7 +90,7 @@ export function SelfServiceCheck({ token, policyName, title, description, requir
 
       <h3 className="section-title">History</h3>
       {cases === null ? (
-        <p style={{ color: 'var(--muted)' }}>Loading…</p>
+        <div aria-busy="true" aria-label="Loading"><Skeleton count={3} /></div>
       ) : cases.length === 0 ? (
         <div className="empty-state">No checks started yet.</div>
       ) : (

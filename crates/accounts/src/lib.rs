@@ -4,6 +4,8 @@
 //! CONVENTIONS.md's crates/services split. Takes a plain `sqlx::PgPool`
 //! rather than nID's `core::db::DbPool` wrapper.
 
+pub mod sms;
+
 use anyhow::{anyhow, Result};
 use chrono::Utc;
 use nid_shared_types::{generate_session_token, sha256_hex};
@@ -101,14 +103,14 @@ impl AccountsService {
         .execute(&self.db)
         .await?;
 
-        if !otp_sms_dev_mode {
-            return Err(anyhow!(
-                "Account OTP delivery has no production SMS vendor wired up yet"
-            ));
+        if otp_sms_dev_mode {
+            info!("[accounts:dev] would send login code {} to {}", code, phone);
+            return Ok(());
         }
-
-        info!("[accounts:dev] would send login code {} to {}", code, phone);
-        Ok(())
+        sms::SmsConfig::from_env()?
+            .send(phone, &format!("Your nID login code is {code}. It expires in {OTP_TTL_MINUTES} minutes."))
+            .await
+    
     }
 
     pub async fn verify_otp(&self, phone: &str, code: &str) -> Result<VerifyOtpResponse> {
@@ -204,6 +206,32 @@ impl AccountsService {
             .bind(token_hash)
             .execute(&self.db)
             .await?;
+        Ok(())
+    }
+
+    /// Erase an account (COMPLIANCE_AND_ACCESSIBILITY_RULES.md, deletion
+    /// requests). The schema cascades the account's own data (profile and its
+    /// images, sessions, grants, role and staff assignments) and nulls the
+    /// references from tenant-owned records (subjects, organization
+    /// memberships, OAuth requests), so tenants keep their records but they
+    /// no longer point at this person. Login codes are keyed by phone and
+    /// are removed here.
+    pub async fn delete_account(&self, account_id: &str) -> Result<()> {
+        let mut tx = self.db.begin().await?;
+        let phone: String = sqlx::query_scalar("SELECT phone FROM account WHERE id = $1")
+            .bind(account_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| anyhow!("Account not found"))?;
+        sqlx::query("DELETE FROM account_otp_code WHERE phone = $1")
+            .bind(&phone)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM account WHERE id = $1")
+            .bind(account_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
         Ok(())
     }
 

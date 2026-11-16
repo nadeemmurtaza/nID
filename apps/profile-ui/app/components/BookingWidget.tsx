@@ -1,5 +1,6 @@
 'use client';
 
+import { Skeleton } from '@newax/design-tokens/Skeleton';
 import { useState } from 'react';
 import { ApiError, bookAppointment, getFreeSlots, type FreeSlot, type Service } from '../../lib/api';
 
@@ -115,7 +116,7 @@ export function BookingWidget({ slug, services }: { slug: string; services: Serv
         </button>
       )}
 
-      {loadingSlots && <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 8 }}>Loading times…</p>}
+      {loadingSlots && <div aria-busy="true" aria-label="Loading times"><Skeleton count={2} /></div>}
 
       {slots && slots.length === 0 && <p className="empty-state" style={{ marginTop: 8 }}>No open times in the next two weeks.</p>}
 

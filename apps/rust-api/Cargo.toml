@@ -40,3 +40,4 @@ multer = "3"
 nid-shared-types = { path = "../../crates/shared-types" }
 nid-storage = { path = "../../crates/storage" }
 nid-db-schema = { path = "../../crates/db-schema" }
+nid-service-auth = { path = "../../crates/service-auth" }

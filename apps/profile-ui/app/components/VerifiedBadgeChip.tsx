@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckIcon } from 'lucide-animated';
+import { CheckIcon } from '@newax/design-tokens/icons';
 
 /**
  * `'use client'` for one icon: `lucide-animated` components hold hover state in

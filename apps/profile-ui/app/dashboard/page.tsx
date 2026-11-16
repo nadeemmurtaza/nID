@@ -1,5 +1,6 @@
 'use client';
 
+import { Skeleton } from '@newax/design-tokens/Skeleton';
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -12,7 +13,7 @@ export default function DashboardPage() {
 
   return (
     <main className="center-page">
-      <p style={{ color: 'var(--muted)' }}>Loading…</p>
+      <div aria-busy="true" aria-label="Loading"><Skeleton count={3} /></div>
     </main>
   );
 }

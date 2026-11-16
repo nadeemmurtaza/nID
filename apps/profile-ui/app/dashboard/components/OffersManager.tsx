@@ -1,9 +1,11 @@
 'use client';
 
+import { useConfirm } from '@newax/design-tokens/ConfirmDialog';
 import { useEffect, useState } from 'react';
 import { ApiError, createOffer, deleteOffer, listMyOffers, updateOffer, type OwnerOffer } from '../../../lib/owner-api';
 
 export function OffersManager({ token }: { token: string }) {
+  const { confirm, dialog } = useConfirm();
   const [offers, setOffers] = useState<OwnerOffer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState('');
@@ -44,6 +46,7 @@ export function OffersManager({ token }: { token: string }) {
   }
 
   async function handleDelete(id: string): Promise<void> {
+    if (!(await confirm({ title: 'Delete this offer?', body: 'It is removed from your public profile and cannot be restored.', confirmLabel: 'Delete offer' }))) return;
     try {
       await deleteOffer(token, id);
       setOffers((prev) => prev?.filter((o) => o.id !== id) ?? null);
@@ -54,6 +57,7 @@ export function OffersManager({ token }: { token: string }) {
 
   return (
     <div>
+      {dialog}
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Offers
       </h2>

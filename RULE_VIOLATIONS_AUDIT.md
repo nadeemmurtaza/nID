@@ -5,9 +5,13 @@ against every rule in `CONVENTIONS.md`'s design anti-patterns,
 `UX_UI_RULES.md`, `COMPLIANCE_AND_ACCESSIBILITY_RULES.md`,
 `PRODUCTION_READINESS_RULES.md`, `SECURITY_RULES.md`,
 `SAAS_UX_PATTERNS.md`, and `UNSLOP_DESIGN_RULES.md` — ~169 rules
-total. This file is identical across both repos, same status as the
-other rule files; update it whenever a violation gets fixed or a new
-one is found, don't let it silently go stale.
+total. This file is meant to be identical across both repos, same
+status as the other rule files; update it whenever a violation gets
+fixed or a new one is found, don't let it silently go stale. The nID
+section was re-audited on 2026-11-16 (also against
+`MODULE_SPLIT_PLAYBOOK.md`, `COMMUNICATION.md`, `ecosystem-stack.md`
+and `ECOSYSTEM.md`) and Communicator's copy has not been synced to
+it yet.
 
 **Method and limits:** this was a grep/signal pass, not an exhaustive
 read of every file. A rule marked "unverifiable statically" means it
@@ -102,113 +106,633 @@ pages' loading states need a broader per-page check).
 
 ---
 
-## nID
+## nID (re-audited 2026-11-16)
 
-### Fixed (2026-11-15)
+**Method.** Three read passes (Rust backend; conventions, playbook,
+communication and stack docs; all four UIs) plus a live run of the
+whole local stack (Postgres, 17 gRPC services, the API): a
+no-credentials sweep of all 155 routes, header, CORS and rate-limit
+probes, psql tests as `nid_app`, and a tenant-create and login flow.
+**LIVE** marks a finding reproduced against the running stack; the
+rest were read in code. S = `SECURITY_RULES.md`, P =
+`PRODUCTION_READINESS_RULES.md`, C =
+`COMPLIANCE_AND_ACCESSIBILITY_RULES.md`, D = `CONVENTIONS.md` design
+anti-patterns.
 
-- **Lock down CORS** (security 8) — `CorsLayer::permissive()` replaced with
-  `validate_cors_origin` middleware in `core/middleware.rs` that checks the
-  Origin header against an explicit allowlist (configurable via
-  `CORS_ALLOWED_ORIGINS` env var). The CORS layer still uses `Any` for the
-  tower-http response headers, but the middleware rejects disallowed origins
-  before the request reaches any handler.
-- **Security headers** (security 17) — `main.rs` now sets
-  `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`,
-  `X-Frame-Options: DENY`, and `Referrer-Policy` on every response via
-  `SetResponseHeaderLayer`.
-- **Connection pooling, sized deliberately** (production readiness 10) —
-  `core/db/mod.rs` now configures `max_connections` (default 10, env
-  `DB_MAX_CONNECTIONS`), `min_connections`, `acquire_timeout`, `idle_timeout`,
-  and `max_lifetime` on the PgPool.
-- **Privacy Policy / Terms of Service** (compliance 1–2) — replaced stub
-  placeholders in `apps/login-ui/app/privacy/page.tsx` and
-  `apps/login-ui/app/terms/page.tsx` with real, specific content covering
-  data collection, retention, sharing, user rights, and contact info.
-- **Consent banner** (compliance 3) — added `ConsentBanner` component in
-  `apps/login-ui/app/components/consent-banner.tsx` with accept/decline
-  buttons and localStorage persistence. Mounted in `apps/login-ui/app/layout.tsx`.
-- **Data deletion request** (compliance 8) — added `DELETE /v1/accounts/me`
-  endpoint in `apps/rust-api/src/modules/accounts/` that revokes all sessions
-  and logs the deletion request. Full data anonymization is deferred to the
-  accounts gRPC service update.
-- **Skeleton loaders** (SaaS UX pattern 2) — added `Skeleton`, `CardSkeleton`,
-  and `TableSkeleton` components in
-  `packages/design-tokens/Skeleton.tsx` with matching CSS in `tokens.css`.
-  Ready to be imported by any frontend app.
-- **No Inter font** (design anti-pattern 10) — `tokens.css`'s `--font-sans`
-  replaced with system font stack (`ui-sans-serif, system-ui, ...`). The
-  `Inter` import removed from `apps/login-ui/app/layout.tsx`.
+The previous "Fixed (2026-11-15)" list is withdrawn. Several of its
+entries were not fixes (a deletion endpoint that deletes nothing, a
+consent banner that gates nothing, skeleton components nothing
+imports, legal pages describing a different product). Each is
+restated below with its real status.
 
-### Violated
+### Fixed 2026-11-16 (verified live by `scripts/e2e-smoke.sh`, 97 checks, also from an empty database)
 
-- **No Lucide icons** (design anti-pattern 2) — `lucide-animated` in
-  `apps/profile-ui`, `apps/login-ui`, `apps/dashboard`, and
-  `apps/verify-ui`'s `package.json`.
-- **No drop shadows** (design anti-pattern 5) — `tokens.css`'s
-  `--elevation-*` tokens are drop-shadow values. Already flagged in
-  the file itself; not a new finding.
-- **Age consent** (compliance 6) — the `subjects` module has a
-  `date_of_birth` field, but it's stored as verification data; no
-  age-gate logic found at signup.
-- **Parental consent for children's data** (compliance 7) — no
-  parental-consent/COPPA logic found anywhere.
-- **Unsubscribe link in emails** (compliance 9) — no email-sending
-  module surfaced in this pass at all, so no unsubscribe mechanism
-  either.
-- **Real business details** (compliance 11) — no About/Contact/footer
-  page found in nID's own apps.
-- **k6 load test** (production readiness 19) — none found.
-- **Monitoring + alerts** (production readiness 18) — zero
-  Prometheus/Sentry/Datadog dependencies in any `Cargo.toml`/
-  `package.json`.
-- **Row-level security** (security 2) — **partial, not repo-wide**:
-  `apps/rust-api/migrations` has zero `.sql` files to check directly;
-  the `set_config('app.tenant_id', ...)` + RLS pattern is only
-  confirmed in `crates/subjects`, `verification_cases`, `sessions`,
-  `brands`, and `organizations` — other tenant-scoped modules
-  (`tenants`, `access`, others) show no RLS/tenant-context call found
-  in this pass.
+- **Tenant isolation on reads** (S2, S19). The compat views ran with the
+  superuser owner's rights, so reads skipped RLS. They are now
+  `security_invoker`. Because that bypass was accidental and many paths
+  depended on it, the legitimate cross-tenant paths got explicit
+  policies (`20261116000003`): platform admin (`app.platform_admin`)
+  and account-owned records (`app.account_id`). About 20 functions in
+  `tenants`, `tenant-staff`, `account_verification`, `organizations` and
+  `access` now open a context transaction. The `Organization` table has
+  a deliberate `USING (true)` lookup policy, so its queries also filter
+  by `tenant_id` explicitly.
+- **Tenant context outside a transaction** in `organizations`,
+  `sessions` and `verification_cases` (S2). Now transactional with
+  commits, so those writes pass RLS.
+- **New tenants could not authenticate.** Tenant create now picks its id
+  first, sets the RLS context, mints the first API key and returns the
+  real name, slug, secrets and `createdAt`.
+- **OAuth** (S3, S4). Poll token and code hashed, code issued once at
+  claim time, `redirect_uri` matched exactly against the client's
+  registered URIs and bound to the code, client secret compared by
+  hash, 10-minute expiry, and the access token is a real
+  `account_session`. Also fixed a foreign key that made every login
+  request fail (the public client id was bound instead of the row id).
+- **Uploads** (S18). Verification documents, liveness frames and claim
+  documents are written to storage (the pre-split code had the same
+  `TODO`, so this was never working, not a regression). File type comes
+  from leading bytes (`nid_storage::sniff_content_type`), not the client
+  MIME type. Profile photo and gallery images were writing columns and
+  an enum value that do not exist; now aligned with the schema.
+- **Errors leaked gRPC and SQL text and lost their status** (S12). One
+  classifier (`core::error::http_error`) gives 400/403/404/409/501 for
+  domain errors and a generic 500 for infrastructure.
+- **`DELETE /v1/accounts/me`** (C8) now erases the account: the schema
+  cascades its own data and nulls the tenant-owned references.
+- **Services** (S9): bind `127.0.0.1` by default (`BIND_ADDR` to
+  override), require `APP_DATABASE_URL` (no superuser fallback), 5 s DB
+  acquire timeout, dev mode defaults off.
+- **Audit trail** (S20): API-key mint and revoke, staff add and remove,
+  role create, update, delete, assign and unassign, and tenant create
+  and update are recorded. The request-serving role can no longer
+  UPDATE or DELETE the log.
+- **Input validation** (S6), profile content only: http(s)-only link
+  URLs, length limits and an email check on the public contact form.
+- **Health check** (P15): `/health` queries Postgres and returns 503
+  when it is down.
+- **CI and scanning** (S13, S16): build, test and `cargo audit` on every
+  PR, Dependabot (cargo, npm, actions) and CodeQL for the TypeScript
+  apps. The workflows themselves have not run on GitHub yet; the same
+  commands pass locally. Two `cargo audit` advisories are ignored with
+  the reason recorded in `.cargo/audit.toml` (sqlx's sqlite and mysql
+  drivers are in the lockfile but not compiled).
+- **Rate limiting** (P7): the quota was one request per 10 seconds
+  (`per_second(10)` sets an interval); now 10 per second, burst 30.
+
+Added in the second round (same verification):
+
+- **RLS on the access-control tables** (S2): `AccessGrant`, `RoleDefinition`,
+  `RoleAssignment`, `Department`, `DepartmentAssignment`, `Invitation` and
+  `Brand` now enforce tenant (Brand: organization membership) policies, and
+  every function in those crates and the brands module runs in a context
+  transaction on one connection. `accept_invitation` is now atomic.
+- **API-key scopes and per-key rate limits** (S4): a request needs
+  `<resource>:read|write` derived from its path (write implies read),
+  tenant administration needs `tenant-admin`, and a key can only mint keys no
+  more powerful than itself. Enforced in both extractors that accept keys.
+- **Service authentication and TLS** (S9): `nid-service-auth` adds a shared
+  bearer token (constant-time check; mandatory off loopback) and optional TLS
+  to the gRPC hop. Clients share one cached channel with connect and call
+  timeouts instead of a new connection per call; an unreachable service is a
+  503 with no internals. Verified including rejection of a missing or wrong
+  token, a real CA and leaf certificate, plaintext against the TLS port, and an
+  untrusted CA.
+- **Production login codes** (S12): Twilio SMS delivery, with the code never
+  logged. Verified against a local mock of the Twilio API.
+- **Self-service verification cases**: the platform tenant `self` has the same
+  per-claim-type policies the seed gives the demo tenants (ordinary rows to
+  edit); cases pick a policy by claim type and level.
+- **Verification sessions** never worked (the case crate hashed the token with
+  its own byte-sum, not SHA-256) and their uploads wrote columns that do not
+  exist. Fixed and tested end to end with a real document and liveness frames.
+- **SQL against the schema**: `scripts/validate-sql.py` PREPAREs every static
+  SQL string against a live schema. 37 of 303 failed, which meant offers,
+  business hours, links, social links, contact messages, services,
+  availability, appointments and organization membership had never worked. All
+  314 now prepare, those features are tested live (a visitor books a slot, a
+  double booking is a 409, the owner confirms and cancels, an organization
+  invite is accepted), and CI runs the validator on every PR.
+- **Appointment slots**: the uniqueness ignored status, so a cancelled
+  appointment blocked its time forever; now a partial unique index.
+- **CI**: build, test, `cargo audit`, CodeQL, the SQL validator, and the
+  frontend typecheck, build and contrast check all run on every PR. CI and
+  CodeQL have run green on GitHub; the Qodo reviewer fails because its trial
+  ended and gates nothing.
+- **Design and accessibility** (D2, D5, D10, D21, C3, C8, C17, S19 UX):
+  contrast measured and fixed (15 failing pairings to 0, checked in CI);
+  Inter removed; `lucide-animated` replaced by a first-party icon set
+  (decision recorded in CONVENTIONS rule 2); flat elevation; every bare
+  "Loading..." is a skeleton; a native-dialog confirmation guards all 12
+  one-click destructive actions; one shared consent banner with a real consent
+  store replaces the inert one; and a Delete account control calls the working
+  endpoint. Verified in a real browser (`scripts/ui-smoke.js`).
+
+
+### Still open: security and core function
+
+1. **Legal and business content** (C1, C2, C11, C15; deliberately not
+   written): the privacy policy still describes a different product (email
+   and password instead of phone, ID documents and face capture), the terms
+   have a placeholder governing law, there is no legal entity or address, and
+   it makes unsupported claims (AES-256, bcrypt, 99.9% uptime). These need a
+   person who can state the real facts; the consent banner and deletion
+   control are real but the text they link to is not.
+2. **Not exercised live**: organization decline, username-based and email
+   invitations, brand updates and removal, the verification-case resolve flow
+   after a self-service case is created (nothing runs a policy's methods: no
+   workflow engine is wired up, so cases stay PENDING), and stored images
+   are not served back as bytes (the public photo endpoints return a key).
+3. **Webhook secrets** are stored in plaintext columns, and session tokens
+   live in `localStorage` in the browser (S10, S4).
+4. **Audit coverage** (S20): departments, invitations, access-grant changes,
+   brands and booking are not audited (api keys, staff, roles and tenant
+   changes are). Account deletion is logged to the application log only.
+5. **Validation** (S6) beyond profile content: the `validator` crate is
+   unused elsewhere.
+6. **Services accept any caller that holds the shared token.** That is
+   service-level authentication, not per-user: a compromised service or the
+   token still grants everything its role can do. mTLS with per-service
+   identities would be the next step.
+7. **Email**: there is no email provider (email verification codes are only
+   logged in dev mode) and no unsubscribe flow (C9), because nothing sends
+   email.
+8. **Age and parental consent** (C6, C7): the terms state 16+, and no age step
+   exists.
+
+### Production readiness
+
+- **Rate limiting** (P7, S5): partial. Per peer IP only, so behind a
+  proxy every client shares one bucket; no per-user limit; state is
+  in-process, so each replica counts separately; `/health` is
+  limited too; 429 responses carry no security headers. (The quota
+  itself is fixed, see above.)
+- **Health checks** (P15): the API checks Postgres; the 17 services
+  have no health endpoint.
+- **Timeouts, retries, circuit breaker** (P16, P17): 141 call sites
+  open a new plaintext HTTP/2 connection per request with no
+  timeout or retry; one slow service hangs API requests.
+- **Pooling** (P10): partial. The API pool is configured and the
+  services now have a 5 s acquire timeout, but each uses
+  `max_connections(5)` and the total (17 x 5 + 10 + 1 = 96) sits
+  against Postgres's default of 100.
+- **Pagination** (P13): no page parameters anywhere in `modules/`
+  (`crates/tenants/src/lib.rs:273-279`).
+- **Not present**: Redis or any cache (P6), a job queue or Temporal
+  client in Rust (P8, so cases likely never progress), read
+  replicas (P11), metrics or error tracking (P18), a k6 load test
+  (P19), graceful shutdown or degradation in services (P20).
+- **Likely**: uploads over about 2 MB fail on default body limits
+  despite the 10 MB `MAX_FILE_SIZE`.
+
+### Conventions, split playbook, communication, stack
+
+- **Batch split commit `4ff2241`** broke the playbook's
+  one-module-per-commit rule (9 modules, 78 files), and is the source
+  of the lost transactions and the lossy tenant-create response (both
+  fixed). It also committed a binary file `null` at the repo root and
+  `allowBuilds: ... "set this to true or false"` placeholders in
+  `pnpm-workspace.yaml` (both still there).
+- **"No direct cross-module DB access"** (`CONVENTIONS.md` §3):
+  violated. `account` is queried from 8 crates, `subject` from 6,
+  `verification_case` from 5, `access_grant` from 4. The playbook
+  says shared tables are fine; the two documents contradict each
+  other.
+- **Naming drift**: 11 protos name the service `*ApiService`, 6 use
+  `*Service`; `ORG_PROFILES_*` env vars instead of
+  `ORGANIZATION_PROFILES_*`; `services/tenant-staff` is kebab-case
+  among snake_case folders; `billing`, `shared-types`, `storage` and
+  `db-schema` are packaged `nid-*`, not `newax-*`; protos live at
+  `proto/nid/<module>/v1`.
+- **Commits**: none of the last 45 uses Conventional Commits; six
+  unsquashed commits sit on `main`'s first-parent history.
+- **"SQLx, compile-time checked"** (`ecosystem-stack.md`): false.
+  Zero `query!` macros, 339 runtime `sqlx::query(...)` calls, no
+  `.sqlx` cache, so `SQLX_OFFLINE=true` does nothing.
+- **Stack gaps still true**: the public API is axum REST (no
+  tonic-web or Connect), no moka or Redis, the four frontends are
+  Next 15 and React 19 rather than Svelte, Prisma is still used by
+  `apps/api`, `apps/workflows`, `verification-providers`, `billing`
+  and `db`, and there is no NATS code.
+- **Ownership** (`ECOSYSTEM.md`): nID holds business data it is
+  meant never to own: booking (appointments, availability,
+  services), offers with prices, contact messages, and a full
+  billing platform (invoices, payments, subscriptions, ledger).
+  None is listed under "Known misplacements". The secrets vault nID
+  is meant to own does not exist.
+- **Stale docs**: `CONVENTIONS.md:257` ("three pilot services"),
+  `:320-332` (remaining modules; the real remainder is brands and
+  profiles), `:384` ("only 3 Rust library crates"; there are 22);
+  `COMMUNICATION.md:185` ("14 Communicator, 6 nID"; nID has 17);
+  `ecosystem-stack.md:142-179` (says no tonic or proto exists, omits
+  `db-schema`); root `README.md` still presents `apps/api` and
+  `prisma migrate deploy`.
+- **Cross-repo drift**: `CONVENTIONS.md`, `tokens.css` and this file
+  no longer match Communicator's copies.
+
+### Compliance and accessibility (what is left)
+
+- **Privacy Policy and Terms** (C1, C2, C11, C15): see open item 1 above. The
+  terms are also not linked from the sign-up form, and `verify-ui`,
+  `dashboard` and the `profile-ui` public forms carry no legal links.
+- **Forms** (C4): `fullName` is collected at sign-up and never sent. Third
+  party SDK disclosure (C5) says the vendor "may vary".
+- **Age** (C6): the terms say 16+ and no age step exists.
+- **Licensing** (C10): no licence record for the fonts and images in use.
+- **Alt text** (C16): gallery photos use `alt=""`.
+- **Keyboard and labels** (C18): upload inputs are unreachable by keyboard (a
+  `display:none` input inside a non-focusable label), the dashboard has 35
+  labels without `htmlFor`, and three inputs have no label.
+- **Fixed this round**: contrast (C17, measured and CI-checked), the consent
+  banner (C3, now a real store, equal-weight buttons, in all four apps), and
+  the deletion control (C8).
+- **Followed**: Accept and Decline have equal prominence (C12). **No surface
+  yet**: children's data (C7), email sending (C9), checkout (C13).
+
+### Design and UX (what is left)
+
+Fixed this round: Inter, Lucide, card shadows, skeleton loaders, one-click
+destructive actions, motion preferences and focus rings (D2, D5, D10, D21,
+`UX_UI_RULES.md` reduced motion). Still open:
+
+- **Copy and decoration**: about 50 em dashes in UI strings (D9), emojis
+  (`dashboard/app/page.tsx:1676`), two coloured left stripes (D11), hover
+  animations on a filter brightness (D28), and the headline "Your work,
+  connected." (UNSLOP 9).
+- **Missing SaaS patterns**: command palette and shortcuts, debounce and
+  throttle, inline validation, bulk actions, a shared data table, filtering,
+  an app-level 404 and `error.tsx`, retry on error states, and a mobile layout
+  (one `@media` rule in the whole repo).
+- **`UX_UI_RULES.md`**: literal durations instead of motion tokens, a linear
+  easing (`dashboard/app/globals.css:161`), hit areas of 24 to 36 px on small
+  buttons, 10 flat navigation items, dashboard tabs held in state so Back
+  does not work.
+- **`UNSLOP_DESIGN_RULES.md`**: literal px and hex outside tokens, a parallel
+  palette in `login-ui/app/brand.ts`, mixed icon sets in places, no
+  `text-wrap` or `tabular-nums`, hex tokens instead of OKLCH.
+- **Placeholders shipped**: `/security` reads "This page is a placeholder."
+  (`login-ui/app/security/page.tsx:10`); `profile-ui/app/page.tsx:10` shows
+  `nid.example/your-slug`.
 
 ### Confirmed followed
 
-- **Health checks** — real `GET /health` endpoint at
-  `apps/rust-api/src/modules/health.rs:14`.
-- **Auth on every API route** — 18 of 19 `handlers.rs` files use
-  `AuthenticatedApiKey`/`AccountSession`/`AuthenticatedActor`
-  extractors; the one exception, `health.rs`, is the deliberate,
-  visible public exception the rule itself allows.
-- **Parameterized queries** — spot-checked `brands/service.rs:245`;
-  the `format!()` there only interpolates a trusted constant column
-  list, the actual value is bound as `$1`. No raw user-input
-  string-built SQL found in this pass.
-- **Log admin actions** — `audit_log_entry` writes found across
-  `access`, `verification_cases`, `sessions`, `organizations`,
-  `core/audit.rs`, and `crates/subjects` — broad coverage.
-
-### Flagged (not a named rule, but adjacent — worth a second look)
-
-- `tenants` table stores `webhook_secret_plaintext` and
-  `billing_webhook_secret_plaintext` columns — the names imply the
-  webhook signing secret itself is stored unhashed in the database.
-  Not literally one of the 20 named security rules, but the same
-  spirit as "verify webhook signatures" (security 10) — a leaked DB
-  dump would hand over the signing secret directly.
+- **Health checks** — `GET /health` registered in `main.rs`.
+- **Verify webhook signatures** — `services/signatures.rs` is actually
+  imported and used in `routes/webhooks.rs` and `routes/live_proof.rs`.
+- **Connection pooling** — `PgPoolOptions` used consistently across
+  services.
+- **Backup** — `docs/BACKUP.md` and `scripts/backup-databases.ps1`
+  exist (whether failover is *tested*, per the rule's wording, is
+  unverifiable statically).
+- **Log admin actions** — `audit_log`/`AuditLog` referenced broadly
+  across route files (`admin_system.rs`, `compliance_dashboard.rs`,
+  `automation.rs`, `canned_macros_sla.rs`, `contacts.rs`, `otp.rs`,
+  and more), not just the compliance-specific log.
+- **Parameterized queries** — the known `compliance_dashboard::
+  update_gdpr_request` bug (only `binds[0]` ever gets bound) is a
+  correctness bug, not a SQL-injection violation: the query still
+  uses `$n` placeholders and `.bind()`, never raw string
+  interpolation of a user value.
 
 ### Unverifiable statically
 
-All 20 `UX_UI_RULES.md` items (motion/feel requires a rendered app);
-remaining `COMPLIANCE_AND_ACCESSIBILITY_RULES.md` items (per-form
-audit, third-party SDK audit, dark patterns, hidden fees, fake
-reviews, unsupported claims, alt text, contrast, keyboard nav);
-most of `PRODUCTION_READINESS_RULES.md`'s Scale/Database items
-(horizontal scaling, load balancer, auto scaling, CDN, Redis,
-replication, sharding — infra-level, not visible in app code either
-way); webhook signature *verification on the receiving side*
-(security 10 — nID appears to send webhooks, a receiving handler
-with signature verification wasn't located in this pass); storage
-bucket config, HTTPS/deploy config (infra, not app code);
-`UNSLOP_DESIGN_RULES.md`'s remaining 39 items (typography/animation/
-layout vocabulary, all need visual inspection).
+Remove fake reviews / unsupported claims; color contrast ratio;
+keyboard navigation; DB replication/sharding; age consent / parental
+consent for children's data; hidden fees / dark patterns; file upload
+type validation (upload routes exist — `omni_broadcast.rs`,
+`erp_payments.rs`, `fin_vision.rs`, `commerce.rs`, `contacts.rs` —
+but whether each validates real content vs. trusting client MIME
+needs a per-file follow-up this pass didn't do); IDOR protection
+(needs a per-endpoint ownership-check review, not conclusive from
+spot checks at this repo's size); mobile-optimized layouts; skeleton
+loader coverage (`Skeleton` found only in `ContactProfile.tsx` — other
+pages' loading states need a broader per-page check).
+
+---
+
+## nID (re-audited 2026-11-16)
+
+**Method.** Three read passes (Rust backend; conventions, playbook,
+communication and stack docs; all four UIs) plus a live run of the
+whole local stack (Postgres, 17 gRPC services, the API): a
+no-credentials sweep of all 155 routes, header, CORS and rate-limit
+probes, psql tests as `nid_app`, and a tenant-create and login flow.
+**LIVE** marks a finding reproduced against the running stack; the
+rest were read in code. S = `SECURITY_RULES.md`, P =
+`PRODUCTION_READINESS_RULES.md`, C =
+`COMPLIANCE_AND_ACCESSIBILITY_RULES.md`, D = `CONVENTIONS.md` design
+anti-patterns.
+
+The previous "Fixed (2026-11-15)" list is withdrawn. Several of its
+entries were not fixes (a deletion endpoint that deletes nothing, a
+consent banner that gates nothing, skeleton components nothing
+imports, legal pages describing a different product). Each is
+restated below with its real status.
+
+### Fixed 2026-11-16 (verified live by `scripts/e2e-smoke.sh`, 97 checks, also from an empty database)
+
+- **Tenant isolation on reads** (S2, S19). The compat views ran with the
+  superuser owner's rights, so reads skipped RLS. They are now
+  `security_invoker`. Because that bypass was accidental and many paths
+  depended on it, the legitimate cross-tenant paths got explicit
+  policies (`20261116000003`): platform admin (`app.platform_admin`)
+  and account-owned records (`app.account_id`). About 20 functions in
+  `tenants`, `tenant-staff`, `account_verification`, `organizations` and
+  `access` now open a context transaction. The `Organization` table has
+  a deliberate `USING (true)` lookup policy, so its queries also filter
+  by `tenant_id` explicitly.
+- **Tenant context outside a transaction** in `organizations`,
+  `sessions` and `verification_cases` (S2). Now transactional with
+  commits, so those writes pass RLS.
+- **New tenants could not authenticate.** Tenant create now picks its id
+  first, sets the RLS context, mints the first API key and returns the
+  real name, slug, secrets and `createdAt`.
+- **OAuth** (S3, S4). Poll token and code hashed, code issued once at
+  claim time, `redirect_uri` matched exactly against the client's
+  registered URIs and bound to the code, client secret compared by
+  hash, 10-minute expiry, and the access token is a real
+  `account_session`. Also fixed a foreign key that made every login
+  request fail (the public client id was bound instead of the row id).
+- **Uploads** (S18). Verification documents, liveness frames and claim
+  documents are written to storage (the pre-split code had the same
+  `TODO`, so this was never working, not a regression). File type comes
+  from leading bytes (`nid_storage::sniff_content_type`), not the client
+  MIME type. Profile photo and gallery images were writing columns and
+  an enum value that do not exist; now aligned with the schema.
+- **Errors leaked gRPC and SQL text and lost their status** (S12). One
+  classifier (`core::error::http_error`) gives 400/403/404/409/501 for
+  domain errors and a generic 500 for infrastructure.
+- **`DELETE /v1/accounts/me`** (C8) now erases the account: the schema
+  cascades its own data and nulls the tenant-owned references.
+- **Services** (S9): bind `127.0.0.1` by default (`BIND_ADDR` to
+  override), require `APP_DATABASE_URL` (no superuser fallback), 5 s DB
+  acquire timeout, dev mode defaults off.
+- **Audit trail** (S20): API-key mint and revoke, staff add and remove,
+  role create, update, delete, assign and unassign, and tenant create
+  and update are recorded. The request-serving role can no longer
+  UPDATE or DELETE the log.
+- **Input validation** (S6), profile content only: http(s)-only link
+  URLs, length limits and an email check on the public contact form.
+- **Health check** (P15): `/health` queries Postgres and returns 503
+  when it is down.
+- **CI and scanning** (S13, S16): build, test and `cargo audit` on every
+  PR, Dependabot (cargo, npm, actions) and CodeQL for the TypeScript
+  apps. The workflows themselves have not run on GitHub yet; the same
+  commands pass locally. Two `cargo audit` advisories are ignored with
+  the reason recorded in `.cargo/audit.toml` (sqlx's sqlite and mysql
+  drivers are in the lockfile but not compiled).
+- **Rate limiting** (P7): the quota was one request per 10 seconds
+  (`per_second(10)` sets an interval); now 10 per second, burst 30.
+
+Added in the second round (same verification):
+
+- **RLS on the access-control tables** (S2): `AccessGrant`, `RoleDefinition`,
+  `RoleAssignment`, `Department`, `DepartmentAssignment`, `Invitation` and
+  `Brand` now enforce tenant (Brand: organization membership) policies, and
+  every function in those crates and the brands module runs in a context
+  transaction on one connection. `accept_invitation` is now atomic.
+- **API-key scopes and per-key rate limits** (S4): a request needs
+  `<resource>:read|write` derived from its path (write implies read),
+  tenant administration needs `tenant-admin`, and a key can only mint keys no
+  more powerful than itself. Enforced in both extractors that accept keys.
+- **Service authentication and TLS** (S9): `nid-service-auth` adds a shared
+  bearer token (constant-time check; mandatory off loopback) and optional TLS
+  to the gRPC hop. Clients share one cached channel with connect and call
+  timeouts instead of a new connection per call; an unreachable service is a
+  503 with no internals. Verified including rejection of a missing or wrong
+  token, a real CA and leaf certificate, plaintext against the TLS port, and an
+  untrusted CA.
+- **Production login codes** (S12): Twilio SMS delivery, with the code never
+  logged. Verified against a local mock of the Twilio API.
+- **Self-service verification cases**: the platform tenant `self` has the same
+  per-claim-type policies the seed gives the demo tenants (ordinary rows to
+  edit); cases pick a policy by claim type and level.
+- **Verification sessions** never worked (the case crate hashed the token with
+  its own byte-sum, not SHA-256) and their uploads wrote columns that do not
+  exist. Fixed and tested end to end with a real document and liveness frames.
+- **SQL against the schema**: `scripts/validate-sql.py` PREPAREs every static
+  SQL string against a live schema. 37 of 303 failed, which meant offers,
+  business hours, links, social links, contact messages, services,
+  availability, appointments and organization membership had never worked. All
+  314 now prepare, those features are tested live (a visitor books a slot, a
+  double booking is a 409, the owner confirms and cancels, an organization
+  invite is accepted), and CI runs the validator on every PR.
+- **Appointment slots**: the uniqueness ignored status, so a cancelled
+  appointment blocked its time forever; now a partial unique index.
+- **CI**: build, test, `cargo audit`, CodeQL, the SQL validator, and the
+  frontend typecheck, build and contrast check all run on every PR. CI and
+  CodeQL have run green on GitHub; the Qodo reviewer fails because its trial
+  ended and gates nothing.
+- **Design and accessibility** (D2, D5, D10, D21, C3, C8, C17, S19 UX):
+  contrast measured and fixed (15 failing pairings to 0, checked in CI);
+  Inter removed; `lucide-animated` replaced by a first-party icon set
+  (decision recorded in CONVENTIONS rule 2); flat elevation; every bare
+  "Loading..." is a skeleton; a native-dialog confirmation guards all 12
+  one-click destructive actions; one shared consent banner with a real consent
+  store replaces the inert one; and a Delete account control calls the working
+  endpoint. Verified in a real browser (`scripts/ui-smoke.js`).
+
+
+### Still open: security and core function
+
+1. **Legal and business content** (C1, C2, C11, C15; deliberately not
+   written): the privacy policy still describes a different product (email
+   and password instead of phone, ID documents and face capture), the terms
+   have a placeholder governing law, there is no legal entity or address, and
+   it makes unsupported claims (AES-256, bcrypt, 99.9% uptime). These need a
+   person who can state the real facts; the consent banner and deletion
+   control are real but the text they link to is not.
+2. **Not exercised live**: organization decline, username-based and email
+   invitations, brand updates and removal, the verification-case resolve flow
+   after a self-service case is created (nothing runs a policy's methods: no
+   workflow engine is wired up, so cases stay PENDING), and stored images
+   are not served back as bytes (the public photo endpoints return a key).
+3. **Webhook secrets** are stored in plaintext columns, and session tokens
+   live in `localStorage` in the browser (S10, S4).
+4. **Audit coverage** (S20): departments, invitations, access-grant changes,
+   brands and booking are not audited (api keys, staff, roles and tenant
+   changes are). Account deletion is logged to the application log only.
+5. **Validation** (S6) beyond profile content: the `validator` crate is
+   unused elsewhere.
+6. **Services accept any caller that holds the shared token.** That is
+   service-level authentication, not per-user: a compromised service or the
+   token still grants everything its role can do. mTLS with per-service
+   identities would be the next step.
+7. **Email**: there is no email provider (email verification codes are only
+   logged in dev mode) and no unsubscribe flow (C9), because nothing sends
+   email.
+8. **Age and parental consent** (C6, C7): the terms state 16+, and no age step
+   exists.
+
+### Production readiness
+
+- **Rate limiting** (P7, S5): partial. Per peer IP only, so behind a
+  proxy every client shares one bucket; no per-user limit; state is
+  in-process, so each replica counts separately; `/health` is
+  limited too; 429 responses carry no security headers. (The quota
+  itself is fixed, see above.)
+- **Health checks** (P15): the API checks Postgres; the 17 services
+  have no health endpoint.
+- **Timeouts, retries, circuit breaker** (P16, P17): 141 call sites
+  open a new plaintext HTTP/2 connection per request with no
+  timeout or retry; one slow service hangs API requests.
+- **Pooling** (P10): partial. The API pool is configured and the
+  services now have a 5 s acquire timeout, but each uses
+  `max_connections(5)` and the total (17 x 5 + 10 + 1 = 96) sits
+  against Postgres's default of 100.
+- **Pagination** (P13): no page parameters anywhere in `modules/`
+  (`crates/tenants/src/lib.rs:273-279`).
+- **Not present**: Redis or any cache (P6), a job queue or Temporal
+  client in Rust (P8, so cases likely never progress), read
+  replicas (P11), metrics or error tracking (P18), a k6 load test
+  (P19), graceful shutdown or degradation in services (P20).
+- **Likely**: uploads over about 2 MB fail on default body limits
+  despite the 10 MB `MAX_FILE_SIZE`.
+
+### Conventions, split playbook, communication, stack
+
+- **Batch split commit `4ff2241`** broke the playbook's
+  one-module-per-commit rule (9 modules, 78 files), and is the source
+  of the lost transactions and the lossy tenant-create response (both
+  fixed). It also committed a binary file `null` at the repo root and
+  `allowBuilds: ... "set this to true or false"` placeholders in
+  `pnpm-workspace.yaml` (both still there).
+- **"No direct cross-module DB access"** (`CONVENTIONS.md` §3):
+  violated. `account` is queried from 8 crates, `subject` from 6,
+  `verification_case` from 5, `access_grant` from 4. The playbook
+  says shared tables are fine; the two documents contradict each
+  other.
+- **Naming drift**: 11 protos name the service `*ApiService`, 6 use
+  `*Service`; `ORG_PROFILES_*` env vars instead of
+  `ORGANIZATION_PROFILES_*`; `services/tenant-staff` is kebab-case
+  among snake_case folders; `billing`, `shared-types`, `storage` and
+  `db-schema` are packaged `nid-*`, not `newax-*`; protos live at
+  `proto/nid/<module>/v1`.
+- **Commits**: none of the last 45 uses Conventional Commits; six
+  unsquashed commits sit on `main`'s first-parent history.
+- **"SQLx, compile-time checked"** (`ecosystem-stack.md`): false.
+  Zero `query!` macros, 339 runtime `sqlx::query(...)` calls, no
+  `.sqlx` cache, so `SQLX_OFFLINE=true` does nothing.
+- **Stack gaps still true**: the public API is axum REST (no
+  tonic-web or Connect), no moka or Redis, the four frontends are
+  Next 15 and React 19 rather than Svelte, Prisma is still used by
+  `apps/api`, `apps/workflows`, `verification-providers`, `billing`
+  and `db`, and there is no NATS code.
+- **Ownership** (`ECOSYSTEM.md`): nID holds business data it is
+  meant never to own: booking (appointments, availability,
+  services), offers with prices, contact messages, and a full
+  billing platform (invoices, payments, subscriptions, ledger).
+  None is listed under "Known misplacements". The secrets vault nID
+  is meant to own does not exist.
+- **Stale docs**: `CONVENTIONS.md:257` ("three pilot services"),
+  `:320-332` (remaining modules; the real remainder is brands and
+  profiles), `:384` ("only 3 Rust library crates"; there are 22);
+  `COMMUNICATION.md:185` ("14 Communicator, 6 nID"; nID has 17);
+  `ecosystem-stack.md:142-179` (says no tonic or proto exists, omits
+  `db-schema`); root `README.md` still presents `apps/api` and
+  `prisma migrate deploy`.
+- **Cross-repo drift**: `CONVENTIONS.md`, `tokens.css` and this file
+  no longer match Communicator's copies.
+
+### Compliance and accessibility
+
+- **Privacy Policy** (C1): describes a different product. It claims
+  an email address and a bcrypt-hashed password
+  (`apps/login-ui/app/privacy/page.tsx:16-18,86`); sign-up collects
+  name and phone with OTP and there is no password. It omits ID
+  documents, face capture, national ID numbers, public-profile data
+  and visitor contact and booking data.
+- **Terms** (C2): not linked from the sign-up form; claims accounts
+  can be closed from settings (`terms/page.tsx:73`) when the account
+  page only offers Sign out; governing law is a placeholder
+  (`:88`).
+- **Consent banner** (C3): gates nothing. Both branches are
+  `console.log` (`consent-banner.tsx:27-33`), the stored choice is
+  never read, it announces analytics cookies that do not exist, and
+  it is in login-ui only. `verify-ui` starts face capture with no
+  consent notice or policy link.
+- **Unsupported claims** (C15): AES-256, bcrypt, MFA-gated staff
+  access, 99.9% uptime (`privacy/page.tsx:85-87`, `terms/page.tsx:52`).
+- **Operator identity** (C11): no legal entity or address anywhere;
+  `support@newax.com` appears only on these two pages.
+- **Also violated**: `fullName` collected and never sent (C4); SDK
+  disclosure says the vendor "may vary" (C5); Terms say 16+ and no
+  age step exists (C6); the deletion endpoint now works but no UI calls it (C8); no licence
+  record for Inter or `lucide-animated` (C10); gallery photos use
+  `alt=""` (C16); upload inputs are unreachable by keyboard, the
+  dashboard has 35 labels and no `htmlFor` (C18).
+- **Contrast** (C17), computed from tokens: white on accent 3.19,
+  accent as text about 3.1, `--success` text 1.6 to 1.8, `--warn`
+  text 3.1 to 3.5, `--color-ink-faint` 3.07 to 3.23 (light) and 3.82
+  to 4.08 (dark). All below 4.5:1.
+- **Followed**: Accept and Decline have equal prominence (C12).
+  **No surface yet**: children's data (C7), email sending (C9),
+  checkout (C13).
+
+### Design and UX
+
+- **Banned defaults still in use**: `lucide-animated` in all four
+  apps (D2); card shadows in all four (D5); Inter via
+  `next/font/google` in dashboard, profile-ui and verify-ui and in
+  `login-ui/app/brand.ts:64` (D10; only `tokens.css` changed, and no
+  app uses `--font-sans`); emojis (`dashboard/app/page.tsx:1676`);
+  about 50 em dashes in UI strings (D9); two left stripes (D11);
+  hover animations (D28).
+- **login-ui is partly unstyled**: no `button` or `.field-label`
+  rule, `.btn-link` uses an undefined `--on-accent`; the dashboard
+  has 24 class names with no CSS.
+- **Skeleton loaders** (D21): zero usages;
+  `packages/design-tokens/Skeleton.tsx` is never imported. Loading
+  is bare "Loading…" text in about 12 places.
+- **Destructive actions**: 12 of 13 run on one click (revoke API
+  key, remove staff, delete image).
+- **Missing patterns**: command palette and shortcuts, debounce and
+  throttle, inline validation, bulk actions, a shared table,
+  filtering, app-level 404 and `error.tsx`, retry on error states;
+  one `@media` rule in the whole repo.
+- **`UX_UI_RULES.md`**: literal durations and default easing instead
+  of motion tokens, linear easing (`dashboard/app/globals.css:161`),
+  hit areas of 24 to 36 px, 10 flat nav items, dashboard tabs held
+  in state so Back does not work, no `prefers-reduced-motion`
+  anywhere.
+- **`UNSLOP_DESIGN_RULES.md`**: literal px and hex outside tokens, a
+  parallel palette in `login-ui/app/brand.ts`, mixed icon sets, no
+  `text-wrap` or `tabular-nums`, hex tokens instead of OKLCH, no
+  safe-area inset on the fixed banner.
+- **Placeholders shipped**: `/security` reads "This page is a
+  placeholder." (`login-ui/app/security/page.tsx:10`);
+  `profile-ui/app/page.tsx:10` shows `nid.example/your-slug`.
+
+### Confirmed followed
+
+- **Auth on every route** (S3). LIVE: with no credentials, 129 of
+  155 routes return 401. The other 26 are health, login, OAuth,
+  public profile and token-in-URL verification routes, public by
+  design. The platform-admin guard rejects an empty token, fails
+  closed when the secret is unset and compares in constant time
+  (`core/auth/platform_admin.rs:69-76`).
+- **CORS** (S8). LIVE: explicit allowlist; a disallowed origin gets
+  no `Access-Control-Allow-Origin`. `X-Tenant-Id` added to the
+  allowed headers on 2026-11-16.
+- **Security headers** (S17). LIVE: CSP, HSTS, `nosniff`,
+  `X-Frame-Options`, `Referrer-Policy` on API responses.
+- **Parameterized queries** (S7): dynamic SQL interpolates only fixed
+  column lists and `$n` placeholders.
+- **`X-Tenant-Id`** is checked against the caller's memberships
+  before use (`core/auth/tenant_actor.rs:114-125`).
+- **Split mechanics**: 17 unique ports with matching client and
+  server defaults, no `sqlx` left in the split modules, no module
+  crate depends on another, the tracking table has all 17 rows.
+- **`CLAUDE.md` and `AGENT.md`** match, and the rule counts they
+  quote match the files.
+
+### Not checked, or needs a browser
+
+Deployment-level rules (P1, P2, P4, P12, P14; S1 has no bucket
+yet); tenant webhook-URL SSRF; real tab order and focus visibility;
+most motion and typography rules in `UX_UI_RULES.md` and
+`UNSLOP_DESIGN_RULES.md` (rules 1, 2, 11, 20, 26, 28 and 30 of the
+latter were not checked at all).
 
 ---
 

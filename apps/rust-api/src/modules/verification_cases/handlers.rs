@@ -188,14 +188,5 @@ pub async fn submit_location(
 
 /// Convert anyhow error to HTTP error response
 fn error_response(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
-    let msg = err.to_string();
-    let status = if msg.contains("not found") {
-        StatusCode::NOT_FOUND
-    } else if msg.contains("must be") || msg.contains("requires") || msg.contains("has no") {
-        StatusCode::BAD_REQUEST
-    } else {
-        tracing::error!(error = %err, "Internal error");
-        StatusCode::INTERNAL_SERVER_ERROR
-    };
-    (status, Json(serde_json::json!({ "message": msg })))
+    crate::core::error::http_error(err)
 }

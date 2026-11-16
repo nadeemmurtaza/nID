@@ -8,6 +8,7 @@ name = "svc-tenant-staff"
 path = "src/main.rs"
 
 [dependencies]
+nid-service-auth = { path = "../../crates/service-auth" }
 newax-tenant-staff = { path = "../../crates/tenant-staff" }
 tonic = "0.12"
 prost = "0.13"

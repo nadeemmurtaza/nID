@@ -8,6 +8,7 @@ name = "svc-organization-profiles"
 path = "src/main.rs"
 
 [dependencies]
+nid-service-auth = { path = "../../crates/service-auth" }
 newax-organization-profiles = { path = "../../crates/organization_profiles" }
 tonic = "0.12"
 prost = "0.13"

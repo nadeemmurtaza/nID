@@ -145,19 +145,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_env_filter(tracing_subscriber::EnvFilter::try_new("info,svc_subjects=debug").unwrap())
         .init();
 
+    // Never fall back to the superuser DATABASE_URL: it bypasses RLS.
     let database_url = std::env::var("APP_DATABASE_URL")
-        .or_else(|_| std::env::var("DATABASE_URL"))
-        .map_err(|_| "APP_DATABASE_URL (or DATABASE_URL) must be set")?;
-    let pool = PgPoolOptions::new().max_connections(5).connect(&database_url).await?;
+        .map_err(|_| "APP_DATABASE_URL must be set")?;
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .connect(&database_url).await?;
 
     let port: u16 = std::env::var("SUBJECTS_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(50077);
-    let addr = format!("0.0.0.0:{port}").parse()?;
+    // Plaintext, unauthenticated gRPC: loopback by default. Set BIND_ADDR
+    // only on a private network that already enforces access control.
+    let bind = std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let addr = format!("{bind}:{port}").parse()?;
 
     let grpc = Grpc { service: SubjectsService::new(pool) };
 
     info!(port, "svc-subjects starting (gRPC)");
-    Server::builder()
-        .add_service(SubjectsServiceServer::new(grpc))
+    nid_service_auth::server_builder()?
+        .add_service(SubjectsServiceServer::with_interceptor(grpc, nid_service_auth::ServerAuth::from_env(&bind)?))
         .serve(addr)
         .await?;
     Ok(())

@@ -199,13 +199,28 @@ impl OrganizationProfilesService {
         organization_id: &str,
         conn: &mut sqlx::PgConnection,
     ) -> Result<()> {
-        let org: OrgRow = sqlx::query_as(
-            "SELECT id, is_verified FROM organization WHERE id = $1",
+        let (org_id, org_tenant, org_subject): (String, String, String) = sqlx::query_as(
+            "SELECT id, tenant_id, subject_id FROM organization WHERE id = $1",
         )
         .bind(organization_id)
         .fetch_one(&mut *conn)
         .await
         .map_err(|_| anyhow!("Organization not found"))?;
+
+        // An organization is verified once its own subject has an APPROVED
+        // IDENTITY case (real KYB), the same derivation the TypeScript API
+        // uses; there is no stored flag. Cases are tenant-RLS rows.
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(&org_tenant)
+            .execute(&mut *conn)
+            .await?;
+        let verified: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM verification_case WHERE subject_id = $1 AND status = 'APPROVED' AND claim_type = 'IDENTITY')",
+        )
+        .bind(&org_subject)
+        .fetch_one(&mut *conn)
+        .await?;
+        let org = OrgRow { id: org_id, is_verified: verified };
 
         if !org.is_verified {
             return Err(anyhow!("Organization must be verified to manage profiles"));

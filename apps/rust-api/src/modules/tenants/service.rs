@@ -78,16 +78,17 @@ fn tenant_counts_from_proto(p: ProtoTenantWithCounts) -> TenantWithCounts {
 
 fn created_from_proto(p: ProtoCreatedTenantResponse) -> CreatedTenantResponse {
     CreatedTenantResponse {
-        id: p.tenant_id.clone(),
-        name: String::new(),
-        slug: String::new(),
-        data_residency_region: String::new(),
-        webhook_url: None,
-        webhook_secret: p.api_key.clone(),
-        billing_webhook_url: None,
-        billing_webhook_secret: p.api_key,
-        created_at: String::new(),
-        message: "Tenant created successfully. Save the webhook secrets — they cannot be recovered.".to_string(),
+        id: p.tenant_id,
+        name: p.name,
+        slug: p.slug,
+        data_residency_region: p.data_residency_region,
+        webhook_url: p.webhook_url,
+        webhook_secret: p.webhook_secret,
+        billing_webhook_url: p.billing_webhook_url,
+        billing_webhook_secret: p.billing_webhook_secret,
+        api_key: p.api_key,
+        created_at: p.created_at,
+        message: "Tenant created successfully. Save the API key and webhook secrets — they cannot be recovered.".to_string(),
     }
 }
 
@@ -129,11 +130,12 @@ fn staff_from_proto(p: ProtoStaffMemberResponse) -> StaffMemberResponse {
     }
 }
 
-async fn client() -> Result<TenantsApiServiceClient<tonic::transport::Channel>> {
+async fn client() -> Result<TenantsApiServiceClient<nid_service_auth::AuthedChannel>> {
     let url = std::env::var("TENANTS_SERVICE_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:50089".to_string());
-    TenantsApiServiceClient::connect(url)
+    nid_service_auth::connect(url)
         .await
+        .map(TenantsApiServiceClient::new)
         .map_err(|e| anyhow!("tenants service unreachable: {e}"))
 }
 

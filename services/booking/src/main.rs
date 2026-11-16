@@ -25,9 +25,11 @@ struct BookingGrpc {
 
 fn to_status(e: anyhow::Error) -> Status {
     let msg = e.to_string();
-    if msg.contains("not found") {
+    if msg.contains("not found") || msg.contains("No profile found") {
         Status::not_found(msg)
-    } else if msg.contains("Invalid") {
+    } else if msg.contains("already") {
+        Status::already_exists(msg)
+    } else if msg.contains("Invalid") || msg.contains("not accepting") {
         Status::invalid_argument(msg)
     } else {
         Status::internal(msg)
@@ -40,7 +42,7 @@ fn service_to_proto(s: ServiceResponse) -> ProtoService {
         profile_id: s.profile_id,
         name: s.name,
         duration_minutes: s.duration_minutes,
-        price_minor: s.price_minor,
+        price: s.price,
         currency: s.currency,
         description: s.description,
         is_active: s.is_active,
@@ -51,9 +53,10 @@ fn availability_rule_to_proto(a: AvailabilityRuleResponse) -> ProtoAvailabilityR
     ProtoAvailabilityRule {
         id: a.id,
         profile_id: a.profile_id,
-        weekday: a.weekday,
-        start_time: a.start_time,
-        end_time: a.end_time,
+        day: a.day,
+        start_minute: a.start_minute,
+        end_minute: a.end_minute,
+        is_active: a.is_active,
     }
 }
 
@@ -62,27 +65,26 @@ fn appointment_to_proto(a: AppointmentResponse) -> ProtoAppointment {
         id: a.id,
         profile_id: a.profile_id,
         service_id: a.service_id,
-        start_time: a.start_time,
-        end_time: a.end_time,
+        starts_at: a.starts_at,
+        ends_at: a.ends_at,
         status: a.status,
-        subject_name: a.subject_name,
-        subject_email: a.subject_email,
+        visitor_name: a.visitor_name,
+        visitor_phone: a.visitor_phone,
+        visitor_email: a.visitor_email,
+        notes: a.notes,
+        service_name: a.service_name,
     }
 }
 
 fn free_slot_to_proto(s: FreeSlotResponse) -> ProtoFreeSlot {
-    ProtoFreeSlot {
-        start_time: s.start_time,
-        end_time: s.end_time,
-        is_available: s.is_available,
-    }
+    ProtoFreeSlot { starts_at: s.starts_at, ends_at: s.ends_at }
 }
 
 #[tonic::async_trait]
 impl BookingRpc for BookingGrpc {
     async fn create_service(&self, req: Request<CreateServiceRequest>) -> Result<Response<ProtoService>, Status> {
         let r = req.into_inner();
-        let result = self.service.create_service(&r.account_id, &r.name, r.duration_minutes, r.price_minor, &r.currency, r.description.as_deref()).await.map_err(to_status)?;
+        let result = self.service.create_service(&r.account_id, &r.name, r.duration_minutes, r.price, r.currency.as_deref(), r.description.as_deref(), r.is_active).await.map_err(to_status)?;
         Ok(Response::new(service_to_proto(result)))
     }
 
@@ -96,7 +98,7 @@ impl BookingRpc for BookingGrpc {
 
     async fn update_service(&self, req: Request<UpdateServiceRequest>) -> Result<Response<ProtoService>, Status> {
         let r = req.into_inner();
-        let result = self.service.update_service(&r.account_id, &r.service_id, r.name.as_deref(), r.duration_minutes, r.price_minor, r.is_active).await.map_err(to_status)?;
+        let result = self.service.update_service(&r.account_id, &r.service_id, r.name.as_deref(), r.duration_minutes, r.price, r.is_active, r.description.as_deref(), r.currency.as_deref()).await.map_err(to_status)?;
         Ok(Response::new(service_to_proto(result)))
     }
 
@@ -108,7 +110,7 @@ impl BookingRpc for BookingGrpc {
 
     async fn create_availability_rule(&self, req: Request<CreateAvailabilityRuleRequest>) -> Result<Response<ProtoAvailabilityRule>, Status> {
         let r = req.into_inner();
-        let result = self.service.create_availability_rule(&r.account_id, &r.weekday, &r.start_time, &r.end_time).await.map_err(to_status)?;
+        let result = self.service.create_availability_rule(&r.account_id, &r.day, r.start_minute, r.end_minute, r.is_active).await.map_err(to_status)?;
         Ok(Response::new(availability_rule_to_proto(result)))
     }
 
@@ -128,7 +130,7 @@ impl BookingRpc for BookingGrpc {
 
     async fn update_availability_rule(&self, req: Request<UpdateAvailabilityRuleRequest>) -> Result<Response<ProtoAvailabilityRule>, Status> {
         let r = req.into_inner();
-        let result = self.service.update_availability_rule(&r.account_id, &r.rule_id, r.weekday.as_deref(), r.start_time.as_deref(), r.end_time.as_deref()).await.map_err(to_status)?;
+        let result = self.service.update_availability_rule(&r.account_id, &r.rule_id, r.day.as_deref(), r.start_minute, r.end_minute, r.is_active).await.map_err(to_status)?;
         Ok(Response::new(availability_rule_to_proto(result)))
     }
 
@@ -170,7 +172,7 @@ impl BookingRpc for BookingGrpc {
 
     async fn create_public_appointment(&self, req: Request<CreatePublicAppointmentRequest>) -> Result<Response<ProtoAppointment>, Status> {
         let r = req.into_inner();
-        let result = self.service.create_public_appointment(&r.slug, &r.service_id, &r.start_time, r.subject_name.as_deref(), r.subject_email.as_deref()).await.map_err(to_status)?;
+        let result = self.service.create_public_appointment(&r.slug, &r.service_id, &r.starts_at, &r.visitor_name, r.visitor_phone.as_deref(), r.visitor_email.as_deref(), r.notes.as_deref()).await.map_err(to_status)?;
         Ok(Response::new(appointment_to_proto(result)))
     }
 }
@@ -182,19 +184,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_env_filter(tracing_subscriber::EnvFilter::try_new("info,svc_booking=debug").unwrap())
         .init();
 
+    // Never fall back to the superuser DATABASE_URL: it bypasses RLS.
     let database_url = std::env::var("APP_DATABASE_URL")
-        .or_else(|_| std::env::var("DATABASE_URL"))
-        .map_err(|_| "APP_DATABASE_URL (or DATABASE_URL) must be set")?;
-    let pool = PgPoolOptions::new().max_connections(5).connect(&database_url).await?;
+        .map_err(|_| "APP_DATABASE_URL must be set")?;
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .connect(&database_url).await?;
 
     let port: u16 = std::env::var("BOOKING_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(50083);
-    let addr = format!("0.0.0.0:{port}").parse()?;
+    // Plaintext, unauthenticated gRPC: loopback by default. Set BIND_ADDR
+    // only on a private network that already enforces access control.
+    let bind = std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let addr = format!("{bind}:{port}").parse()?;
 
     let grpc = BookingGrpc { service: BookingService::new(pool) };
 
     info!(port, "svc-booking starting (gRPC)");
-    Server::builder()
-        .add_service(BookingApiServiceServer::new(grpc))
+    nid_service_auth::server_builder()?
+        .add_service(BookingApiServiceServer::with_interceptor(grpc, nid_service_auth::ServerAuth::from_env(&bind)?))
         .serve(addr)
         .await?;
     Ok(())

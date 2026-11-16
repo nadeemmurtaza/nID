@@ -41,10 +41,11 @@ fn group_from_proto(g: ProtoGroup) -> PermissionGroup {
     }
 }
 
-async fn client() -> Result<PermissionsServiceClient<tonic::transport::Channel>> {
+async fn client() -> Result<PermissionsServiceClient<nid_service_auth::AuthedChannel>> {
     let url = std::env::var("PERMISSIONS_SERVICE_URL").unwrap_or_else(|_| "http://127.0.0.1:50071".to_string());
-    PermissionsServiceClient::connect(url)
+    nid_service_auth::connect(url)
         .await
+        .map(PermissionsServiceClient::new)
         .map_err(|e| anyhow!("permissions service unreachable: {e}"))
 }
 

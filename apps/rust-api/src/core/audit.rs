@@ -70,17 +70,17 @@ impl AuditService {
                 _ => Some(entry.metadata.as_ref().unwrap()),
             });
 
-        let row_id: uuid::Uuid = sqlx::query_scalar(
+        let row_id: String = sqlx::query_scalar(
             r#"INSERT INTO audit_log_entry (id, tenant_id, actor_type, actor_id, action, metadata)
                VALUES ($1, $2, $3, $4, $5, $6)
                RETURNING id"#,
         )
-        .bind(id)
+        .bind(id.to_string())
         .bind(&entry.tenant_id)
         .bind(entry.actor_type.to_string())
         .bind(&entry.actor_id)
         .bind(&entry.action)
-        .bind(metadata.map(|v| v.to_string()))
+        .bind(metadata.cloned().map(sqlx::types::Json))
         .fetch_one(&mut *conn)
         .await
         .context("Failed to insert audit log entry")?;
@@ -95,7 +95,7 @@ impl AuditService {
         );
 
         conn.commit().await?;
-        Ok(row_id)
+        Ok(Uuid::parse_str(&row_id).unwrap_or(id))
     }
 
     /// Record a quick audit entry without metadata.
@@ -159,5 +159,31 @@ impl AuditService {
 
         conn.commit().await?;
         Ok(entries)
+    }
+}
+
+/// Record a privileged action (SECURITY_RULES.md item 20) after it succeeded.
+///
+/// The action has already committed by the time this runs, so a failure to
+/// write the audit row is logged loudly rather than turned into an error the
+/// caller would retry. Entries are append-only for the request-serving role
+/// (UPDATE/DELETE revoked on the table).
+pub async fn log_admin_action(
+    db: &DbPool,
+    tenant_id: &str,
+    actor_type: AuditActorType,
+    actor_id: &str,
+    action: &str,
+    metadata: serde_json::Value,
+) {
+    let entry = AuditEntry {
+        tenant_id: tenant_id.to_string(),
+        actor_type,
+        actor_id: actor_id.to_string(),
+        action: action.to_string(),
+        metadata: Some(metadata),
+    };
+    if let Err(e) = AuditService::new(db.clone()).record(&entry).await {
+        tracing::error!(error = %format!("{e:#}"), action, tenant_id, "FAILED to write audit log entry");
     }
 }

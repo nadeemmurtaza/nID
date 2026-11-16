@@ -5,11 +5,14 @@ import { useRouter } from 'next/navigation';
 import {
   ApiError,
   clearStoredAccountSession,
+  deleteAccount,
   getCurrentAccount,
   getStoredAccountSession,
   type Account,
 } from '../../lib/api';
 import { Logomark } from '../components/logomark';
+import { useConfirm } from '@newax/design-tokens/ConfirmDialog';
+import { Skeleton } from '@newax/design-tokens/Skeleton';
 
 type LoadState =
   | { kind: 'loading' }
@@ -35,6 +38,8 @@ type LoadState =
 export default function AccountPage() {
   const router = useRouter();
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
 
   useEffect(() => {
     const token = getStoredAccountSession();
@@ -58,11 +63,32 @@ export default function AccountPage() {
     router.push('/signin');
   }
 
+  async function handleDelete(): Promise<void> {
+    const token = getStoredAccountSession();
+    if (!token) return;
+    const ok = await confirm({
+      title: 'Delete your account?',
+      body:
+        'Your profile, sign-in sessions, access grants and roles are erased. Organisations that hold records about you keep them, but they stop being linked to you. This cannot be undone.',
+      confirmLabel: 'Delete my account',
+    });
+    if (!ok) return;
+    setDeleteError(null);
+    try {
+      await deleteAccount(token);
+      clearStoredAccountSession();
+      router.push('/');
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : 'Could not delete your account. Try again.');
+    }
+  }
+
   if (state.kind === 'loading') {
     return (
       <main>
-        <div className="card">
-          <p className="lead">Loading your account…</p>
+        <div className="card" aria-busy="true" aria-label="Loading your account">
+          <Skeleton height={48} width={48} />
+          <Skeleton count={3} />
         </div>
       </main>
     );
@@ -150,6 +176,23 @@ export default function AccountPage() {
         <button type="button" onClick={signOut} style={{ marginTop: 8 }}>
           Sign out
         </button>
+
+        <section className="account-section">
+          <h2 className="account-section-title">Delete account</h2>
+          <p className="lead" style={{ fontSize: 13 }}>
+            Erase your account and the data that belongs to it. Organisations that hold records about you keep them,
+            unlinked from you.
+          </p>
+          {deleteError && (
+            <p className="error-text" role="alert">
+              {deleteError}
+            </p>
+          )}
+          <button type="button" className="secondary" onClick={handleDelete}>
+            Delete my account
+          </button>
+        </section>
+        {dialog}
       </div>
     </main>
   );

@@ -77,21 +77,10 @@ pub async fn get_attribute_badges(
 
 /// Convert anyhow error to HTTP error response
 fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
-    tracing::error!(error = %err, "Internal error");
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(serde_json::json!({ "message": err.to_string() })),
-    )
+    crate::core::error::http_error(err)
 }
 
 /// Convert anyhow error to HTTP error response (404 for not found)
 fn not_found_or_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
-    let msg = err.to_string();
-    let status = if msg.contains("not found") {
-        StatusCode::NOT_FOUND
-    } else {
-        tracing::error!(error = %err, "Internal error");
-        StatusCode::INTERNAL_SERVER_ERROR
-    };
-    (status, Json(serde_json::json!({ "message": msg })))
+    crate::core::error::http_error(err)
 }

@@ -169,11 +169,12 @@ impl VerificationCasesService {
         }
     }
 
-    async fn client() -> Result<VerificationCasesApiServiceClient<tonic::transport::Channel>> {
+    async fn client() -> Result<VerificationCasesApiServiceClient<nid_service_auth::AuthedChannel>> {
         let url = std::env::var("VERIFICATION_CASES_SERVICE_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:50085".to_string());
-        VerificationCasesApiServiceClient::connect(url)
+        nid_service_auth::connect(url)
             .await
+            .map(VerificationCasesApiServiceClient::new)
             .map_err(|e| anyhow!("verification_cases service unreachable: {e}"))
     }
 

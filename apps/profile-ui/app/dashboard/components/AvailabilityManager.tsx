@@ -1,5 +1,6 @@
 'use client';
 
+import { useConfirm } from '@newax/design-tokens/ConfirmDialog';
 import { useEffect, useState } from 'react';
 import {
   ApiError,
@@ -23,6 +24,7 @@ function minutesToTime(minutes: number): string {
 }
 
 export function AvailabilityManager({ token }: { token: string }) {
+  const { confirm, dialog } = useConfirm();
   const [rules, setRules] = useState<OwnerAvailabilityRule[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [day, setDay] = useState('MONDAY');
@@ -55,6 +57,7 @@ export function AvailabilityManager({ token }: { token: string }) {
   }
 
   async function handleDelete(id: string): Promise<void> {
+    if (!(await confirm({ title: 'Delete this availability rule?', body: 'Those times stop being offered to visitors.', confirmLabel: 'Delete rule' }))) return;
     try {
       await deleteAvailabilityRule(token, id);
       setRules((prev) => prev?.filter((r) => r.id !== id) ?? null);
@@ -65,6 +68,7 @@ export function AvailabilityManager({ token }: { token: string }) {
 
   return (
     <div>
+      {dialog}
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Bookable hours
       </h2>

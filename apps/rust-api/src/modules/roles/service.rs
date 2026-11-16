@@ -56,10 +56,11 @@ fn assignment_from_proto(p: ProtoAssignment) -> RoleAssignmentResponse {
     }
 }
 
-async fn client() -> Result<RolesApiServiceClient<tonic::transport::Channel>> {
+async fn client() -> Result<RolesApiServiceClient<nid_service_auth::AuthedChannel>> {
     let url = std::env::var("ROLES_SERVICE_URL").unwrap_or_else(|_| "http://127.0.0.1:50082".to_string());
-    RolesApiServiceClient::connect(url)
+    nid_service_auth::connect(url)
         .await
+        .map(RolesApiServiceClient::new)
         .map_err(|e| anyhow!("roles service unreachable: {e}"))
 }
 

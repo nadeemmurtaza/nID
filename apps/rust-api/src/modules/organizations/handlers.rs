@@ -78,7 +78,7 @@ pub async fn invite_member(
 ) -> Result<Json<MembershipResponse>, (StatusCode, Json<serde_json::Value>)> {
     let _ = &tenant.tenant_id;
     let role = req.role.as_deref().unwrap_or("MEMBER");
-    let membership = state.service.invite_member(&tenant.tenant_id, &org_id, &req.phone, role).await.map_err(error_response)?;
+    let membership = state.service.invite_member(&tenant.tenant_id, &org_id, &req.phone, role, &tenant.id).await.map_err(error_response)?;
     Ok(Json(membership))
 }
 
@@ -119,7 +119,7 @@ pub async fn accept_invite(
     Path(membership_id): Path<String>,
     State(state): State<Arc<OrganizationsState>>,
 ) -> Result<Json<MembershipResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let membership = state.service.respond_to_invite(&account.id, &membership_id, "ACCEPTED")
+    let membership = state.service.respond_to_invite(&account.id, &membership_id, "ACTIVE")
         .await.map_err(error_response)?;
     Ok(Json(membership))
 }

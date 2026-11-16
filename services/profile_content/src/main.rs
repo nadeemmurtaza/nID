@@ -52,9 +52,8 @@ fn offer_to_proto(o: OfferResponse) -> ProtoOffer {
         id: o.id,
         profile_id: o.profile_id,
         title: o.title,
-        price_minor: o.price_minor,
-        currency: o.currency,
         description: o.description,
+        valid_until: o.valid_until,
         is_active: o.is_active,
     }
 }
@@ -63,9 +62,9 @@ fn business_hour_to_proto(b: BusinessHourResponse) -> ProtoBusinessHour {
     ProtoBusinessHour {
         id: b.id,
         profile_id: b.profile_id,
-        weekday: b.weekday,
-        start_time: b.start_time,
-        end_time: b.end_time,
+        day: b.day,
+        open_minute: b.open_minute,
+        close_minute: b.close_minute,
         is_closed: b.is_closed,
     }
 }
@@ -85,8 +84,8 @@ fn social_link_to_proto(s: SocialLinkResponse) -> ProtoSocialLink {
         id: s.id,
         profile_id: s.profile_id,
         platform: s.platform,
-        username: s.username,
         url: s.url,
+        order_idx: s.order,
     }
 }
 
@@ -105,10 +104,11 @@ fn contact_message_to_proto(c: ContactMessageResponse) -> ProtoContactMessage {
     ProtoContactMessage {
         id: c.id,
         profile_id: c.profile_id,
-        name: c.name,
-        email: c.email,
+        sender_name: c.sender_name,
+        sender_phone: c.sender_phone,
+        sender_email: c.sender_email,
         message: c.message,
-        is_read: c.is_read,
+        read_at: c.read_at,
         created_at: c.created_at,
     }
 }
@@ -121,9 +121,9 @@ impl ProfileContentRpc for ProfileContentGrpc {
         let r = req.into_inner();
         let result = self.service.create_offer(&r.account_id, &newax_profile_content::CreateOfferRequest {
             title: r.title,
-            price_minor: r.price_minor,
-            currency: r.currency,
             description: r.description,
+            valid_until: r.valid_until,
+            is_active: r.is_active,
         }).await.map_err(to_status)?;
         Ok(Response::new(offer_to_proto(result)))
     }
@@ -140,7 +140,8 @@ impl ProfileContentRpc for ProfileContentGrpc {
         let r = req.into_inner();
         let result = self.service.update_offer(&r.account_id, &r.offer_id, &newax_profile_content::UpdateOfferRequest {
             title: r.title,
-            price_minor: r.price_minor,
+            description: r.description,
+            valid_until: r.valid_until,
             is_active: r.is_active,
         }).await.map_err(to_status)?;
         Ok(Response::new(offer_to_proto(result)))
@@ -157,8 +158,8 @@ impl ProfileContentRpc for ProfileContentGrpc {
     async fn upsert_business_hour(&self, req: Request<UpsertBusinessHourRequest>) -> Result<Response<ProtoBusinessHour>, Status> {
         let r = req.into_inner();
         let result = self.service.upsert_business_hour(&r.account_id, &r.day, &newax_profile_content::UpsertBusinessHourRequest {
-            start_time: r.start_time,
-            end_time: r.end_time,
+            open_minute: r.open_minute,
+            close_minute: r.close_minute,
             is_closed: r.is_closed,
         }).await.map_err(to_status)?;
         Ok(Response::new(business_hour_to_proto(result)))
@@ -220,8 +221,8 @@ impl ProfileContentRpc for ProfileContentGrpc {
         let r = req.into_inner();
         let result = self.service.create_social_link(&r.account_id, &newax_profile_content::CreateSocialLinkRequest {
             platform: r.platform,
-            username: r.username,
             url: r.url,
+            order: r.order_idx,
         }).await.map_err(to_status)?;
         Ok(Response::new(social_link_to_proto(result)))
     }
@@ -244,8 +245,8 @@ impl ProfileContentRpc for ProfileContentGrpc {
         let r = req.into_inner();
         let result = self.service.update_social_link(&r.account_id, &r.link_id, &newax_profile_content::UpdateSocialLinkRequest {
             platform: r.platform,
-            username: r.username,
             url: r.url,
+            order: r.order_idx,
         }).await.map_err(to_status)?;
         Ok(Response::new(social_link_to_proto(result)))
     }
@@ -330,8 +331,9 @@ impl ProfileContentRpc for ProfileContentGrpc {
     async fn create_public_contact_message(&self, req: Request<CreatePublicContactMessageRequest>) -> Result<Response<ProtoContactMessage>, Status> {
         let r = req.into_inner();
         let result = self.service.create_public_contact_message(&r.slug, &newax_profile_content::CreateContactMessageRequest {
-            name: r.name,
-            email: r.email,
+            sender_name: r.sender_name,
+            sender_phone: r.sender_phone,
+            sender_email: r.sender_email,
             message: r.message,
         }).await.map_err(to_status)?;
         Ok(Response::new(contact_message_to_proto(result)))
@@ -365,19 +367,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_env_filter(tracing_subscriber::EnvFilter::try_new("info,svc_profile_content=debug").unwrap())
         .init();
 
+    // Never fall back to the superuser DATABASE_URL: it bypasses RLS.
     let database_url = std::env::var("APP_DATABASE_URL")
-        .or_else(|_| std::env::var("DATABASE_URL"))
-        .map_err(|_| "APP_DATABASE_URL (or DATABASE_URL) must be set")?;
-    let pool = PgPoolOptions::new().max_connections(5).connect(&database_url).await?;
+        .map_err(|_| "APP_DATABASE_URL must be set")?;
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .connect(&database_url).await?;
 
     let port: u16 = std::env::var("PROFILE_CONTENT_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(50090);
-    let addr = format!("0.0.0.0:{port}").parse()?;
+    // Plaintext, unauthenticated gRPC: loopback by default. Set BIND_ADDR
+    // only on a private network that already enforces access control.
+    let bind = std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let addr = format!("{bind}:{port}").parse()?;
 
-    let grpc = ProfileContentGrpc { service: ProfileContentService::new(pool) };
+    let grpc = ProfileContentGrpc { service: ProfileContentService::new(pool).with_storage(std::sync::Arc::new(
+            nid_storage::LocalStorageDriver::new(
+                std::env::var("LOCAL_STORAGE_DIR").map_err(|_| "LOCAL_STORAGE_DIR must be set")?,
+            ),
+        )) };
 
     info!(port, "svc-profile-content starting (gRPC)");
-    Server::builder()
-        .add_service(ProfileContentApiServiceServer::new(grpc))
+    nid_service_auth::server_builder()?
+        .add_service(ProfileContentApiServiceServer::with_interceptor(grpc, nid_service_auth::ServerAuth::from_env(&bind)?))
         .serve(addr)
         .await?;
     Ok(())

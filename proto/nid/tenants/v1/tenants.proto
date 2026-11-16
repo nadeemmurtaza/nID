@@ -114,6 +114,14 @@ message TenantListResponse {
 message CreatedTenantResponse {
   string tenant_id = 1;
   string api_key = 2;
+  string name = 3;
+  string slug = 4;
+  string data_residency_region = 5;
+  optional string webhook_url = 6;
+  string webhook_secret = 7;
+  optional string billing_webhook_url = 8;
+  string billing_webhook_secret = 9;
+  string created_at = 10;
 }
 
 message TenantMembership {

@@ -19,6 +19,8 @@ pub struct AuthenticatedApiKey {
     pub tenant_id: String,
     pub key_prefix: String,
     pub scopes: Vec<String>,
+    #[serde(skip_serializing)]
+    pub rate_limit_per_minute: i32,
 }
 
 /// Error response for authentication failures.
@@ -100,7 +102,7 @@ where
 
         let api_key: AuthenticatedApiKey = sqlx::query_as(
             r#"
-            SELECT id, tenant_id, key_prefix, scopes
+            SELECT id, tenant_id, key_prefix, scopes, rate_limit_per_minute
             FROM tenant_api_key
             WHERE key_hash = $1 AND revoked_at IS NULL
             "#,
@@ -117,6 +119,119 @@ where
             )
         })?;
 
+        let forbidden = |m: &str| (StatusCode::FORBIDDEN, Json(AuthError { message: m.to_string() }));
+        if let Some(required) = required_scope(&parts.method, parts.uri.path()) {
+            if !scope_allows(&api_key.scopes, &required) {
+                return Err(forbidden(&format!("This API key lacks the '{required}' scope.")));
+            }
+        }
+        if !within_rate_limit(&api_key.id, api_key.rate_limit_per_minute) {
+            return Err((
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(AuthError { message: "API key rate limit exceeded.".to_string() }),
+            ));
+        }
+
         Ok(api_key)
+    }
+}
+
+/// The scope a request needs, derived from its path and method:
+/// `<resource>:read` for GET/HEAD and `<resource>:write` otherwise, where
+/// resource is the first path segment after `/v1/`. Tenant administration
+/// (minting keys, managing staff) needs `tenant-admin`. `GET /v1/tenants/me`
+/// needs nothing beyond a valid key.
+pub fn required_scope(method: &axum::http::Method, path: &str) -> Option<String> {
+    let seg: Vec<&str> = path.trim_matches('/').split('/').collect();
+    let resource = *seg.get(1)?;
+    match (resource, seg.get(2).copied()) {
+        ("tenants", Some("me")) => None,
+        ("tenants", _) | ("tenant-staff", _) => Some("tenant-admin".to_string()),
+        _ => {
+            let action = if method == axum::http::Method::GET || method == axum::http::Method::HEAD { "read" } else { "write" };
+            Some(format!("{resource}:{action}"))
+        }
+    }
+}
+
+/// `*` and `<resource>:*` grant everything they cover, and `<resource>:write`
+/// implies `<resource>:read`.
+pub fn scope_allows(scopes: &[String], required: &str) -> bool {
+    if scopes.iter().any(|s| s == "*" || s == required) {
+        return true;
+    }
+    if let Some((resource, action)) = required.split_once(':') {
+        if scopes.iter().any(|s| s == &format!("{resource}:*")) {
+            return true;
+        }
+        if action == "read" && scopes.iter().any(|s| s == &format!("{resource}:write")) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Per-key fixed-window limit (requests per minute). In-process, so each
+/// replica counts separately; a shared limiter belongs in Redis.
+pub fn within_rate_limit(key_id: &str, limit: i32) -> bool {
+    use once_cell::sync::Lazy;
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    static WINDOWS: Lazy<Mutex<HashMap<String, (Instant, i32)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+    let limit = limit.max(1);
+    let now = Instant::now();
+    let mut map = match WINDOWS.lock() {
+        Ok(m) => m,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if map.len() > 10_000 {
+        map.retain(|_, (start, _)| now.duration_since(*start) < Duration::from_secs(60));
+    }
+    let entry = map.entry(key_id.to_string()).or_insert((now, 0));
+    if now.duration_since(entry.0) >= Duration::from_secs(60) {
+        *entry = (now, 0);
+    }
+    entry.1 += 1;
+    entry.1 <= limit
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::Method;
+
+    fn v(s: &[&str]) -> Vec<String> { s.iter().map(|x| x.to_string()).collect() }
+
+    #[test]
+    fn derives_scope_from_method_and_path() {
+        assert_eq!(required_scope(&Method::GET, "/v1/subjects/abc").as_deref(), Some("subjects:read"));
+        assert_eq!(required_scope(&Method::POST, "/v1/verification-cases").as_deref(), Some("verification-cases:write"));
+        assert_eq!(required_scope(&Method::DELETE, "/v1/tenants/t1/api-keys/k").as_deref(), Some("tenant-admin"));
+        assert_eq!(required_scope(&Method::GET, "/v1/tenant-staff").as_deref(), Some("tenant-admin"));
+        assert_eq!(required_scope(&Method::GET, "/v1/tenants/me"), None);
+    }
+
+    #[test]
+    fn write_implies_read_but_not_the_reverse() {
+        assert!(scope_allows(&v(&["subjects:write"]), "subjects:read"));
+        assert!(!scope_allows(&v(&["subjects:read"]), "subjects:write"));
+        assert!(!scope_allows(&v(&["subjects:read"]), "tenant-admin"));
+        assert!(!scope_allows(&v(&["subjects:write"]), "organizations:read"));
+    }
+
+    #[test]
+    fn wildcards() {
+        assert!(scope_allows(&v(&["*"]), "tenant-admin"));
+        assert!(scope_allows(&v(&["organizations:*"]), "organizations:write"));
+        assert!(!scope_allows(&v(&["organizations:*"]), "subjects:read"));
+    }
+
+    #[test]
+    fn rate_limit_blocks_after_the_quota() {
+        let id = format!("test-key-{}", std::process::id());
+        assert!(within_rate_limit(&id, 2));
+        assert!(within_rate_limit(&id, 2));
+        assert!(!within_rate_limit(&id, 2));
     }
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { Skeleton } from '@newax/design-tokens/Skeleton';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ApiError } from '../../../../lib/api';
@@ -35,7 +36,7 @@ export function VerificationOverview({ token }: Props) {
   }, [token]);
 
   if (error) return <p className="error-text">{error}</p>;
-  if (!status) return <p style={{ color: 'var(--muted)' }}>Loading…</p>;
+  if (!status) return <div aria-busy="true" aria-label="Loading"><Skeleton count={3} /></div>;
 
   return (
     <div>

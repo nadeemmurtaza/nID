@@ -1,9 +1,10 @@
 'use client';
 
+import { Skeleton } from '@newax/design-tokens/Skeleton';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import QRCode from 'qrcode';
-import { BadgeAlertIcon, CircleCheckIcon } from 'lucide-animated';
+import { AlertIcon, CircleCheckIcon } from '@newax/design-tokens/icons';
 import {
   apiFetch,
   ApiError,
@@ -159,10 +160,9 @@ export default function AuthorizePage() {
 
         {phase.kind === 'loading' && (
           <>
-            <h1>Loading…</h1>
-            <div className="status-line">
-              <span className="dot" />
-              <span>Fetching this sign-in link</span>
+            <h1>Checking this sign-in link</h1>
+            <div aria-busy="true" aria-label="Checking this sign-in link">
+              <Skeleton count={2} />
             </div>
           </>
         )}
@@ -170,7 +170,7 @@ export default function AuthorizePage() {
         {phase.kind === 'error' && (
           <>
             <div className="result-icon">
-              <BadgeAlertIcon size={56} className="nid-icon" />
+              <AlertIcon size={56} className="nid-icon" />
             </div>
             <h1>Can&apos;t continue</h1>
             <p className="lead">{phase.message}</p>

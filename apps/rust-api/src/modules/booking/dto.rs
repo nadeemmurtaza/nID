@@ -1,4 +1,5 @@
-//! DTOs for booking endpoints.
+//! DTOs for booking endpoints. Field names follow the frontend contract
+//! (`apps/profile-ui/lib/owner-api.ts` and `lib/api.ts`).
 
 use serde::{Deserialize, Serialize};
 
@@ -7,10 +8,14 @@ use serde::{Deserialize, Serialize};
 pub struct CreateServiceRequest {
     pub name: String,
     pub duration_minutes: i32,
-    pub price_minor: i64,
-    pub currency: String,
+    #[serde(default)]
+    pub price: Option<f64>,
+    #[serde(default)]
+    pub currency: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
+    #[serde(default)]
+    pub is_active: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -21,7 +26,11 @@ pub struct UpdateServiceRequest {
     #[serde(default)]
     pub duration_minutes: Option<i32>,
     #[serde(default)]
-    pub price_minor: Option<i64>,
+    pub price: Option<f64>,
+    #[serde(default)]
+    pub currency: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
     #[serde(default)]
     pub is_active: Option<bool>,
 }
@@ -29,31 +38,38 @@ pub struct UpdateServiceRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAvailabilityRuleRequest {
-    pub weekday: String,
-    pub start_time: String,
-    pub end_time: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateAppointmentRequest {
-    pub service_id: String,
-    pub start_time: String,
+    pub day: String,
+    pub start_minute: i32,
+    pub end_minute: i32,
     #[serde(default)]
-    pub subject_name: Option<String>,
-    #[serde(default)]
-    pub subject_email: Option<String>,
+    pub is_active: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateAvailabilityRuleRequest {
     #[serde(default)]
-    pub weekday: Option<String>,
+    pub day: Option<String>,
     #[serde(default)]
-    pub start_time: Option<String>,
+    pub start_minute: Option<i32>,
     #[serde(default)]
-    pub end_time: Option<String>,
+    pub end_minute: Option<i32>,
+    #[serde(default)]
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateAppointmentRequest {
+    pub service_id: String,
+    pub starts_at: String,
+    pub visitor_name: String,
+    #[serde(default)]
+    pub visitor_phone: Option<String>,
+    #[serde(default)]
+    pub visitor_email: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,9 +83,8 @@ pub struct AvailabilityQueryRequest {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FreeSlotResponse {
-    pub start_time: String,
-    pub end_time: String,
-    pub is_available: bool,
+    pub starts_at: String,
+    pub ends_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -78,10 +93,10 @@ pub struct ServiceResponse {
     pub id: String,
     pub profile_id: String,
     pub name: String,
-    pub duration_minutes: i32,
-    pub price_minor: i64,
-    pub currency: String,
     pub description: Option<String>,
+    pub duration_minutes: i32,
+    pub price: Option<f64>,
+    pub currency: Option<String>,
     pub is_active: bool,
 }
 
@@ -90,9 +105,15 @@ pub struct ServiceResponse {
 pub struct AvailabilityRuleResponse {
     pub id: String,
     pub profile_id: String,
-    pub weekday: String,
-    pub start_time: String,
-    pub end_time: String,
+    pub day: String,
+    pub start_minute: i32,
+    pub end_minute: i32,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ServiceRef {
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -101,11 +122,14 @@ pub struct AppointmentResponse {
     pub id: String,
     pub profile_id: String,
     pub service_id: String,
-    pub start_time: String,
-    pub end_time: String,
     pub status: String,
-    pub subject_name: Option<String>,
-    pub subject_email: Option<String>,
+    pub starts_at: String,
+    pub ends_at: String,
+    pub visitor_name: String,
+    pub visitor_phone: Option<String>,
+    pub visitor_email: Option<String>,
+    pub notes: Option<String>,
+    pub service: Option<ServiceRef>,
 }
 
 #[derive(Debug, Serialize)]

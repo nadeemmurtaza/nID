@@ -37,6 +37,21 @@ pub struct AccountVerificationService {
 }
 
 impl AccountVerificationService {
+    /// Open a transaction with RLS context settings applied. They are
+    /// transaction-local (`set_config(.., true)`), so they must be set on the
+    /// transaction itself and are gone once it ends.
+    async fn scoped(&self, settings: &[(&str, &str)]) -> Result<sqlx::Transaction<'_, sqlx::Postgres>> {
+        let mut tx = self.db.begin().await?;
+        for (k, v) in settings {
+            sqlx::query("SELECT set_config($1, $2, true)")
+                .bind(*k)
+                .bind(*v)
+                .execute(&mut *tx)
+                .await?;
+        }
+        Ok(tx)
+    }
+
     pub fn new(db: PgPool) -> Self {
         Self { db }
     }
@@ -83,55 +98,77 @@ impl AccountVerificationService {
         })
     }
 
+    /// Start a self-service verification case for the signed-in account.
+    ///
+    /// Filed under the platform tenant `self`; the policy is chosen from that
+    /// tenant's policy rows by claim type and, if given, level (otherwise the
+    /// lowest level on offer). The case is created PENDING; running the
+    /// policy's methods is the verification workflow's job.
     pub async fn create_case(
         &self,
         account_id: &str,
         claim_type: &str,
         level: Option<&str>,
     ) -> Result<VerificationCaseResponse> {
-        // Find or create subject for this account
-        let subject_id = sqlx::query(
-            "SELECT id FROM subject WHERE account_id = $1 LIMIT 1",
+        // 'self' is a platform-owned tenant, so this system flow asserts its
+        // own context (plus the caller's, for the account-owned records).
+        let mut conn = self
+            .scoped(&[("app.tenant_id", "self"), ("app.account_id", account_id)])
+            .await?;
+
+        let policy: Option<(String, String, String)> = sqlx::query_as(
+            r#"
+            SELECT id, claim_type, level FROM verification_policy
+            WHERE tenant_id = 'self' AND claim_type = $1
+              AND ($2::text IS NULL OR level = $2)
+            ORDER BY CASE level WHEN 'SELF_ATTESTED' THEN 0 WHEN 'DOCUMENT_VERIFIED' THEN 1 ELSE 2 END
+            LIMIT 1
+            "#,
+        )
+        .bind(claim_type)
+        .bind(level)
+        .fetch_optional(&mut *conn)
+        .await?;
+        let (policy_id, claim_type, level) = policy.ok_or_else(|| {
+            anyhow!("Invalid: no self-service verification is offered for that claim type and level")
+        })?;
+
+        let subject_id: String = match sqlx::query_scalar(
+            "SELECT id FROM subject WHERE account_id = $1 AND tenant_id = 'self' LIMIT 1",
         )
         .bind(account_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut *conn)
         .await?
-        .map(|r| r.get::<String, _>("id"));
-
-        let subject_id = match subject_id {
+        {
             Some(id) => id,
-            None => {
-                let row = sqlx::query(
-                    "INSERT INTO subject (id, tenant_id, type, account_id) VALUES (gen_random_uuid(), 'self', 'PERSON', $1) RETURNING id",
-                )
-                .bind(account_id)
-                .fetch_one(&self.db)
-                .await?;
-                row.get("id")
-            }
+            None => sqlx::query_scalar(
+                "INSERT INTO subject (id, tenant_id, type, account_id) VALUES (gen_random_uuid(), 'self', 'PERSON', $1) RETURNING id",
+            )
+            .bind(account_id)
+            .fetch_one(&mut *conn)
+            .await?,
         };
 
-        let level = level.unwrap_or("SELF_ATTESTED");
-
-        let case_id: String = sqlx::query(
+        let case_id: String = sqlx::query_scalar(
             r#"
-            INSERT INTO verification_case (id, tenant_id, subject_id, claim_type, level, status)
-            VALUES (gen_random_uuid(), 'self', $1, $2, $3, 'PENDING')
+            INSERT INTO verification_case (id, tenant_id, subject_id, policy_id, claim_type, level, status)
+            VALUES (gen_random_uuid(), 'self', $1, $2, $3, $4, 'PENDING')
             RETURNING id
             "#,
         )
         .bind(&subject_id)
-        .bind(claim_type)
-        .bind(level)
-        .fetch_one(&self.db)
-        .await?
-        .get("id");
+        .bind(&policy_id)
+        .bind(&claim_type)
+        .bind(&level)
+        .fetch_one(&mut *conn)
+        .await?;
 
+        conn.commit().await?;
         Ok(VerificationCaseResponse {
             id: case_id,
             subject_id,
-            claim_type: claim_type.to_string(),
-            level: level.to_string(),
+            claim_type,
+            level,
             status: "PENDING".to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
             resolved_at: None,
@@ -139,24 +176,12 @@ impl AccountVerificationService {
     }
 
     pub async fn list_cases(&self, account_id: &str) -> Result<Vec<VerificationCaseResponse>> {
-        let subject_id = sqlx::query(
-            "SELECT id FROM subject WHERE account_id = $1 LIMIT 1",
+        let mut conn = self.scoped(&[("app.account_id", account_id)]).await?;
+        let rows = sqlx::query(
+            "SELECT id, subject_id, claim_type, level, status, created_at, resolved_at FROM verification_case WHERE subject_id IN (SELECT id FROM subject WHERE account_id = $1) ORDER BY created_at DESC",
         )
         .bind(account_id)
-        .fetch_optional(&self.db)
-        .await?
-        .map(|r| r.get::<String, _>("id"));
-
-        if subject_id.is_none() {
-            return Ok(Vec::new());
-        }
-        let subject_id = subject_id.unwrap();
-
-        let rows = sqlx::query(
-            "SELECT id, subject_id, claim_type, level, status, created_at, resolved_at FROM verification_case WHERE subject_id = $1 ORDER BY created_at DESC",
-        )
-        .bind(&subject_id)
-        .fetch_all(&self.db)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(rows.into_iter().map(|r| VerificationCaseResponse {
@@ -172,25 +197,13 @@ impl AccountVerificationService {
     }
 
     pub async fn get_case(&self, account_id: &str, case_id: &str) -> Result<VerificationCaseResponse> {
-        let subject_id = sqlx::query(
-            "SELECT id FROM subject WHERE account_id = $1 LIMIT 1",
-        )
-        .bind(account_id)
-        .fetch_optional(&self.db)
-        .await?
-        .map(|r| r.get::<String, _>("id"));
-
-        if subject_id.is_none() {
-            return Err(anyhow!("No subject found for this account"));
-        }
-        let subject_id = subject_id.unwrap();
-
+        let mut conn = self.scoped(&[("app.account_id", account_id)]).await?;
         let row = sqlx::query(
-            "SELECT id, subject_id, claim_type, level, status, created_at, resolved_at FROM verification_case WHERE id = $1 AND subject_id = $2",
+            "SELECT id, subject_id, claim_type, level, status, created_at, resolved_at FROM verification_case WHERE id = $1 AND subject_id IN (SELECT id FROM subject WHERE account_id = $2)",
         )
         .bind(case_id)
-        .bind(&subject_id)
-        .fetch_one(&self.db)
+        .bind(account_id)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|_| anyhow!("Case not found"))?;
 

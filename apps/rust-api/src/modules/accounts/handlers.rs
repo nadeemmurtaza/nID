@@ -127,9 +127,5 @@ pub async fn delete_account(
 
 /// Convert anyhow error to HTTP error response
 fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
-    tracing::error!(error = %err, "Internal error");
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(serde_json::json!({ "message": err.to_string() })),
-    )
+    crate::core::error::http_error(err)
 }

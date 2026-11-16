@@ -414,6 +414,11 @@ missing.
 2. **No Lucide icons.** Do not pull in `lucide-react` or any Lucide
    icon set. If this ecosystem adopts an icon set, it will be a
    deliberate, documented decision here — not a default import.
+   **Decision (2026-11-16):** nID uses a small first-party set,
+   `@newax/design-tokens/icons` (`packages/design-tokens/icons.tsx`):
+   static SVG on a 24px grid, one 2px round stroke, `currentColor`,
+   decorative by default, never animated. Add glyphs there in the same
+   style; do not import another icon package.
 3. **No pure white (`#ffffff`) background fields.** The canvas is
    `--color-page` (warm cream, `#faf9f6`), never `#fff`. `#ffffff` is
    reserved for `--color-surface` (cards/panels sitting on the cream

@@ -35,10 +35,11 @@ fn case_from_proto(c: newax_proto::account_verification::v1::VerificationCaseRes
     }
 }
 
-async fn client() -> Result<AccountVerificationServiceClient<tonic::transport::Channel>> {
+async fn client() -> Result<AccountVerificationServiceClient<nid_service_auth::AuthedChannel>> {
     let url = std::env::var("ACCOUNT_VERIFICATION_SERVICE_URL").unwrap_or_else(|_| "http://127.0.0.1:50075".to_string());
-    AccountVerificationServiceClient::connect(url)
+    nid_service_auth::connect(url)
         .await
+        .map(AccountVerificationServiceClient::new)
         .map_err(|e| anyhow!("account-verification service unreachable: {e}"))
 }
 

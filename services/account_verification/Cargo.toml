@@ -8,6 +8,7 @@ name = "svc-account-verification"
 path = "src/main.rs"
 
 [dependencies]
+nid-service-auth = { path = "../../crates/service-auth" }
 newax-account-verification = { path = "../../crates/account_verification" }
 tonic = "0.12"
 prost = "0.13"

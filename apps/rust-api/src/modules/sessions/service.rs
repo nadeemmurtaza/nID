@@ -49,11 +49,12 @@ fn file_to_proto(f: UploadedFile) -> (Vec<u8>, String, String) {
     (f.buffer, f.filename, f.content_type)
 }
 
-async fn client() -> Result<SessionsApiServiceClient<tonic::transport::Channel>> {
+async fn client() -> Result<SessionsApiServiceClient<nid_service_auth::AuthedChannel>> {
     let url = std::env::var("SESSIONS_SERVICE_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:50088".to_string());
-    SessionsApiServiceClient::connect(url)
+    nid_service_auth::connect(url)
         .await
+        .map(SessionsApiServiceClient::new)
         .map_err(|e| anyhow!("sessions service unreachable: {e}"))
 }
 

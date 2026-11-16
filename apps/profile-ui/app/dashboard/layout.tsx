@@ -1,5 +1,6 @@
 'use client';
 
+import { Skeleton } from '@newax/design-tokens/Skeleton';
 import { useEffect, useState, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { getMe, getMyProfile, type OwnerProfile } from '../../lib/owner-api';
@@ -60,7 +61,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   if (!token || profile === undefined) {
     return (
       <main className="center-page">
-        <p style={{ color: 'var(--muted)' }}>Loading…</p>
+        <div aria-busy="true" aria-label="Loading"><Skeleton count={3} /></div>
       </main>
     );
   }
