@@ -30,7 +30,8 @@ for f in files:
         line = src.count("\n", 0, m.start()) + 1
         if "{" in sql and "format!" in src[max(0, m.start() - 40):m.start()]:
             dynamic.append((f, line)); continue
-        if sql.upper().startswith("SELECT SET_CONFIG") or "pg_advisory" in sql:
+        # SET (e.g. transaction isolation) and set_config cannot be PREPAREd.
+        if sql.upper().startswith(("SELECT SET_CONFIG", "SET ")) or "pg_advisory" in sql:
             continue
         stmts.append((f, line, sql))
 

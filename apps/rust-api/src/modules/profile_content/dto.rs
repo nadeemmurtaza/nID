@@ -6,10 +6,12 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct CreateOfferRequest {
     pub title: String,
-    pub price_minor: i64,
-    pub currency: String,
     #[serde(default)]
     pub description: Option<String>,
+    #[serde(default)]
+    pub valid_until: Option<String>,
+    #[serde(default)]
+    pub is_active: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -18,7 +20,9 @@ pub struct UpdateOfferRequest {
     #[serde(default)]
     pub title: Option<String>,
     #[serde(default)]
-    pub price_minor: Option<i64>,
+    pub description: Option<String>,
+    #[serde(default)]
+    pub valid_until: Option<String>,
     #[serde(default)]
     pub is_active: Option<bool>,
 }
@@ -26,8 +30,10 @@ pub struct UpdateOfferRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpsertBusinessHourRequest {
-    pub start_time: String,
-    pub end_time: String,
+    #[serde(default)]
+    pub open_minute: Option<i32>,
+    #[serde(default)]
+    pub close_minute: Option<i32>,
     #[serde(default)]
     pub is_closed: bool,
 }
@@ -45,9 +51,9 @@ pub struct CreateCustomLinkRequest {
 #[serde(rename_all = "camelCase")]
 pub struct CreateSocialLinkRequest {
     pub platform: String,
-    pub username: String,
+    pub url: String,
     #[serde(default)]
-    pub url: Option<String>,
+    pub order: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,9 +73,9 @@ pub struct UpdateSocialLinkRequest {
     #[serde(default)]
     pub platform: Option<String>,
     #[serde(default)]
-    pub username: Option<String>,
-    #[serde(default)]
     pub url: Option<String>,
+    #[serde(default)]
+    pub order: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -93,8 +99,11 @@ pub struct ProfileImageResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateContactMessageRequest {
-    pub name: String,
-    pub email: String,
+    pub sender_name: String,
+    #[serde(default)]
+    pub sender_phone: Option<String>,
+    #[serde(default)]
+    pub sender_email: Option<String>,
     pub message: String,
 }
 
@@ -104,9 +113,8 @@ pub struct OfferResponse {
     pub id: String,
     pub profile_id: String,
     pub title: String,
-    pub price_minor: i64,
-    pub currency: String,
     pub description: Option<String>,
+    pub valid_until: Option<String>,
     pub is_active: bool,
 }
 
@@ -115,9 +123,9 @@ pub struct OfferResponse {
 pub struct BusinessHourResponse {
     pub id: String,
     pub profile_id: String,
-    pub weekday: String,
-    pub start_time: String,
-    pub end_time: String,
+    pub day: String,
+    pub open_minute: Option<i32>,
+    pub close_minute: Option<i32>,
     pub is_closed: bool,
 }
 
@@ -137,8 +145,8 @@ pub struct SocialLinkResponse {
     pub id: String,
     pub profile_id: String,
     pub platform: String,
-    pub username: String,
-    pub url: Option<String>,
+    pub url: String,
+    pub order: i32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -146,10 +154,11 @@ pub struct SocialLinkResponse {
 pub struct ContactMessageResponse {
     pub id: String,
     pub profile_id: String,
-    pub name: String,
-    pub email: String,
+    pub sender_name: String,
+    pub sender_phone: Option<String>,
+    pub sender_email: Option<String>,
     pub message: String,
-    pub is_read: bool,
+    pub read_at: Option<String>,
     pub created_at: String,
 }
 

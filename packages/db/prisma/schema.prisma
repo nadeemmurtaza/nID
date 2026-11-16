@@ -1149,7 +1149,7 @@ model Appointment {
   /// SERIALIZABLE transaction with an explicit overlap check in
   /// booking.service.ts, which Postgres aborts on genuine concurrent
   /// conflict rather than silently double-booking.
-  @@unique([profileId, startsAt])
+  // Partial unique index (status <> CANCELLED) lives in migration 20261116000006; Prisma cannot express it.
   @@index([profileId, startsAt])
   @@index([serviceId])
 }

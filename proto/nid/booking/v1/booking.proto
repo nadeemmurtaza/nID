@@ -33,9 +33,10 @@ message CreateServiceRequest {
   string account_id = 1;
   string name = 2;
   int32 duration_minutes = 3;
-  int64 price_minor = 4;
-  string currency = 5;
+  optional double price = 4;
+  optional string currency = 5;
   optional string description = 6;
+  optional bool is_active = 7;
 }
 
 message UpdateServiceRequest {
@@ -43,8 +44,10 @@ message UpdateServiceRequest {
   string service_id = 2;
   optional string name = 3;
   optional int32 duration_minutes = 4;
-  optional int64 price_minor = 5;
+  optional double price = 5;
   optional bool is_active = 6;
+  optional string description = 7;
+  optional string currency = 8;
 }
 
 message RemoveServiceRequest {
@@ -54,9 +57,10 @@ message RemoveServiceRequest {
 
 message CreateAvailabilityRuleRequest {
   string account_id = 1;
-  string weekday = 2;
-  string start_time = 3;
-  string end_time = 4;
+  string day = 2;
+  int32 start_minute = 3;
+  int32 end_minute = 4;
+  optional bool is_active = 5;
 }
 
 message RemoveAvailabilityRuleRequest {
@@ -67,9 +71,10 @@ message RemoveAvailabilityRuleRequest {
 message UpdateAvailabilityRuleRequest {
   string account_id = 1;
   string rule_id = 2;
-  optional string weekday = 3;
-  optional string start_time = 4;
-  optional string end_time = 5;
+  optional string day = 3;
+  optional int32 start_minute = 4;
+  optional int32 end_minute = 5;
+  optional bool is_active = 6;
 }
 
 message ComputeFreeSlotsRequest {
@@ -92,9 +97,11 @@ message CancelAppointmentRequest {
 message CreatePublicAppointmentRequest {
   string slug = 1;
   string service_id = 2;
-  string start_time = 3;
-  optional string subject_name = 4;
-  optional string subject_email = 5;
+  string starts_at = 3;
+  string visitor_name = 4;
+  optional string visitor_phone = 5;
+  optional string visitor_email = 6;
+  optional string notes = 7;
 }
 
 message ServiceResponse {
@@ -102,8 +109,8 @@ message ServiceResponse {
   string profile_id = 2;
   string name = 3;
   int32 duration_minutes = 4;
-  int64 price_minor = 5;
-  string currency = 6;
+  optional double price = 5;
+  optional string currency = 6;
   optional string description = 7;
   bool is_active = 8;
 }
@@ -115,9 +122,10 @@ message ServiceListResponse {
 message AvailabilityRuleResponse {
   string id = 1;
   string profile_id = 2;
-  string weekday = 3;
-  string start_time = 4;
-  string end_time = 5;
+  string day = 3;
+  int32 start_minute = 4;
+  int32 end_minute = 5;
+  bool is_active = 6;
 }
 
 message AvailabilityRuleListResponse {
@@ -125,9 +133,8 @@ message AvailabilityRuleListResponse {
 }
 
 message FreeSlotResponse {
-  string start_time = 1;
-  string end_time = 2;
-  bool is_available = 3;
+  string starts_at = 1;
+  string ends_at = 2;
 }
 
 message FreeSlotListResponse {
@@ -138,11 +145,14 @@ message AppointmentResponse {
   string id = 1;
   string profile_id = 2;
   string service_id = 3;
-  string start_time = 4;
-  string end_time = 5;
+  string starts_at = 4;
+  string ends_at = 5;
   string status = 6;
-  optional string subject_name = 7;
-  optional string subject_email = 8;
+  string visitor_name = 7;
+  optional string visitor_phone = 8;
+  optional string visitor_email = 9;
+  optional string notes = 10;
+  optional string service_name = 11;
 }
 
 message AppointmentListResponse {

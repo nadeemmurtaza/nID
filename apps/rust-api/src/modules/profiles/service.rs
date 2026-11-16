@@ -349,8 +349,8 @@ impl ProfilesService {
                 show_hours = COALESCE($24, show_hours),
                 show_real_name = COALESCE($25, show_real_name),
                 is_published = COALESCE($26, is_published),
-                username_set_at = CASE WHEN $27 IS NOT NULL AND $27 != slug THEN NOW() ELSE username_set_at END,
-                username_source_name = CASE WHEN $27 IS NOT NULL AND $27 != slug THEN $28 ELSE username_source_name END
+                username_set_at = CASE WHEN $27::text IS NOT NULL AND $27::text != slug THEN NOW() ELSE username_set_at END,
+                username_source_name = CASE WHEN $27::text IS NOT NULL AND $27::text != slug THEN $28::text ELSE username_source_name END
             WHERE account_id = $29
             RETURNING id, account_id, organization_id, slug, display_name, headline, category, bio, photo_key,
                 phone, whatsapp, public_email, address_line1, address_line2, city, region, country_code, latitude, longitude,

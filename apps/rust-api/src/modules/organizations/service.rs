@@ -154,6 +154,7 @@ impl OrganizationsService {
         org_id: &str,
         phone: &str,
         role: &str,
+        api_key_id: &str,
     ) -> Result<MembershipResponse> {
         let mut c = client().await?;
         let resp = c
@@ -162,6 +163,7 @@ impl OrganizationsService {
                 org_id: org_id.to_string(),
                 phone: phone.to_string(),
                 role: role.to_string(),
+                api_key_id: api_key_id.to_string(),
             })
             .await
             .map_err(|e| anyhow!(e.message().to_string()))?;

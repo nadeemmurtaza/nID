@@ -150,7 +150,7 @@ impl OrgRpc for OrgGrpc {
         let r = req.into_inner();
         let result = self
             .service
-            .invite_member(&r.tenant_id, &r.org_id, &r.phone, &r.role)
+            .invite_member(&r.tenant_id, &r.org_id, &r.phone, &r.role, &r.api_key_id)
             .await
             .map_err(to_status)?;
         Ok(Response::new(membership_to_proto(result)))

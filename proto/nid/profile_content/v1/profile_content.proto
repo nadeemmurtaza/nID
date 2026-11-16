@@ -61,17 +61,18 @@ message SlugRequest {
 message CreateOfferRequest {
   string account_id = 1;
   string title = 2;
-  int64 price_minor = 3;
-  string currency = 4;
-  optional string description = 5;
+  optional string description = 3;
+  optional string valid_until = 4;
+  optional bool is_active = 5;
 }
 
 message UpdateOfferRequest {
   string account_id = 1;
   string offer_id = 2;
   optional string title = 3;
-  optional int64 price_minor = 4;
-  optional bool is_active = 5;
+  optional string description = 4;
+  optional string valid_until = 5;
+  optional bool is_active = 6;
 }
 
 message RemoveOfferRequest {
@@ -83,10 +84,9 @@ message OfferResponse {
   string id = 1;
   string profile_id = 2;
   string title = 3;
-  int64 price_minor = 4;
-  string currency = 5;
-  optional string description = 6;
-  bool is_active = 7;
+  optional string description = 4;
+  optional string valid_until = 5;
+  bool is_active = 6;
 }
 
 message OfferListResponse {
@@ -98,8 +98,8 @@ message OfferListResponse {
 message UpsertBusinessHourRequest {
   string account_id = 1;
   string day = 2;
-  string start_time = 3;
-  string end_time = 4;
+  optional int32 open_minute = 3;
+  optional int32 close_minute = 4;
   bool is_closed = 5;
 }
 
@@ -111,9 +111,9 @@ message RemoveBusinessHourRequest {
 message BusinessHourResponse {
   string id = 1;
   string profile_id = 2;
-  string weekday = 3;
-  string start_time = 4;
-  string end_time = 5;
+  string day = 3;
+  optional int32 open_minute = 4;
+  optional int32 close_minute = 5;
   bool is_closed = 6;
 }
 
@@ -160,16 +160,16 @@ message CustomLinkListResponse {
 message CreateSocialLinkRequest {
   string account_id = 1;
   string platform = 2;
-  string username = 3;
-  optional string url = 4;
+  string url = 3;
+  optional int32 order_idx = 4;
 }
 
 message UpdateSocialLinkRequest {
   string account_id = 1;
   string link_id = 2;
   optional string platform = 3;
-  optional string username = 4;
-  optional string url = 5;
+  optional string url = 4;
+  optional int32 order_idx = 5;
 }
 
 message RemoveSocialLinkRequest {
@@ -181,8 +181,8 @@ message SocialLinkResponse {
   string id = 1;
   string profile_id = 2;
   string platform = 3;
-  string username = 4;
-  optional string url = 5;
+  string url = 4;
+  int32 order_idx = 5;
 }
 
 message SocialLinkListResponse {
@@ -231,19 +231,21 @@ message MarkContactMessageReadRequest {
 
 message CreatePublicContactMessageRequest {
   string slug = 1;
-  string name = 2;
-  string email = 3;
-  string message = 4;
+  string sender_name = 2;
+  optional string sender_phone = 3;
+  optional string sender_email = 4;
+  string message = 5;
 }
 
 message ContactMessageResponse {
   string id = 1;
   string profile_id = 2;
-  string name = 3;
-  string email = 4;
-  string message = 5;
-  bool is_read = 6;
-  string created_at = 7;
+  string sender_name = 3;
+  optional string sender_phone = 4;
+  optional string sender_email = 5;
+  string message = 6;
+  optional string read_at = 7;
+  string created_at = 8;
 }
 
 message ContactMessageListResponse {

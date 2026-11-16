@@ -98,10 +98,11 @@ printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\
 printf '\xff\xd8\xff\xe0\x00\x10JFIF\x00' > /tmp/e2e-frame.jpg
 ok "session status is readable by its token" "$(code "$API/v1/sessions/$STOK")" 200
 ok "a document that is really a script is rejected" "$(code -X POST "$API/v1/sessions/$STOK/document/submit" -F "file=@/tmp/e2e-evil.png;type=image/png")" 400
+D0=$(find "$STORE/verification-document" -type f 2>/dev/null | wc -l); L0=$(find "$STORE/verification-liveness" -type f 2>/dev/null | wc -l)
 ok "a real document is accepted" "$(code -X POST "$API/v1/sessions/$STOK/document/submit" -F "file=@/tmp/e2e-doc.png;type=image/png")" 200
-ok "the document is stored on disk" "$(find "$STORE/verification-document" -type f 2>/dev/null | wc -l | tr -d ' ')" 1
+ok "the document is stored on disk" "$(( $(find "$STORE/verification-document" -type f 2>/dev/null | wc -l) - D0 ))" 1
 ok "liveness frames are accepted" "$(code -X POST "$API/v1/sessions/$STOK/liveness/submit" -F "frames=@/tmp/e2e-frame.jpg;type=image/jpeg" -F "frames=@/tmp/e2e-frame.jpg;type=image/jpeg")" 200
-ok "the frames are stored on disk" "$(find "$STORE/verification-liveness" -type f 2>/dev/null | wc -l | tr -d ' ')" 2
+ok "the frames are stored on disk" "$(( $(find "$STORE/verification-liveness" -type f 2>/dev/null | wc -l) - L0 ))" 2
 ok "the attempts record storage keys" "$(( $(sql "select count(*) from verification_method_attempt where result_meta ? 'storageKey' or result_meta ? 'storageKeys'") >= 2 ))" 1
 ok "an unknown session token is rejected" "$(code -X POST "$API/v1/sessions/nope/document/submit" -F "file=@/tmp/e2e-doc.png;type=image/png")" 400
 
@@ -115,6 +116,50 @@ ok "a level that is not offered is rejected" "$(code -X POST "$API/v1/accounts/m
 ok "the account lists its two cases" "$(curl -s -m 10 "$API/v1/accounts/me/verification/cases" -H "Authorization: Bearer $SS" | python3 -I -c "import sys,json;print(len(json.load(sys.stdin)))")" 2
 VS2=$(login); SS2=$(echo "$VS2"|j sessionToken)
 ok "another account sees none of them" "$(curl -s -m 10 "$API/v1/accounts/me/verification/cases" -H "Authorization: Bearer $SS2")" "[]"
+
+echo "== profile content and booking (owner and visitor)"
+VP=$(login); SP=$(echo "$VP"|j sessionToken); AP=$(echo "$VP" | python3 -I -c "import sys,json;print(json.load(sys.stdin)['account']['id'])")
+PSLUG="e2e-prof-$RANDOM$RANDOM"
+sql "insert into \"Profile\"(id,slug,\"displayName\",\"accountId\",\"isPublished\",\"showBooking\",\"showOffers\",\"showHours\",timezone,\"updatedAt\") values (gen_random_uuid()::text,'$PSLUG','E2E Owner','$AP',true,true,true,true,'UTC',now())"
+OH="Authorization: Bearer $SP"
+ok "owner creates an offer" "$(code -X POST "$API/v1/profiles/me/offers" -H "$OH" -H "$H" -d '{"title":"Spring","description":"10% off"}')" 200
+ok "offers list has it" "$(curl -s -m 10 "$API/v1/profiles/me/offers" -H "$OH" | grep -c Spring)" 1
+ok "public sees the offer" "$(curl -s -m 10 "$API/v1/profiles/$PSLUG/offers" | grep -c Spring)" 1
+ok "owner sets Monday hours" "$(code -X PUT "$API/v1/profiles/me/business-hours/MONDAY" -H "$OH" -H "$H" -d '{"openMinute":540,"closeMinute":1020,"isClosed":false}')" 200
+ok "public sees the hours" "$(curl -s -m 10 "$API/v1/profiles/$PSLUG/business-hours" | grep -c MONDAY)" 1
+ok "owner adds a custom link" "$(code -X POST "$API/v1/profiles/me/links/custom" -H "$OH" -H "$H" -d '{"label":"Site","url":"https://example.com"}')" 200
+ok "a javascript: link is rejected" "$(code -X POST "$API/v1/profiles/me/links/custom" -H "$OH" -H "$H" -d '{"label":"x","url":"javascript:alert(1)"}')" 400
+ok "owner adds a social link" "$(code -X POST "$API/v1/profiles/me/links/social" -H "$OH" -H "$H" -d '{"platform":"INSTAGRAM","url":"https://instagram.com/e2e"}')" 200
+ok "public sees both link kinds" "$(curl -s -m 10 "$API/v1/profiles/$PSLUG/links" | grep -c 'example.com')" 1
+ok "visitor sends a contact message" "$(code -X POST "$API/v1/profiles/$PSLUG/contact-messages" -H "$H" -d '{"senderName":"Vee","senderEmail":"v@example.com","message":"Hello there"}')" 200
+MID=$(curl -s -m 10 "$API/v1/profiles/me/contact-messages" -H "$OH" | python3 -I -c "import sys,json;print(json.load(sys.stdin)[0]['id'])")
+ok "owner sees it unread" "$(curl -s -m 10 "$API/v1/profiles/me/contact-messages" -H "$OH" | python3 -I -c "import sys,json;print(json.load(sys.stdin)[0]['readAt'])")" None
+ok "owner marks it read" "$(code -X POST "$API/v1/profiles/me/contact-messages/$MID/read" -H "$OH")" 200
+SV=$(curl -s -m 10 -X POST "$API/v1/profiles/me/services" -H "$OH" -H "$H" -d '{"name":"Consult","durationMinutes":30,"price":25.5,"currency":"USD"}'); SVID=$(echo "$SV"|j id)
+[ -n "$SVID" ] && ok "owner creates a service" a a || ok "owner creates a service" "none: $(echo $SV|head -c 100)" a
+ok "owner adds availability for every day" "$(for d in MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY SUNDAY; do code -X POST "$API/v1/profiles/me/availability-rules" -H "$OH" -H "$H" -d "{\"day\":\"$d\",\"startMinute\":540,\"endMinute\":1020}"; echo; done | grep -c 200)" 7
+FROM=$(date -u -d "+1 day" +%F); TO=$(date -u -d "+3 days" +%F)
+SLOTS=$(curl -s -m 10 "$API/v1/profiles/$PSLUG/availability?serviceId=$SVID&from=$FROM&to=$TO")
+SLOT=$(echo "$SLOTS" | python3 -I -c "import sys,json;d=json.load(sys.stdin);print(d[0]['startsAt'] if d else '')")
+[ -n "$SLOT" ] && ok "visitor sees free slots" a a || ok "visitor sees free slots" "none: $(echo $SLOTS | head -c 120)" a
+ok "visitor books a slot" "$(code -X POST "$API/v1/profiles/$PSLUG/appointments" -H "$H" -d "{\"serviceId\":\"$SVID\",\"startsAt\":\"$SLOT\",\"visitorName\":\"Vee\",\"visitorEmail\":\"v@example.com\"}")" 200
+ok "the same slot cannot be booked twice" "$(code -X POST "$API/v1/profiles/$PSLUG/appointments" -H "$H" -d "{\"serviceId\":\"$SVID\",\"startsAt\":\"$SLOT\",\"visitorName\":\"Other\"}")" 409
+APPT=$(curl -s -m 10 "$API/v1/profiles/me/appointments" -H "$OH" | python3 -I -c "import sys,json;print(json.load(sys.stdin)[0]['id'])")
+ok "owner sees the appointment with its service" "$(curl -s -m 10 "$API/v1/profiles/me/appointments" -H "$OH" | grep -c Consult)" 1
+ok "owner confirms it" "$(code -X POST "$API/v1/profiles/me/appointments/$APPT/confirm" -H "$OH")" 200
+ok "owner cancels it" "$(code -X POST "$API/v1/profiles/me/appointments/$APPT/cancel" -H "$OH")" 200
+ok "the freed slot can be booked again" "$(code -X POST "$API/v1/profiles/$PSLUG/appointments" -H "$H" -d "{\"serviceId\":\"$SVID\",\"startsAt\":\"$SLOT\",\"visitorName\":\"Again\"}")" 200
+ok "owner deletes the offer" "$(code -X DELETE "$API/v1/profiles/me/offers/$(curl -s -m 10 "$API/v1/profiles/me/offers" -H "$OH" | python3 -I -c "import sys,json;print(json.load(sys.stdin)[0]['id'])")" -H "$OH")" 200
+
+echo "== organization membership (invite by phone, accept)"
+VI=$(login); SI=$(echo "$VI"|j sessionToken); PHI=$(sql "select phone from \"Account\" where id='$(echo "$VI" | python3 -I -c "import sys,json;print(json.load(sys.stdin)['account']['id'])")'")
+ok "tenant invites a person to the organization by phone" "$(code -X POST "$API/v1/organizations/$ORG/invite" -H "Authorization: Bearer $KA" -H "$H" -d "{\"phone\":\"$PHI\",\"role\":\"MEMBER\"}")" 200
+ok "the invitee sees one pending invite" "$(curl -s -m 10 "$API/v1/organizations/invites/mine" -H "Authorization: Bearer $SI" | python3 -I -c "import sys,json;print(len(json.load(sys.stdin)))")" 1
+MEM=$(curl -s -m 10 "$API/v1/organizations/invites/mine" -H "Authorization: Bearer $SI" | python3 -I -c "import sys,json;print(json.load(sys.stdin)[0]['id'])")
+ok "the invitee accepts" "$(code -X POST "$API/v1/organizations/invites/$MEM/accept" -H "Authorization: Bearer $SI")" 200
+ok "the organization now lists the member" "$(curl -s -m 10 "$API/v1/organizations/$ORG/members" -H "Authorization: Bearer $KA" | grep -o ACTIVE | wc -l | tr -d " ")" 2
+ok "the invitee sees the membership" "$(curl -s -m 10 "$API/v1/organizations/my-memberships" -H "Authorization: Bearer $SI" | python3 -I -c "import sys,json;print(len(json.load(sys.stdin)))")" 1
+ok "tenant B cannot invite into A's organization" "$(code -X POST "$API/v1/organizations/$ORG/invite" -H "Authorization: Bearer $KB" -H "$H" -d "{\"phone\":\"$PHI\"}")" 404
 
 echo "== errors never leak internals"
 code "$API/v1/profiles/does-not-exist" >/dev/null

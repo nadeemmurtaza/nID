@@ -21,7 +21,7 @@ use newax_proto::booking::v1::{
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
 use crate::modules::booking::dto::{
-    AppointmentResponse, AvailabilityRuleResponse, FreeSlotResponse, ServiceResponse,
+    AppointmentResponse, AvailabilityRuleResponse, FreeSlotResponse, ServiceRef, ServiceResponse,
 };
 
 pub struct BookingService {
@@ -36,10 +36,10 @@ fn service_from_proto(p: ProtoService) -> ServiceResponse {
         id: p.id,
         profile_id: p.profile_id,
         name: p.name,
-        duration_minutes: p.duration_minutes,
-        price_minor: p.price_minor,
-        currency: p.currency,
         description: p.description,
+        duration_minutes: p.duration_minutes,
+        price: p.price,
+        currency: p.currency,
         is_active: p.is_active,
     }
 }
@@ -48,9 +48,10 @@ fn availability_rule_from_proto(p: ProtoAvailabilityRule) -> AvailabilityRuleRes
     AvailabilityRuleResponse {
         id: p.id,
         profile_id: p.profile_id,
-        weekday: p.weekday,
-        start_time: p.start_time,
-        end_time: p.end_time,
+        day: p.day,
+        start_minute: p.start_minute,
+        end_minute: p.end_minute,
+        is_active: p.is_active,
     }
 }
 
@@ -59,20 +60,19 @@ fn appointment_from_proto(p: ProtoAppointment) -> AppointmentResponse {
         id: p.id,
         profile_id: p.profile_id,
         service_id: p.service_id,
-        start_time: p.start_time,
-        end_time: p.end_time,
         status: p.status,
-        subject_name: p.subject_name,
-        subject_email: p.subject_email,
+        starts_at: p.starts_at,
+        ends_at: p.ends_at,
+        visitor_name: p.visitor_name,
+        visitor_phone: p.visitor_phone,
+        visitor_email: p.visitor_email,
+        notes: p.notes,
+        service: p.service_name.map(|name| ServiceRef { name }),
     }
 }
 
 fn free_slot_from_proto(p: ProtoFreeSlot) -> FreeSlotResponse {
-    FreeSlotResponse {
-        start_time: p.start_time,
-        end_time: p.end_time,
-        is_available: p.is_available,
-    }
+    FreeSlotResponse { starts_at: p.starts_at, ends_at: p.ends_at }
 }
 
 async fn client() -> Result<BookingApiServiceClient<nid_service_auth::AuthedChannel>> {
@@ -98,9 +98,10 @@ impl BookingService {
             account_id: account_id.to_string(),
             name: req.name.clone(),
             duration_minutes: req.duration_minutes,
-            price_minor: req.price_minor,
+            price: req.price,
             currency: req.currency.clone(),
             description: req.description.clone(),
+            is_active: req.is_active,
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;
@@ -129,8 +130,10 @@ impl BookingService {
             service_id: service_id.to_string(),
             name: req.name.clone(),
             duration_minutes: req.duration_minutes,
-            price_minor: req.price_minor,
+            price: req.price,
             is_active: req.is_active,
+            description: req.description.clone(),
+            currency: req.currency.clone(),
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;
@@ -156,9 +159,10 @@ impl BookingService {
         let mut c = client().await?;
         let resp = c.create_availability_rule(CreateAvailabilityRuleRequest {
             account_id: account_id.to_string(),
-            weekday: req.weekday.clone(),
-            start_time: req.start_time.clone(),
-            end_time: req.end_time.clone(),
+            day: req.day.clone(),
+            start_minute: req.start_minute,
+            end_minute: req.end_minute,
+            is_active: req.is_active,
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;
@@ -196,9 +200,10 @@ impl BookingService {
         let resp = c.update_availability_rule(UpdateAvailabilityRuleRequest {
             account_id: account_id.to_string(),
             rule_id: rule_id.to_string(),
-            weekday: req.weekday.clone(),
-            start_time: req.start_time.clone(),
-            end_time: req.end_time.clone(),
+            day: req.day.clone(),
+            start_minute: req.start_minute,
+            end_minute: req.end_minute,
+            is_active: req.is_active,
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;
@@ -275,9 +280,11 @@ impl BookingService {
         let resp = c.create_public_appointment(CreatePublicAppointmentRequest {
             slug: slug.to_string(),
             service_id: req.service_id.clone(),
-            start_time: req.start_time.clone(),
-            subject_name: req.subject_name.clone(),
-            subject_email: req.subject_email.clone(),
+            starts_at: req.starts_at.clone(),
+            visitor_name: req.visitor_name.clone(),
+            visitor_phone: req.visitor_phone.clone(),
+            visitor_email: req.visitor_email.clone(),
+            notes: req.notes.clone(),
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;

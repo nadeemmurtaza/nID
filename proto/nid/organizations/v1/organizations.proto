@@ -46,6 +46,7 @@ message InviteMemberRequest {
   string org_id = 2;
   string phone = 3;
   string role = 4;
+  string api_key_id = 5;
 }
 
 message ActiveAdminRequest {

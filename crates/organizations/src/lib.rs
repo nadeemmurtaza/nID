@@ -219,7 +219,7 @@ impl OrganizationsService {
 
         let rows = sqlx::query(
             r#"
-            SELECT id, tenant_id, organization_id, subject_id, role, status, phone, account_id, created_at
+            SELECT id, tenant_id, organization_id, person_subject_id AS subject_id, role, status, NULL::text AS phone, account_id, created_at
             FROM organization_membership
             WHERE organization_id = $1
             ORDER BY created_at DESC
@@ -254,6 +254,7 @@ impl OrganizationsService {
         org_id: &str,
         phone: &str,
         role: &str,
+        api_key_id: &str,
     ) -> Result<MembershipResponse> {
         let mut conn = self.db.begin().await?;
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
@@ -271,19 +272,77 @@ impl OrganizationsService {
             return Err(anyhow!("Organization not found"));
         }
 
-        let membership: (String, String, String, String, String, String, Option<String>, Option<String>, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
-            r#"
-            INSERT INTO organization_membership (id, tenant_id, organization_id, subject_id, role, status, phone, created_at)
-            VALUES (gen_random_uuid(), $1, $2, '', $3, 'PENDING', $4, now())
-            RETURNING id, tenant_id, organization_id, subject_id, role, status, phone, account_id, created_at
-            "#,
+        // Same as the TypeScript API: the invited person is a PERSON subject
+        // identified by phone in this tenant, linked to a shell account
+        // (phone set, never verified; only their own OTP does that).
+        let subject_id: String = match sqlx::query_scalar(
+            "SELECT id FROM subject WHERE tenant_id = $1 AND type = 'PERSON' AND phone = $2 LIMIT 1",
         )
         .bind(tenant_id)
-        .bind(org_id)
-        .bind(role)
         .bind(phone)
-        .fetch_one(&mut *conn)
+        .fetch_optional(&mut *conn)
+        .await?
+        {
+            Some(id) => id,
+            None => sqlx::query_scalar(
+                "INSERT INTO subject (id, tenant_id, type, phone) VALUES (gen_random_uuid(), $1, 'PERSON', $2) RETURNING id",
+            )
+            .bind(tenant_id)
+            .bind(phone)
+            .fetch_one(&mut *conn)
+            .await?,
+        };
+        let account_id: String = match sqlx::query_scalar("SELECT id FROM account WHERE phone = $1")
+            .bind(phone)
+            .fetch_optional(&mut *conn)
+            .await?
+        {
+            Some(id) => id,
+            None => sqlx::query_scalar("INSERT INTO account (id, phone) VALUES (gen_random_uuid(), $1) RETURNING id")
+                .bind(phone)
+                .fetch_one(&mut *conn)
+                .await?,
+        };
+        sqlx::query("UPDATE subject SET account_id = $2 WHERE id = $1 AND (account_id IS DISTINCT FROM $2)")
+            .bind(&subject_id)
+            .bind(&account_id)
+            .execute(&mut *conn)
+            .await?;
+
+        // A repeat invite only changes the role; it never resets an accepted
+        // or declined membership back to PENDING.
+        let existing: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM organization_membership WHERE organization_id = $1 AND person_subject_id = $2",
+        )
+        .bind(org_id)
+        .bind(&subject_id)
+        .fetch_optional(&mut *conn)
         .await?;
+        let membership: (String, String, String, String, String, String, Option<String>, Option<String>, chrono::DateTime<chrono::Utc>) = match existing {
+            Some(id) => sqlx::query_as(
+                "UPDATE organization_membership SET role = $2 WHERE id = $1
+                 RETURNING id, tenant_id, organization_id, person_subject_id, role, status, NULL::text AS phone, account_id, created_at",
+            )
+            .bind(id)
+            .bind(role)
+            .fetch_one(&mut *conn)
+            .await?,
+            None => sqlx::query_as(
+                r#"
+                INSERT INTO organization_membership (id, tenant_id, organization_id, person_subject_id, account_id, role, status, added_by_api_key_id, created_at)
+                VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 'PENDING', $6, now())
+                RETURNING id, tenant_id, organization_id, person_subject_id, role, status, NULL::text AS phone, account_id, created_at
+                "#,
+            )
+            .bind(tenant_id)
+            .bind(org_id)
+            .bind(&subject_id)
+            .bind(&account_id)
+            .bind(role)
+            .bind(api_key_id)
+            .fetch_one(&mut *conn)
+            .await?,
+        };
 
         conn.commit().await?;
         Ok(MembershipResponse {
@@ -419,7 +478,7 @@ impl OrganizationsService {
         };
 
         let rows = sqlx::query(
-            "SELECT id, tenant_id, organization_id, subject_id, role, status, phone, account_id, created_at
+            "SELECT id, tenant_id, organization_id, person_subject_id AS subject_id, role, status, NULL::text AS phone, account_id, created_at
              FROM organization_membership
              WHERE person_subject_id = $1 AND status = 'PENDING'
              ORDER BY created_at DESC",
@@ -486,7 +545,7 @@ impl OrganizationsService {
             "UPDATE organization_membership
              SET status = $1, person_subject_id = $2, account_id = $3
              WHERE id = $4
-             RETURNING id, tenant_id, organization_id, subject_id, role, status, phone, account_id, created_at",
+             RETURNING id, tenant_id, organization_id, person_subject_id AS subject_id, role, status, NULL::text AS phone, account_id, created_at",
         )
         .bind(response)
         .bind(&subject_id)
