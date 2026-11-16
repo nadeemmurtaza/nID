@@ -67,7 +67,7 @@ where
         // ApiKeyGuard uses, never a guess about which kind of token this is.
         let key_hash = nid_shared_types::hash_api_key(token);
         let api_key = sqlx::query(
-            "SELECT id, tenant_id FROM tenant_api_key WHERE key_hash = $1 AND revoked_at IS NULL",
+            "SELECT id, tenant_id, scopes, rate_limit_per_minute FROM tenant_api_key WHERE key_hash = $1 AND revoked_at IS NULL",
         )
         .bind(&key_hash)
         .fetch_optional(&mut *conn)
@@ -75,6 +75,18 @@ where
         .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "Database error"))?;
 
         if let Some(row) = api_key {
+            // Same scope and per-key rate limit AuthenticatedApiKey enforces:
+            // this path accepts API keys too, so it must not be a way around them.
+            let scopes: Vec<String> = row.get("scopes");
+            let key_id: String = row.get("id");
+            if let Some(required) = crate::core::auth::api_key::required_scope(&parts.method, parts.uri.path()) {
+                if !crate::core::auth::api_key::scope_allows(&scopes, &required) {
+                    return Err(err(StatusCode::FORBIDDEN, &format!("This API key lacks the '{required}' scope.")));
+                }
+            }
+            if !crate::core::auth::api_key::within_rate_limit(&key_id, row.get("rate_limit_per_minute")) {
+                return Err(err(StatusCode::TOO_MANY_REQUESTS, "API key rate limit exceeded."));
+            }
             return Ok(AuthenticatedActor {
                 tenant_id: row.get("tenant_id"),
                 actor_type: "API_KEY",

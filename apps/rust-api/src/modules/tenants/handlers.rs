@@ -137,7 +137,17 @@ pub async fn create_api_key(
     if tenant.tenant_id != id {
         return Err(forbidden());
     }
-    let key = state.service.create_api_key(&id, req.scopes, req.rate_limit_per_minute)
+    // A key can mint keys no more powerful than itself.
+    let scopes = match req.scopes {
+        Some(requested) => {
+            if let Some(extra) = requested.iter().find(|r| !crate::core::auth::api_key::scope_allows(&tenant.scopes, r)) {
+                return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({ "message": format!("This key cannot grant the '{extra}' scope.") }))));
+            }
+            Some(requested)
+        }
+        None => Some(tenant.scopes.iter().filter(|s| s.as_str() != "tenant-admin" && s.as_str() != "*").cloned().collect::<Vec<_>>()).filter(|v| !v.is_empty()),
+    };
+    let key = state.service.create_api_key(&id, scopes, req.rate_limit_per_minute)
         .await
         .map_err(not_found)?;
     log_admin_action(&db, &id, AuditActorType::ApiKey, &tenant.id, "tenant.api_key.create", serde_json::json!({ "prefix": key.prefix })).await;

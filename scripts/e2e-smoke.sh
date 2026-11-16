@@ -82,6 +82,15 @@ ok "org admin lists the brand" "$(curl -s -m 10 "$API/v1/brands?organizationId=$
 ok "a non-member cannot read the brand" "$(code "$API/v1/brands/$BID" -H "Authorization: Bearer $SD")" "$(code "$API/v1/brands/nonexistent" -H "Authorization: Bearer $SD")"
 ok "a non-member's brand list is empty" "$(curl -s -m 10 "$API/v1/brands?organizationId=$ORG" -H "Authorization: Bearer $SD" | grep -c "E2E Brand")" 0
 
+echo "== API key scopes and per-key rate limit"
+RK=$(curl -s -m 10 -X POST "$API/v1/tenants/$TA/api-keys" -H "Authorization: Bearer $KA" -H "$H" -d '{"scopes":["subjects:read"],"rateLimitPerMinute":3}' | j plaintext)
+ok "read-only key can read subjects" "$(code "$API/v1/subjects/$SID" -H "Authorization: Bearer $RK")" 200
+ok "read-only key cannot write subjects" "$(code -X POST "$API/v1/subjects" -H "Authorization: Bearer $RK" -H "$H" -d '{"type":"PERSON","givenName":"x"}')" 403
+ok "read-only key cannot read cases" "$(code "$API/v1/verification-cases" -H "Authorization: Bearer $RK")" 403
+ok "read-only key cannot mint keys" "$(code -X POST "$API/v1/tenants/$TA/api-keys" -H "Authorization: Bearer $RK" -H "$H" -d '{}')" 403
+ok "admin key cannot mint a wildcard key" "$(code -X POST "$API/v1/tenants/$TA/api-keys" -H "Authorization: Bearer $KA" -H "$H" -d '{"scopes":["*"]}')" 403
+ok "per-key rate limit returns 429" "$(for _ in 1 2 3 4 5; do code "$API/v1/subjects/$SID" -H "Authorization: Bearer $RK"; echo; done | grep -c 429)" 3
+
 echo "== errors never leak internals"
 code "$API/v1/profiles/does-not-exist" >/dev/null
 ok "unknown profile is a clean 404" "$(code "$API/v1/profiles/does-not-exist")" 404
@@ -91,7 +100,7 @@ echo "== admin actions are audited"
 KID=$(curl -s -m 10 "$API/v1/tenants/$TA/api-keys" -H "Authorization: Bearer $KA" | python3 -I -c "import sys,json;print(json.load(sys.stdin)[0]['id'])")
 curl -s -m 10 -o /dev/null -X POST "$API/v1/tenants/$TA/api-keys" -H "Authorization: Bearer $KA" -H "$H" -d '{}'
 sleep 1
-ok "api key creation is in the audit log" "$(sql "select count(*) from audit_log_entry where tenant_id='$TA' and action='tenant.api_key.create'")" 1
+ok "api key creation is in the audit log" "$(( $(sql "select count(*) from audit_log_entry where tenant_id='$TA' and action='tenant.api_key.create'") >= 1 ))" 1
 
 echo "== OAuth"
 VR=$(login); S=$(echo "$VR"|j sessionToken)

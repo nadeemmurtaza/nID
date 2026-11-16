@@ -62,6 +62,15 @@ pub struct TenantWithCounts {
     pub cases_count: i64,
 }
 
+/// Scopes of an API key created without an explicit list: the data resources
+/// a tenant integration uses, without tenant administration.
+pub fn default_scopes() -> Vec<String> {
+    ["subjects", "verification-cases", "organizations"]
+        .iter()
+        .flat_map(|r| [format!("{r}:read"), format!("{r}:write")])
+        .collect()
+}
+
 #[derive(Debug, Clone)]
 pub struct CreatedTenantResponse {
     pub id: String,
@@ -279,7 +288,13 @@ impl TenantsService {
         .bind(&tenant.id)
         .bind(&key.prefix)
         .bind(sha256_hex(&key.plaintext))
-        .bind(vec!["verification-cases:read".to_string(), "verification-cases:write".to_string()])
+        .bind({
+            // The first key of a new tenant is its administrator: it can
+            // mint further keys, which are limited to what it holds.
+            let mut v = default_scopes();
+            v.push("tenant-admin".to_string());
+            v
+        })
         .execute(&mut *conn)
         .await?;
 
@@ -441,12 +456,7 @@ impl TenantsService {
         let key = generate_api_key("live");
         let key_hash = sha256_hex(&key.plaintext);
 
-        let scopes_vec = scopes.unwrap_or_else(|| {
-            vec![
-                "verification-cases:read".to_string(),
-                "verification-cases:write".to_string(),
-            ]
-        });
+        let scopes_vec = scopes.unwrap_or_else(default_scopes);
         let rate_limit_val = rate_limit.unwrap_or(60);
 
         sqlx::query(
