@@ -80,7 +80,7 @@ jobs:
       - name: Install
         run: >-
           pnpm install --frozen-lockfile --ignore-scripts
-          --filter "./apps/login-ui..." --filter "./apps/dashboard..."
+          --filter "@newax/design-tokens" --filter "./apps/login-ui..." --filter "./apps/dashboard..."
           --filter "./apps/verify-ui..." --filter "./apps/profile-ui..."
       - name: Colour contrast
         run: node packages/design-tokens/check-contrast.mjs
