@@ -107,11 +107,10 @@ export function validateField(el: Field): string | null {
     return 'Remove HTML tags from this field.';
   }
 
-  const pattern = el.getAttribute('pattern');
-  if (pattern) {
-    try {
-      if (!new RegExp(`^(?:${pattern})$`, 'u').test(value)) return el.getAttribute('title') || 'This does not match the expected format.';
-    } catch { /* an unusable pattern is the developer's problem, not the user's */ }
+  // The browser already evaluates the pattern attribute; ask it rather than
+  // building a RegExp from the attribute ourselves.
+  if ((el as HTMLInputElement).validity?.patternMismatch) {
+    return el.getAttribute('title') || 'This does not match the expected format.';
   }
   return null;
 }
