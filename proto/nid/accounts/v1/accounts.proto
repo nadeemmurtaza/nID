@@ -8,6 +8,7 @@ service AccountsApiService {
   rpc GetAccount(AccountIdRequest) returns (AccountResponse);
   rpc RevokeSession(SessionTokenRequest) returns (Empty);
   rpc RevokeAllSessions(AccountIdRequest) returns (Empty);
+  rpc DeleteAccount(AccountIdRequest) returns (Empty);
   rpc StartEmailVerification(StartEmailVerificationRequest) returns (Empty);
   rpc VerifyEmail(VerifyEmailRequest) returns (AccountResponse);
 }

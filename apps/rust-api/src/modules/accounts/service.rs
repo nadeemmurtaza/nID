@@ -128,20 +128,15 @@ impl AccountsService {
     }
 
     /// COMPLIANCE_AND_ACCESSIBILITY_RULES.md §8: data deletion request.
-    /// Marks the account for deletion and revokes all sessions.
-    ///
-    /// NOTE: The gRPC `delete_account` RPC will be added to the accounts proto
-    /// when the accounts service is updated. For now, we revoke all sessions
-    /// and log the deletion request.
+    /// Erases the account and its own data; see `newax_accounts::AccountsService::delete_account`.
     pub async fn delete_account(&self, account_id: &str) -> Result<()> {
-        // First revoke all sessions
-        self.revoke_all_sessions(account_id).await?;
-
-        // Log the deletion request — in production this would also:
-        // 1. Set a deleted_at timestamp on the account row
-        // 2. Queue background jobs to anonymize related data
-        // 3. Send a confirmation email
-        tracing::info!(account_id = %account_id, "Account deletion requested — sessions revoked");
+        let mut c = client().await?;
+        c.delete_account(AccountIdRequest {
+            account_id: account_id.to_string(),
+        })
+        .await
+        .map_err(|e| anyhow!(e.message().to_string()))?;
+        tracing::info!(account_id = %account_id, "Account deleted on request");
         Ok(())
     }
 }

@@ -107,6 +107,15 @@ impl AccountsRpc for AccountsGrpc {
         Ok(Response::new(Empty {}))
     }
 
+    async fn delete_account(
+        &self,
+        req: Request<AccountIdRequest>,
+    ) -> Result<Response<Empty>, Status> {
+        let r = req.into_inner();
+        self.service.delete_account(&r.account_id).await.map_err(to_status)?;
+        Ok(Response::new(Empty {}))
+    }
+
     async fn start_email_verification(
         &self,
         req: Request<StartEmailVerificationRequest>,

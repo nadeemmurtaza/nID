@@ -207,6 +207,32 @@ impl AccountsService {
         Ok(())
     }
 
+    /// Erase an account (COMPLIANCE_AND_ACCESSIBILITY_RULES.md, deletion
+    /// requests). The schema cascades the account's own data (profile and its
+    /// images, sessions, grants, role and staff assignments) and nulls the
+    /// references from tenant-owned records (subjects, organization
+    /// memberships, OAuth requests), so tenants keep their records but they
+    /// no longer point at this person. Login codes are keyed by phone and
+    /// are removed here.
+    pub async fn delete_account(&self, account_id: &str) -> Result<()> {
+        let mut tx = self.db.begin().await?;
+        let phone: String = sqlx::query_scalar("SELECT phone FROM account WHERE id = $1")
+            .bind(account_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| anyhow!("Account not found"))?;
+        sqlx::query("DELETE FROM account_otp_code WHERE phone = $1")
+            .bind(&phone)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM account WHERE id = $1")
+            .bind(account_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn revoke_all_sessions(&self, account_id: &str) -> Result<()> {
         sqlx::query("DELETE FROM account_session WHERE account_id = $1")
             .bind(account_id)
