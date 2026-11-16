@@ -19,7 +19,7 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc
@@ -39,7 +39,7 @@ jobs:
     name: Dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: cargo audit
         run: cargo install cargo-audit --locked && cargo audit
@@ -61,7 +61,7 @@ jobs:
       PGPASSWORD: nid
       DATABASE_URL: postgresql://nid:nid@localhost:5432/nid
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Apply migrations
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f packages/db/sql/001-app-role-bootstrap.sql
@@ -77,7 +77,7 @@ jobs:
     name: Frontend typecheck, build and contrast
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
         with:
           version: 10
