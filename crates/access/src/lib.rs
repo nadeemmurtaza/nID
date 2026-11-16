@@ -251,7 +251,7 @@ impl AccessService {
         organization_id: Option<&str>,
         brand_id: Option<&str>,
     ) -> Result<Vec<AccessGrantResponse>> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", caller_id)]).await?;
 
         self.verify_caller_is_owner_or_partner(&mut conn, caller_id, tenant_id)
             .await?;
@@ -297,6 +297,7 @@ impl AccessService {
             .await?
         };
 
+        conn.commit().await?;
         Ok(grants
             .into_iter()
             .map(|r| AccessGrantResponse {
@@ -322,7 +323,7 @@ impl AccessService {
         tenant_id: &str,
         grant_id: &str,
     ) -> Result<AccessGrantResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", caller_id)]).await?;
 
         self.verify_caller_is_owner_or_partner(&mut conn, caller_id, tenant_id)
             .await?;
@@ -335,6 +336,7 @@ impl AccessService {
         .await
         .map_err(|_| anyhow!("Grant not found"))?;
 
+        conn.commit().await?;
         Ok(AccessGrantResponse {
             id: row.0,
             account_id: row.1,
@@ -358,7 +360,7 @@ impl AccessService {
         grant_id: &str,
         req: &UpdateGrantRequest,
     ) -> Result<AccessGrantResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", caller_id)]).await?;
 
         self.verify_caller_is_owner_or_partner(&mut conn, caller_id, tenant_id)
             .await?;
@@ -411,6 +413,7 @@ impl AccessService {
         .fetch_optional(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(
             grant,
             account.as_ref().and_then(|a| a.phone.clone()),
@@ -424,7 +427,7 @@ impl AccessService {
         tenant_id: &str,
         grant_id: &str,
     ) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", caller_id)]).await?;
 
         self.verify_caller_is_owner_or_partner(&mut conn, caller_id, tenant_id)
             .await?;
@@ -438,6 +441,7 @@ impl AccessService {
             return Err(anyhow!("Grant not found."));
         }
 
+        conn.commit().await?;
         Ok(())
     }
 
@@ -447,7 +451,7 @@ impl AccessService {
         tenant_id: &str,
         req: &TransferOwnershipRequest,
     ) -> Result<AccessGrantResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", caller_id)]).await?;
 
         self.verify_caller_is_owner_or_partner(&mut conn, caller_id, tenant_id)
             .await?;
@@ -489,6 +493,7 @@ impl AccessService {
         .fetch_optional(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(
             grant,
             account.as_ref().and_then(|a| a.phone.clone()),
@@ -520,7 +525,7 @@ impl AccessService {
         _organization_id: Option<&str>,
         _brand_id: Option<&str>,
     ) -> Result<MyPermissionsResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", account_id)]).await?;
 
         // Get all permissions from catalog
         let rows = sqlx::query(
@@ -558,6 +563,7 @@ impl AccessService {
             })
             .collect();
 
+        conn.commit().await?;
         Ok(MyPermissionsResponse {
             account_id: account_id.to_string(),
             tenant_id: tenant_id.to_string(),

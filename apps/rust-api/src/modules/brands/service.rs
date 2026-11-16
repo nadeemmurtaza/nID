@@ -156,7 +156,7 @@ impl BrandsService {
     /// Create a brand under an organization. The account must be an ACTIVE admin
     /// member of the organization. Mirrors BrandsService.create().
     pub async fn create(&self, account_id: &str, req: &CreateBrandRequest) -> Result<BrandResponse> {
-        let mut conn = self.db.get().await?;
+        let mut conn = self.db.for_account(account_id).await?;
         let tenant_id = self.organizations.require_active_admin(&req.organization_id, account_id).await?;
 
         let organization: Option<String> = sqlx::query_scalar("SELECT id FROM organization WHERE id = $1")
@@ -218,13 +218,14 @@ impl BrandsService {
 
         let mut response = Self::row_to_response(brand);
         response.webhook_message = webhook_message;
+        conn.commit().await?;
         Ok(response)
     }
 
     /// List all brands for a specific organization. The account must be an
     /// ACTIVE member of the organization. Mirrors BrandsService.list().
     pub async fn list(&self, account_id: &str, organization_id: &str) -> Result<Vec<BrandResponse>> {
-        let mut conn = self.db.get().await?;
+        let mut conn = self.db.for_account(account_id).await?;
         self.organizations.require_active_member(organization_id, account_id).await?;
 
         let rows: Vec<BrandRow> = sqlx::query_as(&format!(
@@ -234,13 +235,14 @@ impl BrandsService {
         .fetch_all(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(rows.into_iter().map(Self::row_to_response).collect())
     }
 
     /// Get a single brand by ID. The account must be an ACTIVE member of the
     /// brand's organization. Mirrors BrandsService.getById().
     pub async fn get_by_id(&self, account_id: &str, brand_id: &str) -> Result<BrandResponse> {
-        let mut conn = self.db.get().await?;
+        let mut conn = self.db.for_account(account_id).await?;
 
         let brand: BrandRow = sqlx::query_as(&format!("SELECT {BRAND_COLUMNS} FROM brand WHERE id = $1"))
             .bind(brand_id)
@@ -250,13 +252,14 @@ impl BrandsService {
 
         self.organizations.require_active_member(&brand.organization_id, account_id).await?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(brand))
     }
 
     /// Update a brand. The account must be an ACTIVE admin of the brand's
     /// organization. Mirrors BrandsService.update().
     pub async fn update(&self, account_id: &str, brand_id: &str, req: &UpdateBrandRequest) -> Result<BrandResponse> {
-        let mut conn = self.db.get().await?;
+        let mut conn = self.db.for_account(account_id).await?;
 
         let existing: (String, String) = sqlx::query_as("SELECT organization_id, slug FROM brand WHERE id = $1")
             .bind(brand_id)
@@ -347,13 +350,14 @@ impl BrandsService {
 
         let mut response = Self::row_to_response(brand);
         response.webhook_message = webhook_message;
+        conn.commit().await?;
         Ok(response)
     }
 
     /// Delete (deactivate) a brand. The account must be an ACTIVE admin of the
     /// brand's organization. Mirrors BrandsService.remove().
     pub async fn remove(&self, account_id: &str, brand_id: &str) -> Result<MessageResponse> {
-        let mut conn = self.db.get().await?;
+        let mut conn = self.db.for_account(account_id).await?;
 
         let organization_id: String = sqlx::query_scalar("SELECT organization_id FROM brand WHERE id = $1")
             .bind(brand_id)
@@ -370,6 +374,7 @@ impl BrandsService {
 
         self.emit_webhook_event(&mut conn, &tenant_id, "brand.deleted").await?;
 
+        conn.commit().await?;
         Ok(MessageResponse {
             message: "Brand deactivated successfully".to_string(),
         })
@@ -378,7 +383,7 @@ impl BrandsService {
     /// List all brands across all organizations the account is a member of.
     /// Mirrors BrandsService.listMyMemberships().
     pub async fn list_my_memberships(&self, account_id: &str) -> Result<Vec<BrandMembershipResponse>> {
-        let mut conn = self.db.get().await?;
+        let mut conn = self.db.for_account(account_id).await?;
 
         let subject_id: Option<String> = sqlx::query_scalar("SELECT id FROM subject WHERE account_id = $1 LIMIT 1")
             .bind(account_id)
@@ -386,6 +391,7 @@ impl BrandsService {
             .await?;
 
         let Some(subject_id) = subject_id else {
+            conn.commit().await?;
             return Ok(Vec::new());
         };
 
@@ -428,6 +434,7 @@ impl BrandsService {
             }
         }
 
+        conn.commit().await?;
         Ok(results)
     }
 }

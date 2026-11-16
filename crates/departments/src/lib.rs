@@ -80,6 +80,21 @@ pub struct DepartmentsService {
 }
 
 impl DepartmentsService {
+    /// Open a transaction with RLS context settings applied. They are
+    /// transaction-local (`set_config(.., true)`), so they must be set on the
+    /// transaction itself and are gone once it ends.
+    async fn scoped(&self, settings: &[(&str, &str)]) -> Result<sqlx::Transaction<'_, sqlx::Postgres>> {
+        let mut tx = self.db.begin().await?;
+        for (k, v) in settings {
+            sqlx::query("SELECT set_config($1, $2, true)")
+                .bind(*k)
+                .bind(*v)
+                .execute(&mut *tx)
+                .await?;
+        }
+        Ok(tx)
+    }
+
     pub fn new(db: PgPool) -> Self {
         Self { db }
     }
@@ -99,13 +114,13 @@ impl DepartmentsService {
         }
     }
 
-    async fn require_owner_or_partner(&self, account_id: &str, tenant_id: &str) -> Result<()> {
+    async fn require_owner_or_partner(&self, conn: &mut sqlx::PgConnection, account_id: &str, tenant_id: &str) -> Result<()> {
         let grant = sqlx::query(
             "SELECT id FROM access_grant WHERE account_id = $1 AND tenant_id = $2 AND access_type IN ('OWNER', 'PARTNER') AND status = 'ACTIVE'",
         )
         .bind(account_id)
         .bind(tenant_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if grant.is_none() {
@@ -114,13 +129,13 @@ impl DepartmentsService {
         Ok(())
     }
 
-    async fn require_access(&self, account_id: &str, tenant_id: &str) -> Result<()> {
+    async fn require_access(&self, conn: &mut sqlx::PgConnection, account_id: &str, tenant_id: &str) -> Result<()> {
         let grant = sqlx::query(
             "SELECT id FROM access_grant WHERE account_id = $1 AND tenant_id = $2 AND status = 'ACTIVE'",
         )
         .bind(account_id)
         .bind(tenant_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if grant.is_none() {
@@ -135,12 +150,13 @@ impl DepartmentsService {
         tenant_id: &str,
         req: &CreateDepartmentRequest,
     ) -> Result<DepartmentResponse> {
-        self.require_owner_or_partner(account_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", account_id)]).await?;
+        self.require_owner_or_partner(&mut conn, account_id, tenant_id).await?;
 
         let existing = sqlx::query("SELECT id FROM department WHERE tenant_id = $1 AND slug = $2")
             .bind(tenant_id)
             .bind(&req.slug)
-            .fetch_optional(&self.db)
+            .fetch_optional(&mut *conn)
             .await?;
         if existing.is_some() {
             return Err(anyhow!("A department with slug \"{}\" already exists.", req.slug));
@@ -159,37 +175,42 @@ impl DepartmentsService {
         .bind(&req.default_permissions)
         .bind(&req.icon)
         .bind(&req.color)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(dept))
     }
 
     pub async fn list_departments(&self, account_id: &str, tenant_id: &str) -> Result<Vec<DepartmentResponse>> {
-        self.require_access(account_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", account_id)]).await?;
+        self.require_access(&mut conn, account_id, tenant_id).await?;
 
         let rows: Vec<DepartmentRow> = sqlx::query_as(
             "SELECT id, tenant_id, name, slug, default_permissions, icon, color, inherited_from_tenant, created_at, updated_at FROM department WHERE tenant_id = $1 ORDER BY name",
         )
         .bind(tenant_id)
-        .fetch_all(&self.db)
+        .fetch_all(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(rows.into_iter().map(Self::row_to_response).collect())
     }
 
     pub async fn get_department(&self, account_id: &str, tenant_id: &str, dept_id: &str) -> Result<DepartmentResponse> {
-        self.require_access(account_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", account_id)]).await?;
+        self.require_access(&mut conn, account_id, tenant_id).await?;
 
         let dept: DepartmentRow = sqlx::query_as(
             "SELECT id, tenant_id, name, slug, default_permissions, icon, color, inherited_from_tenant, created_at, updated_at FROM department WHERE id = $1 AND tenant_id = $2",
         )
         .bind(dept_id)
         .bind(tenant_id)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|_| anyhow!("Department not found"))?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(dept))
     }
 
@@ -200,12 +221,13 @@ impl DepartmentsService {
         dept_id: &str,
         req: &UpdateDepartmentRequest,
     ) -> Result<DepartmentResponse> {
-        self.require_owner_or_partner(account_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", account_id)]).await?;
+        self.require_owner_or_partner(&mut conn, account_id, tenant_id).await?;
 
         sqlx::query("SELECT id FROM department WHERE id = $1 AND tenant_id = $2")
             .bind(dept_id)
             .bind(tenant_id)
-            .fetch_one(&self.db)
+            .fetch_one(&mut *conn)
             .await
             .map_err(|_| anyhow!("Department not found"))?;
 
@@ -250,10 +272,11 @@ impl DepartmentsService {
         let dept = q
             .bind(dept_id)
             .bind(tenant_id)
-            .fetch_one(&self.db)
+            .fetch_one(&mut *conn)
             .await
             .map_err(|_| anyhow!("Department not found"))?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(dept))
     }
 
@@ -264,18 +287,19 @@ impl DepartmentsService {
         dept_id: &str,
         req: &AssignDepartmentRequest,
     ) -> Result<DepartmentAssignmentResponse> {
-        self.require_owner_or_partner(account_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", account_id)]).await?;
+        self.require_owner_or_partner(&mut conn, account_id, tenant_id).await?;
 
         sqlx::query("SELECT id FROM department WHERE id = $1 AND tenant_id = $2")
             .bind(dept_id)
             .bind(tenant_id)
-            .fetch_one(&self.db)
+            .fetch_one(&mut *conn)
             .await
             .map_err(|_| anyhow!("Department not found"))?;
 
         sqlx::query("SELECT id FROM account WHERE id = $1")
             .bind(&req.account_id)
-            .fetch_one(&self.db)
+            .fetch_one(&mut *conn)
             .await
             .map_err(|_| anyhow!("Account not found"))?;
 
@@ -291,7 +315,7 @@ impl DepartmentsService {
         .bind(scope)
         .bind(&req.organization_id)
         .bind(&req.brand_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut *conn)
         .await?;
         if existing.is_some() {
             return Err(anyhow!("This account is already assigned to this department at this scope."));
@@ -310,9 +334,10 @@ impl DepartmentsService {
         .bind(&req.organization_id)
         .bind(&req.brand_id)
         .bind(scope)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(DepartmentAssignmentResponse {
             id: assignment.0,
             account_id: assignment.1,
@@ -332,7 +357,8 @@ impl DepartmentsService {
         dept_id: &str,
         account_id: &str,
     ) -> Result<()> {
-        self.require_owner_or_partner(caller_account_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", caller_account_id)]).await?;
+        self.require_owner_or_partner(&mut conn, caller_account_id, tenant_id).await?;
 
         sqlx::query(
             "DELETE FROM department_assignment WHERE department_id = $1 AND account_id = $2 AND tenant_id = $3",
@@ -340,9 +366,10 @@ impl DepartmentsService {
         .bind(dept_id)
         .bind(account_id)
         .bind(tenant_id)
-        .execute(&self.db)
+        .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(())
     }
 
@@ -352,16 +379,18 @@ impl DepartmentsService {
         tenant_id: &str,
         account_id: &str,
     ) -> Result<Vec<DepartmentAssignmentResponse>> {
-        self.require_access(caller_account_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", caller_account_id)]).await?;
+        self.require_access(&mut conn, caller_account_id, tenant_id).await?;
 
         let rows: Vec<(String, String, String, String, Option<String>, Option<String>, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
             "SELECT id, account_id, department_id, tenant_id, organization_id, brand_id, scope, created_at FROM department_assignment WHERE account_id = $1 AND tenant_id = $2",
         )
         .bind(account_id)
         .bind(tenant_id)
-        .fetch_all(&self.db)
+        .fetch_all(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(rows.into_iter().map(|r| DepartmentAssignmentResponse {
             id: r.0,
             account_id: r.1,

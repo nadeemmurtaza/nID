@@ -70,6 +70,18 @@ impl DbPool {
         f(tx).await
     }
 
+    /// Open a transaction with `app.account_id` set, for account-scoped
+    /// tables whose RLS policy keys on the caller (e.g. brands via org
+    /// membership). The setting is transaction-local.
+    pub async fn for_account(&self, account_id: &str) -> Result<Transaction<'_, Postgres>> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("SELECT set_config('app.account_id', $1, true)")
+            .bind(account_id)
+            .execute(&mut *tx)
+            .await?;
+        Ok(tx)
+    }
+
     /// Get a connection from the pool (unscoped — for non-tenant tables).
     pub async fn get(&self) -> Result<PoolConnection<Postgres>> {
         self.pool.acquire().await.map_err(|e| e.into())

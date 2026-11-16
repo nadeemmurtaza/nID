@@ -48,6 +48,40 @@ ok "B lists no cases" "$(curl -s -m 10 "$API/v1/verification-cases" -H "Authoriz
 ok "B lists no organizations" "$(curl -s -m 10 "$API/v1/organizations" -H "Authorization: Bearer $KB")" "[]"
 ok "A still reads its own case" "$(code "$API/v1/verification-cases/$CID" -H "Authorization: Bearer $KA")" 200
 
+echo "== access control tables (roles, departments, invitations, grants)"
+TB=$(echo "$B"|j id)
+VA=$(login); SA=$(echo "$VA"|j sessionToken); AA=$(echo "$VA" | python3 -I -c "import sys,json;print(json.load(sys.stdin)['account']['id'])")
+VB=$(login); SB=$(echo "$VB"|j sessionToken); AB=$(echo "$VB" | python3 -I -c "import sys,json;print(json.load(sys.stdin)['account']['id'])")
+sql "insert into \"AccessGrant\"(id,\"accountId\",\"tenantId\",\"accessType\",\"grantedBy\") values (gen_random_uuid()::text,'$AA','$TA','OWNER','$AA')"
+sql "insert into \"AccessGrant\"(id,\"accountId\",\"tenantId\",\"accessType\",\"grantedBy\") values (gen_random_uuid()::text,'$AB','$TB','OWNER','$AB')"
+SL="role-$RANDOM"
+ok "owner creates a role" "$(code -X POST "$API/v1/roles?tenantId=$TA" -H "Authorization: Bearer $SA" -H "$H" -d "{\"name\":\"Agent\",\"slug\":\"$SL\",\"permissions\":{}}")" 200
+ok "owner lists roles" "$(curl -s -m 10 "$API/v1/roles?tenantId=$TA" -H "Authorization: Bearer $SA" | grep -c "$SL")" 1
+ok "tenant B owner cannot list A's roles" "$(code "$API/v1/roles?tenantId=$TA" -H "Authorization: Bearer $SB")" 403
+ok "owner creates a department" "$(code -X POST "$API/v1/departments?tenantId=$TA" -H "Authorization: Bearer $SA" -H "$H" -d "{\"name\":\"Support\",\"slug\":\"sup-$RANDOM\"}")" 200
+ok "tenant B owner cannot list A's departments" "$(code "$API/v1/departments?tenantId=$TA" -H "Authorization: Bearer $SB")" 403
+ok "owner sends an email invitation" "$(code -X POST "$API/v1/invitations/email?tenantId=$TA" -H "Authorization: Bearer $SA" -H "$H" -d "{\"email\":\"new-$RANDOM@example.com\"}")" 200
+ok "owner lists invitations" "$(code "$API/v1/invitations?tenantId=$TA" -H "Authorization: Bearer $SA")" 200
+ok "tenant B owner cannot list A's invitations" "$(code "$API/v1/invitations?tenantId=$TA" -H "Authorization: Bearer $SB")" 403
+NAPP="${DB/nid:nid@/nid_app:nid_app@}"
+appq() { PGPASSWORD=nid_app psql "$NAPP" -tAqc "$1"; }
+ok "RLS: tenant B context sees none of A's roles" "$(appq "begin; select set_config('app.tenant_id','$TB',true);
+select count(*) from \"RoleDefinition\" where \"tenantId\"='$TA'; rollback;" | tail -1)" 0
+ok "RLS: no context sees no grants" "$(appq "select count(*) from \"AccessGrant\"")" 0
+ok "RLS: no context sees no departments" "$(appq "select count(*) from \"Department\"")" 0
+ok "RLS: no context sees no brands" "$(appq "select count(*) from \"Brand\"")" 0
+
+echo "== brands (organization-scoped RLS)"
+VC=$(login); SC=$(echo "$VC"|j sessionToken); AC2=$(echo "$VC" | python3 -I -c "import sys,json;print(json.load(sys.stdin)['account']['id'])")
+VD=$(login); SD=$(echo "$VD"|j sessionToken)
+ORG=$(sql "select id from \"Organization\" where \"tenantId\"='$TA' limit 1"); PSUB=$(sql "select id from \"Subject\" where \"tenantId\"='$TA' and type='PERSON' limit 1")
+sql "insert into \"OrganizationMembership\"(id,\"tenantId\",\"organizationId\",\"personSubjectId\",role,\"addedByApiKeyId\",status,\"isAdmin\",\"accountId\") values (gen_random_uuid()::text,'$TA','$ORG','$PSUB','ADMIN','e2e','ACTIVE',true,'$AC2')"
+BR=$(curl -s -m 10 -X POST "$API/v1/brands" -H "Authorization: Bearer $SC" -H "$H" -d "{\"organizationId\":\"$ORG\",\"name\":\"E2E Brand\"}"); BID=$(echo "$BR"|j id)
+[ -n "$BID" ] && ok "org admin creates a brand" a a || ok "org admin creates a brand" "none: $(echo $BR | head -c 100)" a
+ok "org admin lists the brand" "$(curl -s -m 10 "$API/v1/brands?organizationId=$ORG" -H "Authorization: Bearer $SC" | grep -c "E2E Brand")" 1
+ok "a non-member cannot read the brand" "$(code "$API/v1/brands/$BID" -H "Authorization: Bearer $SD")" "$(code "$API/v1/brands/nonexistent" -H "Authorization: Bearer $SD")"
+ok "a non-member's brand list is empty" "$(curl -s -m 10 "$API/v1/brands?organizationId=$ORG" -H "Authorization: Bearer $SD" | grep -c "E2E Brand")" 0
+
 echo "== errors never leak internals"
 code "$API/v1/profiles/does-not-exist" >/dev/null
 ok "unknown profile is a clean 404" "$(code "$API/v1/profiles/does-not-exist")" 404

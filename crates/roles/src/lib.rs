@@ -51,6 +51,21 @@ pub struct RolesService {
 }
 
 impl RolesService {
+    /// Open a transaction with RLS context settings applied. They are
+    /// transaction-local (`set_config(.., true)`), so they must be set on the
+    /// transaction itself and are gone once it ends.
+    async fn scoped(&self, settings: &[(&str, &str)]) -> Result<sqlx::Transaction<'_, sqlx::Postgres>> {
+        let mut tx = self.db.begin().await?;
+        for (k, v) in settings {
+            sqlx::query("SELECT set_config($1, $2, true)")
+                .bind(*k)
+                .bind(*v)
+                .execute(&mut *tx)
+                .await?;
+        }
+        Ok(tx)
+    }
+
     pub fn new(db: PgPool) -> Self {
         Self { db }
     }
@@ -69,13 +84,13 @@ impl RolesService {
         }
     }
 
-    async fn require_owner_or_partner(&self, account_id: &str, tenant_id: &str) -> Result<()> {
+    async fn require_owner_or_partner(&self, conn: &mut sqlx::PgConnection, account_id: &str, tenant_id: &str) -> Result<()> {
         let grant = sqlx::query(
             "SELECT id FROM access_grant WHERE account_id = $1 AND tenant_id = $2 AND access_type IN ('OWNER', 'PARTNER') AND status = 'ACTIVE'",
         )
         .bind(account_id)
         .bind(tenant_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if grant.is_none() {
@@ -84,13 +99,13 @@ impl RolesService {
         Ok(())
     }
 
-    async fn require_access(&self, account_id: &str, tenant_id: &str) -> Result<()> {
+    async fn require_access(&self, conn: &mut sqlx::PgConnection, account_id: &str, tenant_id: &str) -> Result<()> {
         let grant = sqlx::query(
             "SELECT id FROM access_grant WHERE account_id = $1 AND tenant_id = $2 AND status = 'ACTIVE'",
         )
         .bind(account_id)
         .bind(tenant_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if grant.is_none() {
@@ -108,12 +123,13 @@ impl RolesService {
         permissions: Value,
         description: Option<&str>,
     ) -> Result<RoleResponse> {
-        self.require_owner_or_partner(account_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", account_id)]).await?;
+        self.require_owner_or_partner(&mut conn, account_id, tenant_id).await?;
 
         let existing = sqlx::query("SELECT id FROM role_definition WHERE tenant_id = $1 AND slug = $2")
             .bind(tenant_id)
             .bind(slug)
-            .fetch_optional(&self.db)
+            .fetch_optional(&mut *conn)
             .await?;
         if existing.is_some() {
             return Err(anyhow!("A role with slug \"{}\" already exists.", slug));
@@ -131,37 +147,42 @@ impl RolesService {
         .bind(slug)
         .bind(&permissions)
         .bind(description)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(role))
     }
 
     pub async fn list_roles(&self, account_id: &str, tenant_id: &str) -> Result<Vec<RoleResponse>> {
-        self.require_access(account_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", account_id)]).await?;
+        self.require_access(&mut conn, account_id, tenant_id).await?;
 
         let rows: Vec<RoleRow> = sqlx::query_as(
             "SELECT id, tenant_id, name, slug, permissions, description, is_system, created_at, updated_at FROM role_definition WHERE tenant_id = $1 ORDER BY is_system ASC, name ASC",
         )
         .bind(tenant_id)
-        .fetch_all(&self.db)
+        .fetch_all(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(rows.into_iter().map(Self::row_to_response).collect())
     }
 
     pub async fn get_role(&self, account_id: &str, tenant_id: &str, role_id: &str) -> Result<RoleResponse> {
-        self.require_access(account_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", account_id)]).await?;
+        self.require_access(&mut conn, account_id, tenant_id).await?;
 
         let role: RoleRow = sqlx::query_as(
             "SELECT id, tenant_id, name, slug, permissions, description, is_system, created_at, updated_at FROM role_definition WHERE id = $1 AND tenant_id = $2",
         )
         .bind(role_id)
         .bind(tenant_id)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|_| anyhow!("Role not found"))?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(role))
     }
 
@@ -174,14 +195,15 @@ impl RolesService {
         permissions: Option<&Value>,
         description: Option<Option<&str>>,
     ) -> Result<RoleResponse> {
-        self.require_owner_or_partner(account_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", account_id)]).await?;
+        self.require_owner_or_partner(&mut conn, account_id, tenant_id).await?;
 
         let existing_role: RoleRow = sqlx::query_as(
             "SELECT id, tenant_id, name, slug, permissions, description, is_system, created_at, updated_at FROM role_definition WHERE id = $1 AND tenant_id = $2",
         )
         .bind(role_id)
         .bind(tenant_id)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|_| anyhow!("Role not found"))?;
 
@@ -206,6 +228,7 @@ impl RolesService {
         }
 
         if sets.is_empty() {
+            conn.commit().await?;
             return Ok(Self::row_to_response(existing_role));
         }
 
@@ -222,22 +245,24 @@ impl RolesService {
         let role = q
             .bind(role_id)
             .bind(tenant_id)
-            .fetch_one(&self.db)
+            .fetch_one(&mut *conn)
             .await
             .map_err(|_| anyhow!("Role not found"))?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(role))
     }
 
     pub async fn delete_role(&self, account_id: &str, tenant_id: &str, role_id: &str) -> Result<()> {
-        self.require_owner_or_partner(account_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", account_id)]).await?;
+        self.require_owner_or_partner(&mut conn, account_id, tenant_id).await?;
 
         let role: RoleRow = sqlx::query_as(
             "SELECT id, tenant_id, name, slug, permissions, description, is_system, created_at, updated_at FROM role_definition WHERE id = $1 AND tenant_id = $2",
         )
         .bind(role_id)
         .bind(tenant_id)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|_| anyhow!("Role not found"))?;
 
@@ -247,14 +272,15 @@ impl RolesService {
 
         sqlx::query("DELETE FROM role_assignment WHERE role_definition_id = $1")
             .bind(role_id)
-            .execute(&self.db)
+            .execute(&mut *conn)
             .await?;
 
         sqlx::query("DELETE FROM role_definition WHERE id = $1")
             .bind(role_id)
-            .execute(&self.db)
+            .execute(&mut *conn)
             .await?;
 
+        conn.commit().await?;
         Ok(())
     }
 
@@ -268,18 +294,19 @@ impl RolesService {
         brand_id: Option<&str>,
         scope: Option<&str>,
     ) -> Result<RoleAssignmentResponse> {
-        self.require_owner_or_partner(account_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", account_id)]).await?;
+        self.require_owner_or_partner(&mut conn, account_id, tenant_id).await?;
 
         sqlx::query("SELECT id FROM role_definition WHERE id = $1 AND tenant_id = $2")
             .bind(role_id)
             .bind(tenant_id)
-            .fetch_one(&self.db)
+            .fetch_one(&mut *conn)
             .await
             .map_err(|_| anyhow!("Role not found"))?;
 
         sqlx::query("SELECT id FROM account WHERE id = $1")
             .bind(target_account_id)
-            .fetch_one(&self.db)
+            .fetch_one(&mut *conn)
             .await
             .map_err(|_| anyhow!("Account not found"))?;
 
@@ -295,7 +322,7 @@ impl RolesService {
         .bind(scope_val)
         .bind(organization_id)
         .bind(brand_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut *conn)
         .await?;
         if existing.is_some() {
             return Err(anyhow!("This account already has this role at this scope."));
@@ -314,9 +341,10 @@ impl RolesService {
         .bind(organization_id)
         .bind(brand_id)
         .bind(scope_val)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(RoleAssignmentResponse {
             id: assignment.0,
             account_id: assignment.1,
@@ -336,7 +364,8 @@ impl RolesService {
         role_id: &str,
         account_id: &str,
     ) -> Result<()> {
-        self.require_owner_or_partner(caller_account_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", caller_account_id)]).await?;
+        self.require_owner_or_partner(&mut conn, caller_account_id, tenant_id).await?;
 
         sqlx::query(
             "DELETE FROM role_assignment WHERE role_definition_id = $1 AND account_id = $2 AND tenant_id = $3",
@@ -344,23 +373,26 @@ impl RolesService {
         .bind(role_id)
         .bind(account_id)
         .bind(tenant_id)
-        .execute(&self.db)
+        .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(())
     }
 
     pub async fn get_account_roles(&self, caller_account_id: &str, tenant_id: &str, account_id: &str) -> Result<Vec<RoleAssignmentResponse>> {
-        self.require_access(caller_account_id, tenant_id).await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id), ("app.account_id", caller_account_id)]).await?;
+        self.require_access(&mut conn, caller_account_id, tenant_id).await?;
 
         let rows: Vec<(String, String, String, String, Option<String>, Option<String>, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
             "SELECT id, account_id, role_definition_id, tenant_id, organization_id, brand_id, scope, created_at FROM role_assignment WHERE account_id = $1 AND tenant_id = $2",
         )
         .bind(account_id)
         .bind(tenant_id)
-        .fetch_all(&self.db)
+        .fetch_all(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(rows.into_iter().map(|r| RoleAssignmentResponse {
             id: r.0,
             account_id: r.1,
