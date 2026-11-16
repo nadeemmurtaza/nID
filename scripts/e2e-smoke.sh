@@ -91,6 +91,17 @@ ok "read-only key cannot mint keys" "$(code -X POST "$API/v1/tenants/$TA/api-key
 ok "admin key cannot mint a wildcard key" "$(code -X POST "$API/v1/tenants/$TA/api-keys" -H "Authorization: Bearer $KA" -H "$H" -d '{"scopes":["*"]}')" 403
 ok "per-key rate limit returns 429" "$(for _ in 1 2 3 4 5; do code "$API/v1/subjects/$SID" -H "Authorization: Bearer $RK"; echo; done | grep -c 429)" 3
 
+echo "== self-service verification cases"
+VS=$(login); SS=$(echo "$VS"|j sessionToken)
+ok "unknown claim type is a clean 400" "$(code -X POST "$API/v1/accounts/me/verification/cases" -H "Authorization: Bearer $SS" -H "$H" -d '{"claimType":"PHONE"}')" 400
+CS=$(curl -s -m 10 -X POST "$API/v1/accounts/me/verification/cases" -H "Authorization: Bearer $SS" -H "$H" -d '{"claimType":"IDENTITY"}')
+ok "identity case is created PENDING" "$(echo "$CS"|j status)" PENDING
+ok "date of birth case is created" "$(code -X POST "$API/v1/accounts/me/verification/cases" -H "Authorization: Bearer $SS" -H "$H" -d '{"claimType":"DATE_OF_BIRTH"}')" 200
+ok "a level that is not offered is rejected" "$(code -X POST "$API/v1/accounts/me/verification/cases" -H "Authorization: Bearer $SS" -H "$H" -d '{"claimType":"DATE_OF_BIRTH","level":"REGISTRY_VERIFIED"}')" 400
+ok "the account lists its two cases" "$(curl -s -m 10 "$API/v1/accounts/me/verification/cases" -H "Authorization: Bearer $SS" | python3 -I -c "import sys,json;print(len(json.load(sys.stdin)))")" 2
+VS2=$(login); SS2=$(echo "$VS2"|j sessionToken)
+ok "another account sees none of them" "$(curl -s -m 10 "$API/v1/accounts/me/verification/cases" -H "Authorization: Bearer $SS2")" "[]"
+
 echo "== errors never leak internals"
 code "$API/v1/profiles/does-not-exist" >/dev/null
 ok "unknown profile is a clean 404" "$(code "$API/v1/profiles/does-not-exist")" 404
