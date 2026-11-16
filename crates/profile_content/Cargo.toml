@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+nid-storage = { path = "../storage" }
 sqlx = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }

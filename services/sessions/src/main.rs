@@ -218,7 +218,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = format!("{bind}:{port}").parse()?;
 
     let grpc = SessionsGrpc {
-        service: SessionsService::new(pool),
+        service: SessionsService::new(pool).with_storage(std::sync::Arc::new(
+            nid_storage::LocalStorageDriver::new(
+                std::env::var("LOCAL_STORAGE_DIR").map_err(|_| "LOCAL_STORAGE_DIR must be set")?,
+            ),
+        )),
     };
 
     info!(port, "svc-sessions starting (gRPC)");

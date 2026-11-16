@@ -17,6 +17,7 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 dotenvy = { workspace = true }
+nid-storage = { path = "../../crates/storage" }
 
 [build-dependencies]
 tonic-build = "0.12"

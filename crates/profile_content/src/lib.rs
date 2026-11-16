@@ -164,11 +164,46 @@ pub struct CreateContactMessageRequest {
 
 pub struct ProfileContentService {
     db: PgPool,
+    storage: Option<std::sync::Arc<nid_storage::LocalStorageDriver>>,
 }
 
 impl ProfileContentService {
+    pub fn with_storage(mut self, storage: std::sync::Arc<nid_storage::LocalStorageDriver>) -> Self {
+        self.storage = Some(storage);
+        self
+    }
+
+    /// Persist an upload and return (storage key, detected content type).
+    /// Images only, decided by the file's leading bytes, never the
+    /// client-supplied MIME type.
+    async fn store_image(&self, profile_id: &str, kind: &str, file: &UploadedFile) -> Result<(String, String)> {
+        use nid_storage::StorageDriver;
+        let storage = self
+            .storage
+            .as_ref()
+            .ok_or_else(|| anyhow!("File storage is not configured"))?;
+        let content_type = match nid_storage::sniff_content_type(&file.data) {
+            Some(t) if t.starts_with("image/") => t,
+            _ => return Err(anyhow!("Unsupported file type: upload a JPEG, PNG or WebP image")),
+        };
+        if file.data.len() > 5 * 1024 * 1024 {
+            return Err(anyhow!("Image must be at most 5 MB"));
+        }
+        let stored = storage
+            .put(nid_storage::PutDocumentInput {
+                namespace: format!("profile-{kind}"),
+                group_id: profile_id.to_string(),
+                filename: "upload".to_string(),
+                content_type: content_type.to_string(),
+                body: file.data.clone(),
+            })
+            .await
+            .map_err(|e| anyhow!("Failed to store file: {e}"))?;
+        Ok((stored.key, content_type.to_string()))
+    }
+
     pub fn new(db: PgPool) -> Self {
-        Self { db }
+        Self { db, storage: None }
     }
 
     async fn get_profile_id(&self, account_id: &str) -> Result<String> {
@@ -651,32 +686,26 @@ impl ProfileContentService {
     ) -> Result<ProfileImageResponse> {
         let profile_id = self.get_profile_id(account_id).await?;
 
-        let file_id = Uuid::new_v4().to_string();
-        let url = format!("profiles/{}/photo/{}", profile_id, file_id);
+        let (file_id, content_type) = self.store_image(&profile_id, "photo", &file).await?;
 
-        sqlx::query("DELETE FROM profile_image WHERE profile_id = $1 AND kind = 'photo'")
+        // The profile photo lives on the profile row (photoKey/photoContentType);
+        // ProfileImage is only for BANNER and GALLERY images.
+        sqlx::query("UPDATE profile SET photo_key = $2, photo_content_type = $3, updated_at = NOW() WHERE id = $1")
             .bind(&profile_id)
+            .bind(&file_id)
+            .bind(&content_type)
             .execute(&self.db)
             .await?;
-
-        let img: (String, String, String, String, String, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
-            r#"
-            INSERT INTO profile_image (id, profile_id, kind, url, content_type)
-            VALUES ($1, $2, 'photo', $3, $4)
-            RETURNING id, profile_id, kind, url, content_type, created_at
-            "#,
-        )
-        .bind(&file_id)
-        .bind(&profile_id)
-        .bind(&url)
-        .bind(&file.content_type)
-        .fetch_one(&self.db)
-        .await?;
 
         tracing::info!(profile_id = %profile_id, file_id = %file_id, "Profile photo uploaded");
 
         Ok(ProfileImageResponse {
-            id: img.0, profile_id: img.1, kind: img.2, url: img.3, content_type: img.4, created_at: img.5.to_rfc3339(),
+            id: file_id.clone(),
+            profile_id,
+            kind: "photo".to_string(),
+            url: file_id,
+            content_type,
+            created_at: chrono::Utc::now().to_rfc3339(),
         })
     }
 
@@ -688,25 +717,28 @@ impl ProfileContentService {
     ) -> Result<ProfileImageResponse> {
         let profile_id = self.get_profile_id(account_id).await?;
 
-        let file_id = Uuid::new_v4().to_string();
-        let url = format!("profiles/{}/gallery/{}/{}", profile_id, kind, file_id);
+        let kind = kind.to_uppercase();
+        if kind != "BANNER" && kind != "GALLERY" {
+            return Err(anyhow!("kind must be banner or gallery"));
+        }
+        let (file_id, content_type) = self.store_image(&profile_id, "gallery", &file).await?;
 
         let img: (String, String, String, String, String, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
             r#"
-            INSERT INTO profile_image (id, profile_id, kind, url, content_type)
+            INSERT INTO profile_image (id, profile_id, kind, storage_key, content_type)
             VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, profile_id, kind, url, content_type, created_at
+            RETURNING id, profile_id, kind, storage_key, content_type, created_at
             "#,
         )
         .bind(&file_id)
         .bind(&profile_id)
-        .bind(kind)
-        .bind(&url)
-        .bind(&file.content_type)
+        .bind(&kind)
+        .bind(&file_id)
+        .bind(&content_type)
         .fetch_one(&self.db)
         .await?;
 
-        tracing::info!(profile_id = %profile_id, file_id = %file_id, kind, "Gallery image uploaded");
+        tracing::info!(profile_id = %profile_id, file_id = %file_id, kind = %kind, "Gallery image uploaded");
 
         Ok(ProfileImageResponse {
             id: img.0, profile_id: img.1, kind: img.2, url: img.3, content_type: img.4, created_at: img.5.to_rfc3339(),
@@ -717,7 +749,7 @@ impl ProfileContentService {
         let profile_id = self.get_profile_id(account_id).await?;
 
         let rows: Vec<(String, String, String, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
-            "SELECT id, profile_id, kind, url, content_type, created_at FROM profile_image WHERE profile_id = $1 ORDER BY created_at DESC",
+            "SELECT id, profile_id, kind, storage_key, content_type, created_at FROM profile_image WHERE profile_id = $1 ORDER BY created_at DESC",
         )
         .bind(&profile_id)
         .fetch_all(&self.db)
@@ -747,7 +779,7 @@ impl ProfileContentService {
         let profile_id = self.get_published_profile_id(slug).await?;
 
         let rows: Vec<(String, String, String, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
-            "SELECT id, profile_id, kind, url, content_type, created_at FROM profile_image WHERE profile_id = $1 ORDER BY created_at DESC",
+            "SELECT id, profile_id, kind, storage_key, content_type, created_at FROM profile_image WHERE profile_id = $1 ORDER BY created_at DESC",
         )
         .bind(&profile_id)
         .fetch_all(&self.db)
@@ -891,9 +923,8 @@ impl ProfileContentService {
         let profile_id = self.get_published_profile_id(slug).await?;
 
         let (url, content_type): (String, String) = sqlx::query_as(
-            "SELECT url, content_type FROM profile_image
-             WHERE profile_id = $1 AND kind = 'photo'
-             ORDER BY created_at DESC LIMIT 1",
+            "SELECT photo_key, photo_content_type FROM profile
+             WHERE id = $1 AND photo_key IS NOT NULL AND photo_content_type IS NOT NULL",
         )
         .bind(&profile_id)
         .fetch_optional(&self.db)
@@ -907,7 +938,7 @@ impl ProfileContentService {
         let profile_id = self.get_published_profile_id(slug).await?;
 
         let (url, content_type): (String, String) = sqlx::query_as(
-            "SELECT url, content_type FROM profile_image
+            "SELECT storage_key, content_type FROM profile_image
              WHERE id = $1 AND profile_id = $2",
         )
         .bind(image_id)

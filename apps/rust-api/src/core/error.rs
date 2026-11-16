@@ -164,7 +164,7 @@ pub fn http_error(err: anyhow::Error) -> (axum::http::StatusCode, axum::Json<ser
             _ if lower.contains("not found") || lower.contains("no published profile") => StatusCode::NOT_FOUND,
             _ if lower.contains("already exists") || lower.contains("already ") => StatusCode::CONFLICT,
             _ if lower.contains("not allowed") || lower.contains("not authorized") || lower.contains("forbidden") || lower.contains("not staff") => StatusCode::FORBIDDEN,
-            _ if lower.contains("must ") || lower.contains("invalid") || lower.contains("required") || lower.contains("not registered") || lower.contains("not accepting") || lower.contains("not approved") || lower.contains("expired") => StatusCode::BAD_REQUEST,
+            _ if lower.contains("must ") || lower.contains("invalid") || lower.contains("required") || lower.contains("not registered") || lower.contains("unsupported") || lower.contains("at most") || lower.contains("not accepting") || lower.contains("not approved") || lower.contains("expired") => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     };

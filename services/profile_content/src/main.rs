@@ -379,7 +379,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bind = std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1".to_string());
     let addr = format!("{bind}:{port}").parse()?;
 
-    let grpc = ProfileContentGrpc { service: ProfileContentService::new(pool) };
+    let grpc = ProfileContentGrpc { service: ProfileContentService::new(pool).with_storage(std::sync::Arc::new(
+            nid_storage::LocalStorageDriver::new(
+                std::env::var("LOCAL_STORAGE_DIR").map_err(|_| "LOCAL_STORAGE_DIR must be set")?,
+            ),
+        )) };
 
     info!(port, "svc-profile-content starting (gRPC)");
     Server::builder()

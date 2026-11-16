@@ -7,7 +7,6 @@ use anyhow::{anyhow, Result};
 use nid_shared_types::sha256_hex;
 use sqlx::{FromRow, PgPool, Row};
 use tracing::info;
-use uuid::Uuid;
 
 const CLAIM_DOCUMENT_METHODS: &[&str] =
     &["dob_document", "education_document", "employment_document", "address_utility_bill"];
@@ -83,11 +82,40 @@ pub struct AcceptedResponse {
 
 pub struct SessionsService {
     db: PgPool,
+    storage: Option<std::sync::Arc<nid_storage::LocalStorageDriver>>,
 }
 
 impl SessionsService {
     pub fn new(db: PgPool) -> Self {
-        Self { db }
+        Self { db, storage: None }
+    }
+
+    pub fn with_storage(mut self, storage: std::sync::Arc<nid_storage::LocalStorageDriver>) -> Self {
+        self.storage = Some(storage);
+        self
+    }
+
+    /// Persist an upload and return its storage key. The type is decided by
+    /// the file's leading bytes, never by the client-supplied MIME type.
+    async fn store_file(&self, case_id: &str, kind: &str, file: &UploadedFile) -> Result<String> {
+        use nid_storage::StorageDriver;
+        let storage = self
+            .storage
+            .as_ref()
+            .ok_or_else(|| anyhow!("File storage is not configured"))?;
+        let content_type = nid_storage::sniff_content_type(&file.buffer)
+            .ok_or_else(|| anyhow!("Unsupported file type: upload a JPEG, PNG, WebP or PDF"))?;
+        let stored = storage
+            .put(nid_storage::PutDocumentInput {
+                namespace: format!("verification-{kind}"),
+                group_id: case_id.to_string(),
+                filename: file.filename.clone(),
+                content_type: content_type.to_string(),
+                body: file.buffer.clone(),
+            })
+            .await
+            .map_err(|e| anyhow!("Failed to store file: {e}"))?;
+        Ok(stored.key)
     }
 
     async fn resolve(&self, token: &str) -> Result<VerificationSessionRow> {
@@ -192,8 +220,7 @@ impl SessionsService {
             return Err(anyhow!("This verification is no longer accepting submissions."));
         }
 
-        let file_id = Uuid::new_v4().to_string();
-        let url = format!("verification/{}/document/{}", session.case_id, file_id);
+        let url = self.store_file(&session.case_id, "document", &file).await?;
 
         let now = chrono::Utc::now();
         sqlx::query(
@@ -229,7 +256,7 @@ impl SessionsService {
 
         info!(
             case_id = session.case_id,
-            file_id = %file_id,
+            file_key = %url,
             filename = %file.filename,
             "Document uploaded successfully"
         );
@@ -259,11 +286,10 @@ impl SessionsService {
             return Err(anyhow!("This verification is no longer accepting submissions."));
         }
 
-        let frame_urls: Vec<String> = files
-            .iter()
-            .enumerate()
-            .map(|(i, _)| format!("verification/{}/liveness/{}", session.case_id, i))
-            .collect();
+        let mut frame_urls: Vec<String> = Vec::with_capacity(files.len());
+        for f in &files {
+            frame_urls.push(self.store_file(&session.case_id, "liveness", f).await?);
+        }
 
         let now = chrono::Utc::now();
         sqlx::query(
@@ -322,11 +348,7 @@ impl SessionsService {
             return Err(anyhow!("This verification is no longer accepting submissions."));
         }
 
-        let file_id = Uuid::new_v4().to_string();
-        let url = format!(
-            "verification/{}/claim/{}/{}",
-            session.case_id, method, file_id
-        );
+        let url = self.store_file(&session.case_id, "claim", &file).await?;
 
         let now = chrono::Utc::now();
         sqlx::query(
@@ -351,7 +373,7 @@ impl SessionsService {
         info!(
             case_id = session.case_id,
             method,
-            file_id = %file_id,
+            file_key = %url,
             "Claim document uploaded successfully"
         );
 
