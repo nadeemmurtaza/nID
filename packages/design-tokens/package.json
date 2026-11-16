@@ -2,13 +2,34 @@
   "name": "@newax/design-tokens",
   "version": "0.0.0",
   "private": true,
-  "description": "Shared NEWAX design tokens (colour, typography, spacing, layout, elevation, motion) — pure CSS, no build step. Canonical copy lives here until core-newax hosts it.",
+  "description": "Shared NEWAX design tokens (colour, typography, spacing, layout, elevation, motion) \u2014 pure CSS, no build step. Canonical copy lives here until core-newax hosts it.",
   "main": "tokens.css",
   "exports": {
     ".": "./tokens.css",
-    "./tokens.css": "./tokens.css"
+    "./tokens.css": "./tokens.css",
+    "./icons": "./icons.tsx",
+    "./Skeleton": "./Skeleton.tsx",
+    "./ConsentBanner": "./ConsentBanner.tsx",
+    "./ConfirmDialog": "./ConfirmDialog.tsx",
+    "./consent": "./consent.ts"
   },
   "files": [
-    "tokens.css"
-  ]
+    "tokens.css",
+    "icons.tsx",
+    "Skeleton.tsx",
+    "ConsentBanner.tsx",
+    "ConfirmDialog.tsx",
+    "consent.ts",
+    "check-contrast.mjs"
+  ],
+  "scripts": {
+    "check-contrast": "node check-contrast.mjs"
+  },
+  "peerDependencies": {
+    "react": "^19.1.0"
+  },
+  "devDependencies": {
+    "react": "^19.1.0",
+    "@types/react": "^19.1.0"
+  }
 }

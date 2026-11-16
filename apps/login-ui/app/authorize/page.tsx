@@ -1,9 +1,10 @@
 'use client';
 
+import { Skeleton } from '@newax/design-tokens/Skeleton';
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
-import { BadgeAlertIcon } from 'lucide-animated';
+import { AlertIcon } from '@newax/design-tokens/icons';
 
 /**
  * What an RP's "Continue with nID" button links to:
@@ -26,10 +27,9 @@ function Loading() {
     <main>
       <div className="card">
         <p className="brand">NEWAX</p>
-        <h1>Starting sign-in…</h1>
-        <div className="status-line">
-          <span className="dot" />
-          <span>One moment</span>
+        <h1>Starting sign-in</h1>
+        <div aria-busy="true" aria-label="Starting sign-in">
+          <Skeleton count={2} />
         </div>
       </div>
     </main>
@@ -76,7 +76,7 @@ function AuthorizeEntry() {
       <div className="card">
         <p className="brand">NEWAX</p>
         <div className="result-icon">
-          <BadgeAlertIcon size={56} className="nid-icon" />
+          <AlertIcon size={56} className="nid-icon" />
         </div>
         <h1>Can&apos;t continue</h1>
         <p className="lead">{error}</p>

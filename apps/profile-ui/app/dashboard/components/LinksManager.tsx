@@ -1,5 +1,6 @@
 'use client';
 
+import { useConfirm } from '@newax/design-tokens/ConfirmDialog';
 import { useEffect, useState } from 'react';
 import {
   ApiError,
@@ -16,6 +17,7 @@ import {
 const PLATFORMS = ['FACEBOOK', 'INSTAGRAM', 'LINKEDIN', 'TWITTER', 'YOUTUBE', 'TIKTOK', 'OTHER'];
 
 export function LinksManager({ token }: { token: string }) {
+  const { confirm, dialog } = useConfirm();
   const [customLinks, setCustomLinks] = useState<OwnerCustomLink[] | null>(null);
   const [socialLinks, setSocialLinks] = useState<OwnerSocialLink[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,17 +69,20 @@ export function LinksManager({ token }: { token: string }) {
   }
 
   async function handleDeleteCustom(id: string): Promise<void> {
+    if (!(await confirm({ title: 'Remove this link?', body: 'It is removed from your public profile.', confirmLabel: 'Remove link' }))) return;
     await deleteCustomLink(token, id);
     setCustomLinks((prev) => prev?.filter((l) => l.id !== id) ?? null);
   }
 
   async function handleDeleteSocial(id: string): Promise<void> {
+    if (!(await confirm({ title: 'Remove this social link?', body: 'It is removed from your public profile.', confirmLabel: 'Remove link' }))) return;
     await deleteSocialLink(token, id);
     setSocialLinks((prev) => prev?.filter((l) => l.id !== id) ?? null);
   }
 
   return (
     <div>
+      {dialog}
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Custom links
       </h2>

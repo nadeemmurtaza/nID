@@ -19,14 +19,13 @@
    --text-*, --space-*, --radius-*, --elevation-*, --layer-*, and
    --motion-* custom properties — never a literal value.
 
-   FLAGGED (2026-11-15): CONVENTIONS.md's "Design anti-patterns —
-   strictly forbidden, no exceptions" section bans Inter/Geist/Space
-   Grotesk (rule 10) and drop shadows (rule 5). --font-sans below is
-   currently 'Inter', and --elevation-* below are drop-shadow values.
-   Both are now known, documented violations, not silent exceptions —
-   replacing them is a deliberate design-system decision for whoever
-   owns this file next, not something to swap quietly as a side effect
-   of an unrelated edit to this file.
+   RESOLVED (2026-11-16): the two violations flagged here are fixed.
+   --font-sans is a system stack (no Inter), and --elevation-* are flat
+   (a 1px ring for floating layers, no blur or offset), per CONVENTIONS.md
+   design anti-pattern rules 5 and 10. The colour pairings below are
+   checked against WCAG AA by check-contrast.mjs in this directory; run it
+   after any colour edit. Because this file is meant to be byte-identical
+   across repos, Communicator's copy needs the same changes.
    ========================================================================== */
 
 :root {
@@ -37,16 +36,22 @@
   --newax-cream-100: #f1eee9;
   --newax-oat-200: #dedbd6;
   --newax-oat-300: #928f88;
+  --newax-ink-500: #67625b;
   --newax-ink-900: #111111;
   --newax-ink-700: #57534e;
   --newax-orange-500: #ff5600;
   --newax-orange-600: #e64e00;
+  --newax-orange-700: #b83a00;
+  --newax-orange-800: #9a3000;
   --newax-orange-50: #fff0e6;
   --newax-green-500: #0bdf50;
+  --newax-green-700: #1a7a36;
   --newax-red-500: #c41c1c;
   --newax-blue-500: #65b5ff;
   --newax-pink-500: #ff2067;
+  --newax-pink-700: #b0245a;
   --newax-lime-500: #b3e01c;
+  --newax-lime-700: #6f8a10;
 
   /* ---------- Semantic colour (light) ---------- */
   --color-page: var(--newax-cream-50);
@@ -58,18 +63,21 @@
   --color-border: var(--newax-oat-200);
   --color-ink: var(--newax-ink-900);
   --color-ink-muted: var(--newax-ink-700);
-  --color-ink-faint: var(--newax-oat-300);
+  --color-ink-faint: var(--newax-ink-500);
   --color-ink-pressed: #000000;
 
-  --color-accent: var(--newax-orange-500);
-  --color-accent-hover: var(--newax-orange-600);
+  /* The brand orange (--newax-orange-500) is 3:1 on cream, too low for
+     text or a white label. The accent used for fills and text is the
+     700 step, which passes 4.5:1 in both roles. */
+  --color-accent: var(--newax-orange-700);
+  --color-accent-hover: var(--newax-orange-800);
   --color-accent-soft: var(--newax-orange-50);
   --color-on-accent: #ffffff;
   --color-accent-muted: rgba(255, 86, 0, 0.08);
 
-  --color-positive: var(--newax-green-500);
+  --color-positive: var(--newax-green-700);
   --color-negative: var(--newax-red-500);
-  --color-warning: #b3801a;
+  --color-warning: #85600a;
   --color-warning-soft: rgba(179, 128, 26, 0.1);
   --color-info: #6a4fc4;
   --color-info-soft: rgba(106, 79, 196, 0.1);
@@ -84,10 +92,10 @@
   --color-on-whatsapp: #ffffff;
 
   --color-chart-blue: var(--newax-blue-500);
-  --color-chart-green: var(--newax-green-500);
+  --color-chart-green: var(--newax-green-700);
   --color-chart-red: var(--newax-red-500);
-  --color-chart-pink: var(--newax-pink-500);
-  --color-chart-lime: var(--newax-lime-500);
+  --color-chart-pink: var(--newax-pink-700);
+  --color-chart-lime: var(--newax-lime-700);
   --color-chart-orange: #fe4c02;
 
   /* ---------- Typography ----------
@@ -149,9 +157,10 @@
   --radius-pill: 9999px;
 
   /* ---------- Elevation ---------- */
-  --elevation-raised: 0 1px 2px 0 rgb(0 0 0 / 0.04);
-  --elevation-overlay: 0 2px 8px -2px rgb(0 0 0 / 0.06), 0 8px 16px -4px rgb(0 0 0 / 0.08);
-  --elevation-modal: 0 8px 16px -4px rgb(0 0 0 / 0.1), 0 24px 48px -12px rgb(0 0 0 / 0.18);
+  /* Flat: separation comes from borders and surface colour, not shadows. */
+  --elevation-raised: none;
+  --elevation-overlay: 0 0 0 1px var(--color-border);
+  --elevation-modal: 0 0 0 1px var(--color-border);
 
   /* ---------- Stacking (named — never a literal z-index in a component) ---------- */
   --layer-sticky: 10;
@@ -190,7 +199,8 @@
   --fg: var(--color-ink);
   --muted: var(--color-ink-muted);
   --border: var(--color-border);
-  --border-strong: var(--newax-oat-300);
+  --color-border-strong: var(--newax-oat-300);
+  --border-strong: var(--color-border-strong);
   --accent: var(--color-accent);
   --accent-hover: var(--color-accent-hover);
   --accent-fg: var(--color-on-accent);
@@ -198,7 +208,7 @@
   --danger: var(--color-negative);
   --danger-soft: rgba(196, 28, 28, 0.1);
   --success: var(--color-positive);
-  --success-soft: rgba(11, 223, 80, 0.12);
+  --success-soft: rgba(26, 122, 54, 0.12);
   --warn: var(--color-warning);
   --warn-soft: var(--color-warning-soft);
   --info: var(--color-info);
@@ -226,7 +236,7 @@
     --color-border: #332e28;
     --color-ink: #f5f3ef;
     --color-ink-muted: #b6b0a6;
-    --color-ink-faint: #7a756c;
+    --color-ink-faint: #9d978d;
     --color-ink-pressed: #ffffff;
 
     --color-accent: #ff6b1f;
@@ -236,19 +246,22 @@
     --color-accent-muted: rgba(255, 107, 31, 0.1);
 
     --color-positive: #2ebf85;
+    --color-on-positive: #0e1a14;
     --color-negative: #e06456;
+    --color-on-negative: #15120f;
     --color-warning: #d9a63d;
     --color-warning-soft: rgba(217, 166, 61, 0.16);
     --color-info: #9683e0;
     --color-info-soft: rgba(150, 131, 224, 0.16);
 
-    --elevation-raised: 0 1px 2px 0 rgb(0 0 0 / 0.3);
-    --elevation-overlay: 0 8px 24px -4px rgb(0 0 0 / 0.4);
-    --elevation-modal: 0 24px 48px -12px rgb(0 0 0 / 0.55);
+    --elevation-raised: none;
+    --elevation-overlay: 0 0 0 1px var(--color-border);
+    --elevation-modal: 0 0 0 1px var(--color-border);
 
     /* Only aliases with literal (non-var()) values need restating —
        the rest re-resolve live through the indirection above. */
-    --border-strong: #46403a;
+    --color-border-strong: #8a847a;
+    --border-strong: #8a847a;
     --danger-soft: rgba(224, 100, 86, 0.16);
     --success-soft: rgba(46, 191, 133, 0.16);
   }
@@ -298,4 +311,113 @@
 .skeleton-table-row {
   display: flex;
   gap: var(--space-4);
+}
+
+/* ---------- Accessibility baselines ----------
+   UX_UI_RULES.md / COMPLIANCE_AND_ACCESSIBILITY_RULES.md: motion is optional,
+   keyboard focus is always visible, and targets are at least 44px. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ---------- Confirmation dialog (ConfirmDialog.tsx) ---------- */
+.nid-dialog {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  padding: var(--space-6);
+  width: min(28rem, calc(100vw - 2rem));
+}
+.nid-dialog::backdrop {
+  background: rgb(17 17 17 / 0.5);
+}
+.nid-dialog h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-lg, 1.125rem);
+}
+.nid-dialog p {
+  margin: 0 0 var(--space-5);
+  color: var(--color-ink-muted);
+  line-height: 1.5;
+}
+.nid-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.nid-dialog-actions button {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  cursor: pointer;
+}
+.nid-dialog-actions button.nid-dialog-danger {
+  background: var(--color-negative);
+  border-color: var(--color-negative);
+  color: var(--color-on-negative);
+}
+
+/* ---------- Consent banner (ConsentBanner.tsx) ---------- */
+.nid-consent {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: var(--space-4) max(var(--space-4), env(safe-area-inset-right)) max(var(--space-4), env(safe-area-inset-bottom)) max(var(--space-4), env(safe-area-inset-left));
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-ink);
+  z-index: 50;
+}
+.nid-consent-inner {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  max-width: 64rem;
+  margin: 0 auto;
+}
+.nid-consent p {
+  margin: 0;
+  flex: 1 1 18rem;
+  line-height: 1.5;
+}
+.nid-consent a {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+.nid-consent-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+.nid-consent-actions button {
+  min-height: 44px;
+  min-width: 96px;
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  cursor: pointer;
 }

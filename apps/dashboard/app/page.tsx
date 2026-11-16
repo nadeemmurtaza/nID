@@ -1,5 +1,7 @@
 'use client';
 
+import { Skeleton } from '@newax/design-tokens/Skeleton';
+import { useConfirm } from '@newax/design-tokens/ConfirmDialog';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
@@ -242,7 +244,7 @@ function OverviewTab({ credential }: { credential: string }) {
     }).catch(() => setLoading(false));
   }, [credential]);
 
-  if (loading) return <p>Loading…</p>;
+  if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
   if (!tenant) return <p>Failed to load tenant info.</p>;
 
   return (
@@ -279,6 +281,7 @@ function OverviewTab({ credential }: { credential: string }) {
 }
 
 function ApiKeysTab({ credential }: { credential: string }) {
+  const { confirm, dialog } = useConfirm();
   const [keys, setKeys] = useState<TenantApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [newKeyPlaintext, setNewKeyPlaintext] = useState<string | null>(null);
@@ -311,6 +314,7 @@ function ApiKeysTab({ credential }: { credential: string }) {
   }
 
   async function handleRevoke(id: string) {
+    if (!(await confirm({ title: 'Revoke this API key?', body: 'Integrations that use it stop working immediately. This cannot be undone.', confirmLabel: 'Revoke key' }))) return;
     if (!tenantId) return;
     try {
       await revokeApiKey(credential, tenantId, id);
@@ -320,10 +324,11 @@ function ApiKeysTab({ credential }: { credential: string }) {
     }
   }
 
-  if (loading) return <p>Loading…</p>;
+  if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
 
   return (
     <div className="tab-content">
+      {dialog}
       <div className="tab-header">
         <h1>API Keys</h1>
         <button className="primary-btn" onClick={handleCreateKey}>
@@ -376,6 +381,7 @@ function ApiKeysTab({ credential }: { credential: string }) {
 }
 
 function StaffTab({ credential }: { credential: string }) {
+  const { confirm, dialog } = useConfirm();
   const [staff, setStaff] = useState<TenantStaffMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [accountId, setAccountId] = useState('');
@@ -413,6 +419,7 @@ function StaffTab({ credential }: { credential: string }) {
   }
 
   async function handleRemove(accountId: string) {
+    if (!(await confirm({ title: 'Remove this staff member?', body: 'They lose access to this tenant.', confirmLabel: 'Remove staff member' }))) return;
     if (!tenantId) return;
     try {
       await removeStaff(credential, tenantId, accountId);
@@ -423,10 +430,11 @@ function StaffTab({ credential }: { credential: string }) {
     }
   }
 
-  if (loading) return <p>Loading…</p>;
+  if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
 
   return (
     <div className="tab-content">
+      {dialog}
       <h1>Staff Members</h1>
 
       <div className="invite-form">
@@ -524,7 +532,7 @@ function SettingsTab({ credential }: { credential: string }) {
     }
   }
 
-  if (loading) return <p>Loading…</p>;
+  if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
 
   return (
     <div className="tab-content">
@@ -609,7 +617,7 @@ function OrganizationsTab({ credential, onCreateNew, onSelectOrg }: {
     });
   }, [credential]);
 
-  if (loading) return <p>Loading…</p>;
+  if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
 
   return (
     <div className="tab-content">
@@ -1117,7 +1125,7 @@ function BrandsTab({
     }
   }
 
-  if (loading) return <p>Loading…</p>;
+  if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
 
   return (
     <div className="tab-content">
@@ -1292,7 +1300,7 @@ function CreateBrandForm({
     );
   }
 
-  if (loading) return <p>Loading…</p>;
+  if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
 
   return (
     <div className="tab-content">
@@ -1398,6 +1406,7 @@ function CreateBrandForm({
 // ---- Layer 1: Access Management Tab ----
 
 function AccessTab({ credential }: { credential: string }) {
+  const { confirm, dialog } = useConfirm();
   const [tenant, setTenant] = useState<{ id: string; name: string } | null>(null);
   const [grants, setGrants] = useState<AccessGrantRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1458,6 +1467,7 @@ function AccessTab({ credential }: { credential: string }) {
   }
 
   async function handleRevoke(grantId: string) {
+    if (!(await confirm({ title: 'Revoke this access grant?', body: 'The person loses access to this tenant right away.', confirmLabel: 'Revoke access' }))) return;
     if (!tenant) return;
     try {
       await revokeAccessGrant(credential, tenant.id, grantId);
@@ -1468,11 +1478,12 @@ function AccessTab({ credential }: { credential: string }) {
     }
   }
 
-  if (loading) return <p>Loading…</p>;
+  if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
   if (!tenant) return <p>Failed to load tenant.</p>;
 
   return (
     <div className="tab-content">
+      {dialog}
       <div className="tab-header">
         <h1>Access Management</h1>
         <button className="primary-btn" onClick={() => setShowForm(!showForm)}>
@@ -1635,7 +1646,7 @@ function DepartmentsTab({ credential }: { credential: string }) {
     }
   }
 
-  if (loading) return <p>Loading…</p>;
+  if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
   if (!tenant) return <p>Failed to load tenant.</p>;
 
   return (
@@ -1811,7 +1822,7 @@ function RolesTab({ credential }: { credential: string }) {
     }
   }
 
-  if (loading) return <p>Loading…</p>;
+  if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
   if (!tenant) return <p>Failed to load tenant.</p>;
 
   return (
@@ -1906,6 +1917,7 @@ function RolesTab({ credential }: { credential: string }) {
 // ---- Invitations Tab ----
 
 function InvitationsTab({ credential }: { credential: string }) {
+  const { confirm, dialog } = useConfirm();
   const [tenant, setTenant] = useState<{ id: string; name: string } | null>(null);
   const [invitations, setInvitations] = useState<InvitationRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1965,6 +1977,7 @@ function InvitationsTab({ credential }: { credential: string }) {
   }
 
   async function handleRevoke(invitationId: string) {
+    if (!(await confirm({ title: 'Revoke this invitation?', body: 'The invitation link stops working.', confirmLabel: 'Revoke invitation' }))) return;
     if (!tenant) return;
     try {
       await revokeInvitation(credential, tenant.id, invitationId);
@@ -1975,11 +1988,12 @@ function InvitationsTab({ credential }: { credential: string }) {
     }
   }
 
-  if (loading) return <p>Loading…</p>;
+  if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
   if (!tenant) return <p>Failed to load tenant.</p>;
 
   return (
     <div className="tab-content">
+      {dialog}
       <div className="tab-header">
         <h1>Invitations</h1>
       </div>

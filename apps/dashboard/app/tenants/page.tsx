@@ -1,5 +1,6 @@
 'use client';
 
+import { Skeleton } from '@newax/design-tokens/Skeleton';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
@@ -51,7 +52,7 @@ export default function TenantsPage() {
         </div>
 
         {error && <div className="alert alert-error">{error}</div>}
-        {loading && <p>Loading tenants…</p>}
+        {loading && <div aria-busy="true" aria-label="Loading tenants"><Skeleton count={3} /></div>}
 
         {!loading && !error && (
           <table className="data-table">

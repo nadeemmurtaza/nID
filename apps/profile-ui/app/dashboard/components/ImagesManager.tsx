@@ -1,11 +1,13 @@
 'use client';
 
+import { useConfirm } from '@newax/design-tokens/ConfirmDialog';
 import { useEffect, useState } from 'react';
-import { DeleteIcon } from 'lucide-animated';
+import { TrashIcon } from '@newax/design-tokens/icons';
 import { ApiError, apiUrl } from '../../../lib/api';
 import { deleteImage, listMyImages, uploadGalleryImage, type OwnerProfileImage } from '../../../lib/owner-api';
 
 export function ImagesManager({ token, slug }: { token: string; slug: string }) {
+  const { confirm, dialog } = useConfirm();
   const [images, setImages] = useState<OwnerProfileImage[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<'BANNER' | 'GALLERY' | null>(null);
@@ -33,6 +35,7 @@ export function ImagesManager({ token, slug }: { token: string; slug: string }) 
   }
 
   async function handleDelete(id: string): Promise<void> {
+    if (!(await confirm({ title: 'Delete this image?', body: 'It is removed from your profile and cannot be restored.', confirmLabel: 'Delete image' }))) return;
     await deleteImage(token, id);
     setImages((prev) => prev?.filter((i) => i.id !== id) ?? null);
   }
@@ -42,6 +45,7 @@ export function ImagesManager({ token, slug }: { token: string; slug: string }) 
 
   return (
     <div>
+      {dialog}
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Banner
       </h2>
@@ -51,7 +55,7 @@ export function ImagesManager({ token, slug }: { token: string; slug: string }) 
           <div className="thumb" key={img.id}>
             <img src={apiUrl(`/v1/profiles/${slug}/images/${img.id}`)} alt="" />
             <button type="button" onClick={() => handleDelete(img.id)} aria-label="Delete image">
-              <DeleteIcon size={16} />
+              <TrashIcon size={16} />
             </button>
           </div>
         ))}
@@ -74,7 +78,7 @@ export function ImagesManager({ token, slug }: { token: string; slug: string }) 
           <div className="thumb" key={img.id}>
             <img src={apiUrl(`/v1/profiles/${slug}/images/${img.id}`)} alt="" />
             <button type="button" onClick={() => handleDelete(img.id)} aria-label="Delete image">
-              <DeleteIcon size={16} />
+              <TrashIcon size={16} />
             </button>
           </div>
         ))}

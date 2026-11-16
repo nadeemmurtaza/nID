@@ -1,8 +1,9 @@
 'use client';
 
+import { Skeleton } from '@newax/design-tokens/Skeleton';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { BadgeAlertIcon, CircleCheckIcon, ClockIcon, EyeIcon, XIcon } from 'lucide-animated';
+import { AlertIcon, CircleCheckIcon, ClockIcon, EyeIcon, XIcon } from '@newax/design-tokens/icons';
 import { Logomark } from '../../components/logomark';
 import { OtpInput } from '../../components/otp-input';
 
@@ -196,10 +197,9 @@ export default function SessionPage() {
 function Loading() {
   return (
     <>
-      <h1>Loading…</h1>
-      <div className="status-line">
-        <span className="dot pending" />
-        <span>Fetching your verification status</span>
+      <h1>Checking your verification</h1>
+      <div aria-busy="true" aria-label="Checking your verification">
+        <Skeleton count={3} />
       </div>
     </>
   );
@@ -209,7 +209,7 @@ function ErrorView({ message }: { message: string }) {
   return (
     <>
       <div className="result-icon">
-        <BadgeAlertIcon size={56} className="nid-icon" />
+        <AlertIcon size={56} className="nid-icon" />
       </div>
       <h1>Can&apos;t continue</h1>
       <p className="lead">{message}</p>

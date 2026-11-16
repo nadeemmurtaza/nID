@@ -36,6 +36,18 @@ export function clearStoredAccountSession(): void {
   window.localStorage.removeItem(STORAGE_KEY);
 }
 
+/** Erases the signed-in account and its own data (DELETE /v1/accounts/me, 204). */
+export async function deleteAccount(token: string): Promise<void> {
+  const res = await fetch(`${API_URL}/v1/accounts/me`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { message?: string } | null;
+    throw new ApiError(body?.message ?? 'Could not delete your account.', res.status);
+  }
+}
+
 export interface Account {
   id: string;
   phone: string;

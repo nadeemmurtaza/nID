@@ -1,9 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import { Inter } from 'next/font/google';
 import './globals.css';
-
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
+import { ConsentBanner } from '@newax/design-tokens/ConsentBanner';
 
 export const metadata: Metadata = {
   title: 'Identity verification',
@@ -12,8 +10,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
-      <body>{children}</body>
+    <html lang="en">
+      <body>
+        {children}
+        <ConsentBanner privacyHref={process.env.NEXT_PUBLIC_PRIVACY_URL} />
+      </body>
     </html>
   );
 }

@@ -1,9 +1,10 @@
 'use client';
 
+import { Skeleton } from '@newax/design-tokens/Skeleton';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeftIcon } from 'lucide-animated';
+import { ArrowLeftIcon } from '@newax/design-tokens/icons';
 import { apiFetch, resolveCase, type SubjectBadges, type VerificationCaseDetail } from '../../../lib/api-client';
 import { useDashboardSession } from '../../../lib/use-dashboard-session';
 import { Header } from '../../components/header';
@@ -76,10 +77,7 @@ function CaseDetail({ credential, caseId }: { credential: string; caseId: string
 
       {error && <p className="error-text">{error}</p>}
       {!error && !kase && (
-        <div className="loading-row">
-          <span className="spinner" aria-hidden="true" />
-          Loading…
-        </div>
+        <div aria-busy="true" aria-label="Loading case"><Skeleton count={5} /></div>
       )}
 
       {kase && (
@@ -92,10 +90,7 @@ function CaseDetail({ credential, caseId }: { credential: string; caseId: string
             <h2>Badges</h2>
             {badgesError && <p className="error-text">{badgesError}</p>}
             {!badgesError && !badges && (
-              <div className="loading-row">
-                <span className="spinner" aria-hidden="true" />
-                Loading badges…
-              </div>
+              <div aria-busy="true" aria-label="Loading badges"><Skeleton count={2} /></div>
             )}
             {badges && <BadgesPanel badges={badges.badges} />}
           </section>

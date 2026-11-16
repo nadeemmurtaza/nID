@@ -1,5 +1,6 @@
 'use client';
 
+import { useConfirm } from '@newax/design-tokens/ConfirmDialog';
 import { useEffect, useState } from 'react';
 import { ApiError, createGrant, listMyGrants, revokeGrant, type GrantField, type OwnerFieldGrant } from '../../../lib/owner-api';
 
@@ -18,6 +19,7 @@ const FIELDS: { id: GrantField; label: string }[] = [
  * their own nID username, never anyone else's.
  */
 export function GrantsManager({ token }: { token: string }) {
+  const { confirm, dialog } = useConfirm();
   const [grants, setGrants] = useState<OwnerFieldGrant[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [field, setField] = useState<GrantField>('PHONE');
@@ -46,12 +48,14 @@ export function GrantsManager({ token }: { token: string }) {
   }
 
   async function handleRevoke(id: string): Promise<void> {
+    if (!(await confirm({ title: 'Revoke this access?', body: 'The person you shared this field with loses access immediately.', confirmLabel: 'Revoke access' }))) return;
     await revokeGrant(token, id);
     setGrants((prev) => prev?.filter((g) => g.id !== id) ?? null);
   }
 
   return (
     <div>
+      {dialog}
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Private shares
       </h2>
