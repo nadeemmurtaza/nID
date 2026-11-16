@@ -41,7 +41,7 @@ static RE_OTP: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[0-9]{4,8}$").unwrap());
 static RE_SEGMENT: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[A-Za-z0-9._~:@+-]{1,128}$").unwrap());
 static RE_KEY: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[A-Za-z0-9_]{1,64}$").unwrap());
 static RE_TOKEN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[A-Za-z0-9._~+/=:-]{1,512}$").unwrap());
-static RE_TAG: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)<\s*/?\s*[a-z!]").unwrap());
+static RE_TAG: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)</?[a-z!]").unwrap());
 
 #[derive(Default)]
 struct Problems(Vec<(String, String)>);

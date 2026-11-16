@@ -11,7 +11,9 @@
 const BAD = /[\u202A-\u202E\u2066-\u2069\u200B\uFEFF\u2028\u2029]/;
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 const CONTROL_NO_NL = /[\u0000-\u001F\u007F]/;
-const TAG = /<\s*\/?\s*[a-z!]/i;
+// A tag starts with "<" directly followed by a letter, "/" or "!" (that is how
+// browsers parse it). No optional whitespace, so there is nothing to backtrack on.
+const TAG = /<\/?[a-z!]/i;
 const RE = {
   phone: /^\+[1-9][0-9]{6,14}$/,
   email: /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/,
