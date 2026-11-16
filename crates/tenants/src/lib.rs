@@ -72,6 +72,7 @@ pub struct CreatedTenantResponse {
     pub webhook_secret: String,
     pub billing_webhook_url: Option<String>,
     pub billing_webhook_secret: String,
+    pub api_key: String,
     pub created_at: String,
     pub message: String,
 }
@@ -196,16 +197,15 @@ impl TenantsService {
             ));
         }
 
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
 
-        let existing: Option<(String,)> =
-            sqlx::query_as("SELECT id FROM tenant WHERE slug = $1")
-                .bind(slug)
-                .fetch_optional(&mut *conn)
-                .await?;
-        if existing.is_some() {
-            return Err(anyhow!("A tenant with slug '{}' already exists", slug));
-        }
+        // The tenant row's RLS policy requires id = app.tenant_id, so the id
+        // is chosen up front and set as context before the insert.
+        let tenant_id = uuid::Uuid::new_v4().to_string();
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(&tenant_id)
+            .execute(&mut *conn)
+            .await?;
 
         let webhook_secret = nid_shared_types::generate_session_token().plaintext;
         let billing_webhook_secret = nid_shared_types::generate_session_token().plaintext;
@@ -215,7 +215,7 @@ impl TenantsService {
         let tenant: TenantRow = sqlx::query_as(
             r#"
             INSERT INTO tenant (id, name, slug, data_residency_region, webhook_url, webhook_secret_plaintext, billing_webhook_url, billing_webhook_secret_plaintext)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7)
+            VALUES ($8, $1, $2, $3, $4, $5, $6, $7)
             RETURNING id, name, slug, data_residency_region, webhook_url, billing_webhook_url, created_at, updated_at
             "#,
         )
@@ -226,8 +226,15 @@ impl TenantsService {
         .bind(&webhook_secret)
         .bind(billing_webhook_url)
         .bind(&billing_webhook_secret)
+        .bind(&tenant_id)
         .fetch_one(&mut *conn)
-        .await?;
+        .await
+        .map_err(|e| match &e {
+            sqlx::Error::Database(d) if d.is_unique_violation() => {
+                anyhow!("A tenant with slug '{}' already exists", slug)
+            }
+            _ => anyhow::Error::from(e),
+        })?;
 
         if let Some(account_id) = initial_staff_account_id {
             let account_exists: bool =
@@ -248,6 +255,21 @@ impl TenantsService {
             .await?;
         }
 
+        // Without a first key a new tenant has no way to authenticate: every
+        // key and staff route requires an existing key.
+        let key = generate_api_key("live");
+        sqlx::query(
+            "INSERT INTO tenant_api_key (id, tenant_id, key_prefix, key_hash, scopes, rate_limit_per_minute) VALUES (gen_random_uuid(), $1, $2, $3, $4, 60)",
+        )
+        .bind(&tenant.id)
+        .bind(&key.prefix)
+        .bind(sha256_hex(&key.plaintext))
+        .bind(vec!["verification-cases:read".to_string(), "verification-cases:write".to_string()])
+        .execute(&mut *conn)
+        .await?;
+
+        conn.commit().await?;
+
         Ok(CreatedTenantResponse {
             id: tenant.id,
             name: tenant.name,
@@ -257,8 +279,9 @@ impl TenantsService {
             webhook_secret,
             billing_webhook_url: tenant.billing_webhook_url,
             billing_webhook_secret,
+            api_key: key.plaintext,
             created_at: tenant.created_at.to_rfc3339(),
-            message: "Tenant created successfully. Save the webhook secrets — they cannot be recovered.".to_string(),
+            message: "Tenant created successfully. Save the API key and webhook secrets — they cannot be recovered.".to_string(),
         })
     }
 

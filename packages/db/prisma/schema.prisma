@@ -295,6 +295,7 @@ model Organization {
   /// The Subject row (type = ORGANIZATION) this KYB record belongs to.
   subjectId          String   @unique
   legalName          String
+  address            String?
   registrationNumber String?
   countryCode        String?
   createdAt          DateTime @default(now())

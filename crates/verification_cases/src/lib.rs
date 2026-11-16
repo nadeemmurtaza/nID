@@ -242,7 +242,7 @@ impl VerificationCasesService {
         subject_id: &str,
         policy_name: &str,
     ) -> Result<CreatedCaseResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
 
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
@@ -343,6 +343,7 @@ impl VerificationCasesService {
 
         let hosted_url = format!("{}/session/{}", self.verify_ui_url, plaintext);
 
+        conn.commit().await?;
         Ok(CreatedCaseResponse {
             id: updated.id,
             tenant_id: updated.tenant_id,
@@ -365,7 +366,7 @@ impl VerificationCasesService {
         actor_type: &str,
         actor_id: &str,
     ) -> Result<Vec<VerificationCaseWithSubject>> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
 
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
@@ -426,6 +427,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(cases)
     }
 
@@ -436,7 +438,7 @@ impl VerificationCasesService {
         actor_id: &str,
         case_id: &str,
     ) -> Result<VerificationCaseWithAttempts> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
 
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
@@ -479,6 +481,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(VerificationCaseWithAttempts {
             id: kase.id,
             tenant_id: kase.tenant_id,
@@ -507,7 +510,7 @@ impl VerificationCasesService {
         decision: &str,
         reason: Option<&str>,
     ) -> Result<VerificationCaseResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
 
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
@@ -567,6 +570,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(Self::case_to_response(kase))
     }
 
@@ -577,7 +581,7 @@ impl VerificationCasesService {
         case_id: &str,
         code: &str,
     ) -> Result<MessageResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
 
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
@@ -626,6 +630,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(MessageResponse {
             message: "OTP code submitted for verification".to_string(),
         })
@@ -639,7 +644,7 @@ impl VerificationCasesService {
         method: &str,
         reported_value: &str,
     ) -> Result<MessageResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
 
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
@@ -679,6 +684,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(MessageResponse {
             message: format!("Self-reported value submitted for {}", method),
         })
@@ -693,7 +699,7 @@ impl VerificationCasesService {
         decision: &str,
         notes: Option<&str>,
     ) -> Result<MessageResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
 
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
@@ -733,6 +739,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(MessageResponse {
             message: format!("Agent attestation submitted for {}", method),
         })
@@ -746,7 +753,7 @@ impl VerificationCasesService {
         method: &str,
         code: &str,
     ) -> Result<MessageResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
 
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
@@ -786,6 +793,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(MessageResponse {
             message: format!("Code submitted for {}", method),
         })
@@ -800,7 +808,7 @@ impl VerificationCasesService {
         latitude: f64,
         longitude: f64,
     ) -> Result<MessageResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
 
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
@@ -840,6 +848,7 @@ impl VerificationCasesService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(MessageResponse {
             message: format!("Location submitted for {}", method),
         })

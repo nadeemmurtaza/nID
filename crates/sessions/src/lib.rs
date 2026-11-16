@@ -111,7 +111,7 @@ impl SessionsService {
 
     pub async fn get_status(&self, token: &str) -> Result<SessionStatusResponse> {
         let session = self.resolve(token).await?;
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
 
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&session.tenant_id)
@@ -143,6 +143,7 @@ impl SessionsService {
         .await
         .map_err(|_| anyhow!("Subject not found"))?;
 
+        conn.commit().await?;
         Ok(SessionStatusResponse {
             case_id: session.case_id,
             status: kase.status,
@@ -172,7 +173,7 @@ impl SessionsService {
 
     pub async fn submit_document(&self, token: &str, file: UploadedFile) -> Result<AcceptedResponse> {
         let session = self.resolve(token).await?;
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&session.tenant_id)
             .execute(&mut *conn)
@@ -233,12 +234,13 @@ impl SessionsService {
             "Document uploaded successfully"
         );
 
+        conn.commit().await?;
         Ok(AcceptedResponse { accepted: true })
     }
 
     pub async fn submit_liveness(&self, token: &str, files: Vec<UploadedFile>) -> Result<AcceptedResponse> {
         let session = self.resolve(token).await?;
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&session.tenant_id)
             .execute(&mut *conn)
@@ -286,6 +288,7 @@ impl SessionsService {
             "Liveness frames uploaded successfully"
         );
 
+        conn.commit().await?;
         Ok(AcceptedResponse { accepted: true })
     }
 
@@ -300,7 +303,7 @@ impl SessionsService {
         }
 
         let session = self.resolve(token).await?;
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&session.tenant_id)
             .execute(&mut *conn)
@@ -352,6 +355,7 @@ impl SessionsService {
             "Claim document uploaded successfully"
         );
 
+        conn.commit().await?;
         Ok(AcceptedResponse { accepted: true })
     }
 
@@ -413,7 +417,7 @@ impl SessionsService {
         payload: &serde_json::Value,
     ) -> Result<AcceptedResponse> {
         let session = self.resolve(token).await?;
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(&session.tenant_id)
             .execute(&mut *conn)
@@ -454,6 +458,7 @@ impl SessionsService {
             "Method submission — Temporal signaling not yet implemented"
         );
 
+        conn.commit().await?;
         Ok(AcceptedResponse { accepted: true })
     }
 }

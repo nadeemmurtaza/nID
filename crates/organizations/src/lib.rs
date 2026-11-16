@@ -100,7 +100,7 @@ impl OrganizationsService {
         api_key_id: &str,
         req: &CreateOrganizationRequest,
     ) -> Result<OrganizationResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
@@ -143,52 +143,58 @@ impl OrganizationsService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(org))
     }
 
     pub async fn list_all(&self, tenant_id: &str) -> Result<Vec<OrganizationResponse>> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
 
         let rows: Vec<OrganizationRow> = sqlx::query_as(
-            "SELECT id, tenant_id, subject_id, legal_name, registration_number, country_code, address, created_at, updated_at FROM organization ORDER BY created_at DESC",
+            "SELECT id, tenant_id, subject_id, legal_name, registration_number, country_code, address, created_at, updated_at FROM organization WHERE tenant_id = $1 ORDER BY created_at DESC",
         )
+        .bind(tenant_id)
         .fetch_all(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(rows.into_iter().map(Self::row_to_response).collect())
     }
 
     pub async fn get_by_id(&self, tenant_id: &str, org_id: &str) -> Result<OrganizationResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
 
         let org: OrganizationRow = sqlx::query_as(
-            "SELECT id, tenant_id, subject_id, legal_name, registration_number, country_code, address, created_at, updated_at FROM organization WHERE id = $1",
+            "SELECT id, tenant_id, subject_id, legal_name, registration_number, country_code, address, created_at, updated_at FROM organization WHERE id = $1 AND tenant_id = $2",
         )
         .bind(org_id)
+        .bind(tenant_id)
         .fetch_one(&mut *conn)
         .await
         .map_err(|_| anyhow!("Organization not found"))?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(org))
     }
 
     pub async fn list_memberships(&self, tenant_id: &str, org_id: &str) -> Result<Vec<MembershipResponse>> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
 
-        let exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM organization WHERE id = $1)")
+        let exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM organization WHERE id = $1 AND tenant_id = $2)")
             .bind(org_id)
+            .bind(tenant_id)
             .fetch_one(&mut *conn)
             .await?
             .get(0);
@@ -223,6 +229,7 @@ impl OrganizationsService {
             })
             .collect();
 
+        conn.commit().await?;
         Ok(memberships)
     }
 
@@ -233,14 +240,15 @@ impl OrganizationsService {
         phone: &str,
         role: &str,
     ) -> Result<MembershipResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
             .await?;
 
-        let exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM organization WHERE id = $1)")
+        let exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM organization WHERE id = $1 AND tenant_id = $2)")
             .bind(org_id)
+            .bind(tenant_id)
             .fetch_one(&mut *conn)
             .await?
             .get(0);
@@ -262,6 +270,7 @@ impl OrganizationsService {
         .fetch_one(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(MembershipResponse {
             id: membership.0,
             tenant_id: membership.1,
@@ -276,7 +285,7 @@ impl OrganizationsService {
     }
 
     pub async fn list_beneficial_owners(&self, tenant_id: &str, org_id: &str) -> Result<Vec<BeneficialOwnerResponse>> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.db.begin().await?;
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id)
             .execute(&mut *conn)
@@ -306,6 +315,7 @@ impl OrganizationsService {
             })
             .collect();
 
+        conn.commit().await?;
         Ok(owners)
     }
 
