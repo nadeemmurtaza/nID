@@ -1,6 +1,6 @@
 'use client';
 
-import { Skeleton } from '@newax/design-tokens/Skeleton';
+import { DataTable } from '@newax/design-tokens/DataTable';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
@@ -17,6 +17,7 @@ export default function TenantsPage() {
   const [tenants, setTenants] = useState<TenantListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
   const [platformSecret] = useState(() => getPlatformAdminSecret());
 
   useEffect(() => {
@@ -26,6 +27,8 @@ export default function TenantsPage() {
       return;
     }
 
+    setError('');
+    setLoading(true);
     listTenants(platformSecret)
       .then((data) => {
         setTenants(data);
@@ -35,7 +38,7 @@ export default function TenantsPage() {
         setError(err instanceof ApiError ? err.message : 'Failed to load tenants');
         setLoading(false);
       });
-  }, [platformSecret]);
+  }, [platformSecret, reload]);
 
   return (
     <>
@@ -47,60 +50,30 @@ export default function TenantsPage() {
         <div className="tab-header">
           <h1>All Tenants</h1>
           <Link href="/" className="primary-btn">
-            + Create Tenant
+            Create tenant
           </Link>
         </div>
 
-        {error && <div className="alert alert-error">{error}</div>}
-        {loading && <div aria-busy="true" aria-label="Loading tenants"><Skeleton count={3} /></div>}
-
-        {!loading && !error && (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Slug</th>
-                <th>Region</th>
-                <th>API Keys</th>
-                <th>Staff</th>
-                <th>Organizations</th>
-                <th>Cases</th>
-                <th>Webhook</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tenants.map((tenant) => (
-                <tr key={tenant.id}>
-                  <td>{tenant.name}</td>
-                  <td>{tenant.slug}</td>
-                  <td>{tenant.dataResidencyRegion}</td>
-                  <td>{tenant._count.apiKeys}</td>
-                  <td>{tenant._count.staff}</td>
-                  <td>{tenant._count.organizations}</td>
-                  <td>{tenant._count.cases}</td>
-                  <td>
-                    {tenant.webhookUrl ? (
-                      <span className="status-badge status-active">Configured</span>
-                    ) : (
-                      <span className="status-badge status-inactive">Not configured</span>
-                    )}
-                  </td>
-                  <td>{new Date(tenant.createdAt).toLocaleDateString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {!loading && !error && tenants.length === 0 && (
-          <div className="empty-state">
-            <p>No tenants found. Create your first tenant to get started.</p>
-            <Link href="/" className="primary-btn">
-              + Create Tenant
-            </Link>
-          </div>
-        )}
+        <DataTable<TenantListItem>
+          caption="All tenants"
+          rows={error ? null : loading ? null : tenants}
+          error={error}
+          onRetry={() => setReload((n) => n + 1)}
+          rowId={(t) => t.id}
+          filterLabel="Filter tenants"
+          empty={{ title: 'No tenants yet', hint: 'Create your first tenant to get started.', action: <Link href="/" className="primary-btn">Create tenant</Link> }}
+          columns={[
+            { key: 'name', header: 'Name', value: (t) => t.name, render: (t) => t.name },
+            { key: 'slug', header: 'Slug', value: (t) => t.slug, render: (t) => t.slug },
+            { key: 'region', header: 'Region', value: (t) => t.dataResidencyRegion, render: (t) => t.dataResidencyRegion },
+            { key: 'keys', header: 'API keys', numeric: true, value: (t) => t._count.apiKeys, render: (t) => t._count.apiKeys },
+            { key: 'staff', header: 'Staff', numeric: true, value: (t) => t._count.staff, render: (t) => t._count.staff },
+            { key: 'orgs', header: 'Organizations', numeric: true, value: (t) => t._count.organizations, render: (t) => t._count.organizations },
+            { key: 'cases', header: 'Cases', numeric: true, value: (t) => t._count.cases, render: (t) => t._count.cases },
+            { key: 'hook', header: 'Webhook', value: (t) => (t.webhookUrl ? 'Configured' : 'Not configured'), render: (t) => (t.webhookUrl ? 'Configured' : 'Not configured') },
+            { key: 'created', header: 'Created', value: (t) => t.createdAt, render: (t) => new Date(t.createdAt).toLocaleDateString() },
+          ]}
+        />
       </main>
     </>
   );

@@ -45,7 +45,7 @@ export default async function ProfilePage({ params }: PageProps) {
   return (
     <main className="page">
       {banner && (
-        <img className="banner-img" src={apiUrl(`/v1/profiles/${slug}/images/${banner.id}`)} alt="" />
+        <img className="banner-img" src={apiUrl(`/v1/profiles/${slug}/images/${banner.id}`)} alt={`${profile.displayName || slug} banner`} />
       )}
 
       <div className="hero">
@@ -221,8 +221,8 @@ export default async function ProfilePage({ params }: PageProps) {
         <section className="section">
           <h2>Gallery</h2>
           <div className="gallery-grid">
-            {gallery.map((img) => (
-              <img key={img.id} src={apiUrl(`/v1/profiles/${slug}/images/${img.id}`)} alt="" />
+            {gallery.map((img, i) => (
+              <img key={img.id} src={apiUrl(`/v1/profiles/${slug}/images/${img.id}`)} alt={`${profile.displayName || slug} gallery photo ${i + 1}`} />
             ))}
           </div>
         </section>

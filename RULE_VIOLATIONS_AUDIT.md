@@ -351,10 +351,12 @@ Added in the second round (same verification):
   party SDK disclosure (C5) says the vendor "may vary".
 - **Age** (C6): the terms say 16+ and no age step exists.
 - **Licensing** (C10): no licence record for the fonts and images in use.
-- **Alt text** (C16): gallery photos use `alt=""`.
-- **Keyboard and labels** (C18): upload inputs are unreachable by keyboard (a
-  `display:none` input inside a non-focusable label), the dashboard has 35
-  labels without `htmlFor`, and three inputs have no label.
+- **Alt text** (C16): gallery, banner and profile photos now carry descriptive
+  alt text built from the profile name ("Jane gallery photo 2"), and the file
+  inputs are keyboard reachable (visually hidden, label shows a focus ring), and
+  the dashboard labels are wired with `htmlFor` or a labelled group. Still
+  open: image records have no alt text field, so owners cannot describe what a
+  photo shows. That needs a schema change and an upload-form field.
 - **Fixed this round**: contrast (C17, measured and CI-checked), the consent
   banner (C3, now a real store, equal-weight buttons, in all four apps), and
   the deletion control (C8).
@@ -392,11 +394,10 @@ Fixed 2026-11-16 (checked in a browser by `scripts/ui-smoke-dashboard.js`,
 
 Still open:
 
-- **Forms outside the dashboard create flows** (login, profile-ui managers,
-  verify-ui) still use plain inputs; only the dashboard create and invite
-  forms use `Field`. The dashboard has about 20 labels without `htmlFor`
-  left in the access, departments and roles tabs, and the access and roles
-  tabs still use hand-written tables, not `DataTable`.
+- **Forms outside the dashboard** (login, profile-ui managers, verify-ui)
+  still use plain inputs, not `Field`; they are labelled but have no inline
+  validation. The Departments and Roles tabs are card lists, not tables, so
+  they have no filter or bulk actions.
 - **Not exercised in a browser**: the palette and table in profile-ui and
   verify-ui (they only got the 404, error page and small-screen rules).
 - **`UX_UI_RULES.md`**: literal durations instead of motion tokens in older

@@ -53,21 +53,21 @@ export function ImagesManager({ token, slug }: { token: string; slug: string }) 
       <div className="thumb-grid">
         {banners.map((img) => (
           <div className="thumb" key={img.id}>
-            <img src={apiUrl(`/v1/profiles/${slug}/images/${img.id}`)} alt="" />
+            <img src={apiUrl(`/v1/profiles/${slug}/images/${img.id}`)} alt={`Uploaded ${img.kind === 'BANNER' ? 'banner' : 'gallery photo'}`} />
             <button type="button" onClick={() => handleDelete(img.id)} aria-label="Delete image">
               <TrashIcon size={16} />
             </button>
           </div>
         ))}
       </div>
-      <label className="btn btn-sm btn-secondary" style={{ cursor: 'pointer', display: 'inline-flex' }}>
+      <label className="btn btn-sm btn-secondary file-pick" style={{ cursor: 'pointer', display: 'inline-flex' }}>
         {uploading === 'BANNER' ? 'Uploading…' : 'Upload banner'}
         <input
           type="file"
           accept="image/*"
           onChange={(e) => handleUpload('BANNER', e)}
           disabled={uploading !== null}
-          style={{ display: 'none' }}
+          className="sr-only"
         />
       </label>
 
@@ -76,21 +76,21 @@ export function ImagesManager({ token, slug }: { token: string; slug: string }) 
       <div className="thumb-grid">
         {gallery.map((img) => (
           <div className="thumb" key={img.id}>
-            <img src={apiUrl(`/v1/profiles/${slug}/images/${img.id}`)} alt="" />
+            <img src={apiUrl(`/v1/profiles/${slug}/images/${img.id}`)} alt={`Uploaded ${img.kind === 'BANNER' ? 'banner' : 'gallery photo'}`} />
             <button type="button" onClick={() => handleDelete(img.id)} aria-label="Delete image">
               <TrashIcon size={16} />
             </button>
           </div>
         ))}
       </div>
-      <label className="btn btn-sm btn-secondary" style={{ cursor: 'pointer', display: 'inline-flex' }}>
+      <label className="btn btn-sm btn-secondary file-pick" style={{ cursor: 'pointer', display: 'inline-flex' }}>
         {uploading === 'GALLERY' ? 'Uploading…' : 'Add gallery photo'}
         <input
           type="file"
           accept="image/*"
           onChange={(e) => handleUpload('GALLERY', e)}
           disabled={uploading !== null}
-          style={{ display: 'none' }}
+          className="sr-only"
         />
       </label>
       {error && <p className="error-text">{error}</p>}

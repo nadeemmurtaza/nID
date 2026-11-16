@@ -537,8 +537,8 @@ function SettingsTab({ credential }: { credential: string }) {
         <Field label="Webhook URL" type="url" value={webhookUrl} onChange={(val) => setWebhookUrl(val)} validate={v.url()} placeholder="https://your-app.com/webhooks/nid" hint="URL for receiving real-time tenant events (used by Communicator sync)" />
 
         <div className="form-group">
-          <label>Platform Admin Secret</label>
-          <input
+          <label htmlFor="f1">Platform Admin Secret</label>
+          <input id="f1"
             type="password"
             value={getPlatformAdminSecret() ?? ''}
             onChange={(e) => setPlatformAdminSecret(e.target.value)}
@@ -705,8 +705,8 @@ function CreateOrganizationForm({
         <Field label="Legal Name" value={legalName} onChange={(val) => setLegalName(val)} validate={v.required('Legal name')} placeholder="Acme Corporation Ltd." />
 
         <div className="form-group">
-          <label>Registration Number</label>
-          <input
+          <label htmlFor="f2">Registration Number</label>
+          <input id="f2"
             type="text"
             value={registrationNumber}
             onChange={(e) => setRegistrationNumber(e.target.value)}
@@ -812,8 +812,8 @@ function CreateTenantForm({
         <Field label="Slug" value={slug} onChange={(val) => setSlug(val.toLowerCase())} validate={v.slug()} placeholder="my-brand" hint="3-64 lowercase alphanumeric characters or hyphens" />
 
         <div className="form-group">
-          <label>Data Residency Region</label>
-          <input
+          <label htmlFor="f3">Data Residency Region</label>
+          <input id="f3"
             type="text"
             defaultValue="global"
             placeholder="global"
@@ -1192,8 +1192,8 @@ function CreateBrandForm({
 
       <form onSubmit={handleSubmit} className="create-tenant-form">
         <div className="form-group">
-          <label>Organization *</label>
-          <select
+          <label htmlFor="f4">Organization *</label>
+          <select id="f4"
             value={orgId}
             onChange={(e) => setOrgId(e.target.value)}
             required
@@ -1213,8 +1213,8 @@ function CreateBrandForm({
         <Field label="Slug" value={slug} onChange={(val) => setSlug(val)} validate={v.slug()} placeholder="my-clothing-brand" hint="URL-friendly identifier (auto-generated from name, editable)" />
 
         <div className="form-group">
-          <label>Description</label>
-          <input
+          <label htmlFor="f5">Description</label>
+          <input id="f5"
             type="text"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -1326,7 +1326,7 @@ function AccessTab({ credential }: { credential: string }) {
       <div className="tab-header">
         <h1>Access Management</h1>
         <button className="primary-btn" onClick={() => setShowForm(!showForm)}>
-          {showForm ? 'Cancel' : '+ Grant Access'}
+          {showForm ? 'Cancel' : 'Grant access'}
         </button>
       </div>
 
@@ -1337,8 +1337,8 @@ function AccessTab({ credential }: { credential: string }) {
         <form onSubmit={handleSubmit} className="create-tenant-form">
           <h3>Grant Access</h3>
           <div className="form-group">
-            <label>Account ID *</label>
-            <input
+            <label htmlFor="f6">Account ID *</label>
+            <input id="f6"
               type="text"
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
@@ -1348,8 +1348,8 @@ function AccessTab({ credential }: { credential: string }) {
             <small>The nID Account ID of the person to grant access to</small>
           </div>
           <div className="form-group">
-            <label>Access Type *</label>
-            <select value={accessType} onChange={(e) => setAccessType(e.target.value as any)}>
+            <label htmlFor="f7">Access Type *</label>
+            <select id="f7" value={accessType} onChange={(e) => setAccessType(e.target.value as any)}>
               <option value="MEMBER">Member: Basic access with role-defined permissions</option>
               <option value="ADMIN">Admin: Full access to entity and sub-entities</option>
               <option value="PARTNER">Partner: Percentage-based ownership share</option>
@@ -1358,8 +1358,8 @@ function AccessTab({ credential }: { credential: string }) {
           </div>
           {accessType === 'PARTNER' && (
             <div className="form-group">
-              <label>Partnership Percentage *</label>
-              <input
+              <label htmlFor="f8">Partnership Percentage *</label>
+              <input id="f8"
                 type="number"
                 min={1}
                 max={100}
@@ -1375,47 +1375,32 @@ function AccessTab({ credential }: { credential: string }) {
         </form>
       )}
 
-      <div className="data-table">
-        <table>
-          <thead>
-            <tr>
-              <th>Account</th>
-              <th>Type</th>
-              <th>Partnership %</th>
-              <th>Status</th>
-              <th>Granted</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {grants.map((grant) => (
-              <tr key={grant.id}>
-                <td>
-                  <div className="account-cell">
-                    <strong>{grant.accountPhone || grant.accountEmail || grant.accountId.slice(0, 8)}</strong>
-                  </div>
-                </td>
-                <td><span className={`badge badge-${grant.accessType.toLowerCase()}`}>{grant.accessType}</span></td>
-                <td>{grant.partnershipPercentage ? `${grant.partnershipPercentage}%` : 'None'}</td>
-                <td><span className={`badge badge-${grant.status.toLowerCase()}`}>{grant.status}</span></td>
-                <td>{new Date(grant.createdAt).toLocaleDateString()}</td>
-                <td>
-                  <button
-                    className="btn-danger"
-                    onClick={() => handleRevoke(grant.id)}
-                    disabled={grant.accessType === 'OWNER'}
-                  >
-                    Revoke
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {grants.length === 0 && (
-              <tr><td colSpan={6}>No access grants yet. Use "Grant Access" to add a member.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<AccessGrantRecord>
+        caption="Access grants"
+        rows={grants}
+        rowId={(g) => g.id}
+        filterLabel="Filter grants"
+        empty={{ title: 'No access grants yet', hint: 'Use Grant access to add a member.' }}
+        columns={[
+          { key: 'acct', header: 'Account', value: (g) => g.accountPhone || g.accountEmail || g.accountId, render: (g) => <strong>{g.accountPhone || g.accountEmail || g.accountId.slice(0, 8)}</strong> },
+          { key: 'type', header: 'Type', value: (g) => g.accessType, render: (g) => g.accessType },
+          { key: 'pct', header: 'Partnership %', numeric: true, value: (g) => g.partnershipPercentage ?? 0, render: (g) => (g.partnershipPercentage ? `${g.partnershipPercentage}%` : 'None') },
+          { key: 'status', header: 'Status', value: (g) => g.status, render: (g) => g.status },
+          { key: 'granted', header: 'Granted', value: (g) => g.createdAt, render: (g) => new Date(g.createdAt).toLocaleDateString() },
+        ]}
+        bulkActions={[{
+          label: 'Revoke',
+          destructive: true,
+          run: async (rows) => {
+            try { for (const g of rows.filter((r) => r.accessType !== 'OWNER')) await revokeAccessGrant(credential, tenant.id, g.id); setSuccess('Access revoked'); }
+            catch (e) { setError((e as Error).message); }
+            await loadGrants(tenant.id);
+          },
+        }]}
+        rowActions={(g) => (
+          <button className="btn-danger" onClick={() => handleRevoke(g.id)} disabled={g.accessType === 'OWNER'}>Revoke</button>
+        )}
+      />
     </div>
   );
 }
@@ -1504,8 +1489,8 @@ function DepartmentsTab({ credential }: { credential: string }) {
         <form onSubmit={handleSubmit} className="create-tenant-form">
           <h3>Create Department</h3>
           <div className="form-group">
-            <label>Department Name *</label>
-            <input
+            <label htmlFor="f9">Department Name *</label>
+            <input id="f9"
               type="text"
               value={name}
               onChange={(e) => {
@@ -1518,12 +1503,12 @@ function DepartmentsTab({ credential }: { credential: string }) {
           </div>
           <Field label="Slug" value={slug} onChange={(val) => setSlug(val)} validate={v.slug()} placeholder="finance" hint="URL-friendly identifier (auto-generated)" />
           <div className="form-group">
-            <label>Icon</label>
-            <input type="text" value={icon} onChange={(e) => setIcon(e.target.value)} placeholder="finance" />
+            <label htmlFor="f10">Icon</label>
+            <input id="f10" type="text" value={icon} onChange={(e) => setIcon(e.target.value)} placeholder="finance" />
           </div>
           <div className="form-group">
-            <label>Color</label>
-            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
+            <label htmlFor="f11">Color</label>
+            <input id="f11" type="color" value={color} onChange={(e) => setColor(e.target.value)} />
           </div>
           <button type="submit" className="primary-btn" disabled={creating || !name.trim()}>
             {creating ? 'Creating…' : 'Create Department'}
@@ -1677,13 +1662,13 @@ function RolesTab({ credential }: { credential: string }) {
           <h3>Create Custom Role</h3>
           <Field label="Role Name" value={name} onChange={(val) => setName(val)} validate={v.required('Name')} placeholder="Finance Manager" />
           <div className="form-group">
-            <label>Description</label>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Manages all finance-related operations" rows={2} />
+            <label htmlFor="f12">Description</label>
+            <textarea id="f12" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Manages all finance-related operations" rows={2} />
           </div>
 
           <div className="form-group">
-            <label>Permissions ({selectedPerms.length} selected)</label>
-            <div className="permission-tree">
+            <span className="form-label" id="perm-label">Permissions ({selectedPerms.length} selected)</span>
+            <div className="permission-tree" role="group" aria-labelledby="perm-label">
               {catalog.map(group => (
                 <div key={group.groupName} className="permission-group">
                   <button
@@ -1836,8 +1821,8 @@ function InvitationsTab({ credential }: { credential: string }) {
       <form onSubmit={handleSend} className="create-tenant-form">
         <h3>Send Invitation</h3>
         <div className="form-group">
-          <label>Invite Method</label>
-          <div className="radio-group">
+          <span className="form-label" id="invite-label">Invite method</span>
+          <div className="radio-group" role="radiogroup" aria-labelledby="invite-label">
             <label>
               <input
                 type="radio"
@@ -1862,8 +1847,8 @@ function InvitationsTab({ credential }: { credential: string }) {
           <Field label="Email Address" type="email" value={email} onChange={(val) => setEmail(val)} validate={v.email()} placeholder="user@example.com" />
         ) : (
           <div className="form-group">
-            <label>Username *</label>
-            <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="@username" required />
+            <label htmlFor="f13">Username *</label>
+            <input id="f13" type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="@username" required />
             <small>Share this form with the user, or have them provide their username</small>
           </div>
         )}

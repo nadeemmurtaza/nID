@@ -509,6 +509,7 @@ function UploadStep({
         <input
           ref={inputRef}
           type="file"
+          aria-label="Choose a file to upload"
           accept={accept}
           capture="environment"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
@@ -688,6 +689,7 @@ function TextReportStep({
       >
         <input
           type="text"
+          aria-label={placeholder || 'Your answer'}
           placeholder={placeholder}
           value={value}
           onChange={(e) => setValue(e.target.value)}

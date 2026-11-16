@@ -736,7 +736,8 @@ tbody tr:hover {
   margin-bottom: 16px;
 }
 
-.form-group label {
+.form-group label,
+.form-group .form-label {
   display: block;
   font-size: 13px;
   font-weight: 600;

@@ -343,6 +343,7 @@ function PhoneLoginForm({
       <form onSubmit={sendCode}>
         <input
           type="text"
+          aria-label="Phone number"
           inputMode="tel"
           placeholder="+1 555 123 4567"
           value={phone}
