@@ -94,6 +94,21 @@ pub struct AccessService {
 }
 
 impl AccessService {
+    /// Open a transaction with RLS context settings applied. They are
+    /// transaction-local (`set_config(.., true)`), so they must be set on the
+    /// transaction itself and are gone once it ends.
+    async fn scoped(&self, settings: &[(&str, &str)]) -> Result<sqlx::Transaction<'_, sqlx::Postgres>> {
+        let mut tx = self.db.begin().await?;
+        for (k, v) in settings {
+            sqlx::query("SELECT set_config($1, $2, true)")
+                .bind(*k)
+                .bind(*v)
+                .execute(&mut *tx)
+                .await?;
+        }
+        Ok(tx)
+    }
+
     pub fn new(db: PgPool) -> Self {
         Self { db }
     }
@@ -145,7 +160,7 @@ impl AccessService {
         tenant_id: &str,
         req: &CreateGrantRequest,
     ) -> Result<AccessGrantResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id)]).await?;
 
         self.verify_caller_is_owner_or_partner(&mut conn, caller_id, tenant_id)
             .await?;
@@ -225,6 +240,7 @@ impl AccessService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(Self::row_to_response(grant, target.phone, target.email))
     }
 

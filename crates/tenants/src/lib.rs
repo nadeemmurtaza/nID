@@ -118,12 +118,27 @@ pub struct TenantsService {
 }
 
 impl TenantsService {
+    /// Open a transaction with RLS context settings applied. They are
+    /// transaction-local (`set_config(.., true)`), so they must be set on the
+    /// transaction itself and are gone once it ends.
+    async fn scoped(&self, settings: &[(&str, &str)]) -> Result<sqlx::Transaction<'_, sqlx::Postgres>> {
+        let mut tx = self.db.begin().await?;
+        for (k, v) in settings {
+            sqlx::query("SELECT set_config($1, $2, true)")
+                .bind(*k)
+                .bind(*v)
+                .execute(&mut *tx)
+                .await?;
+        }
+        Ok(tx)
+    }
+
     pub fn new(db: PgPool) -> Self {
         Self { db }
     }
 
     pub async fn get_self(&self, tenant_id: &str, actor_type: &str) -> Result<TenantSelfResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id)]).await?;
         let tenant: TenantRow = sqlx::query_as(
             "SELECT id, name, slug, data_residency_region, webhook_url, billing_webhook_url, created_at, updated_at FROM tenant WHERE id = $1",
         )
@@ -146,7 +161,7 @@ impl TenantsService {
     }
 
     pub async fn get_memberships_for_account(&self, account_id: &str) -> Result<Vec<TenantMembership>> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.account_id", account_id)]).await?;
         let rows = sqlx::query(
             r#"
             SELECT t.id as tenant_id, t.name as tenant_name, t.slug as tenant_slug, m.role
@@ -286,7 +301,7 @@ impl TenantsService {
     }
 
     pub async fn list_all(&self) -> Result<Vec<TenantWithCounts>> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.platform_admin", "true")]).await?;
         let rows = sqlx::query(
             r#"
             SELECT t.id, t.name, t.slug, t.data_residency_region, t.webhook_url, t.billing_webhook_url,
@@ -322,7 +337,7 @@ impl TenantsService {
     }
 
     pub async fn get_by_id(&self, id: &str) -> Result<TenantWithCounts> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.platform_admin", "true")]).await?;
         let row = sqlx::query(
             r#"
             SELECT t.id, t.name, t.slug, t.data_residency_region, t.webhook_url, t.billing_webhook_url,
@@ -364,7 +379,7 @@ impl TenantsService {
         webhook_url: Option<Option<&str>>,
         billing_webhook_url: Option<Option<&str>>,
     ) -> Result<TenantResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.platform_admin", "true")]).await?;
 
         let _existing: TenantRow = sqlx::query_as(
             "SELECT id, name, slug, data_residency_region, webhook_url, billing_webhook_url, created_at, updated_at FROM tenant WHERE id = $1",
@@ -393,6 +408,7 @@ impl TenantsService {
         .fetch_one(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(TenantResponse {
             id: tenant.id,
             name: tenant.name,
@@ -411,7 +427,7 @@ impl TenantsService {
         scopes: Option<Vec<String>>,
         rate_limit: Option<i32>,
     ) -> Result<NewApiKeyResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id)]).await?;
 
         let exists: bool = sqlx::query("SELECT EXISTS(SELECT 1 FROM tenant WHERE id = $1)")
             .bind(tenant_id)
@@ -447,6 +463,7 @@ impl TenantsService {
         .execute(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(NewApiKeyResponse {
             prefix: key.prefix,
             plaintext: key.plaintext,
@@ -455,7 +472,7 @@ impl TenantsService {
     }
 
     pub async fn list_api_keys(&self, tenant_id: &str) -> Result<Vec<ApiKeyResponse>> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id)]).await?;
         let rows = sqlx::query(
             r#"
             SELECT id, key_prefix, scopes, rate_limit_per_minute, revoked_at, created_at
@@ -486,7 +503,7 @@ impl TenantsService {
     }
 
     pub async fn revoke_api_key(&self, tenant_id: &str, api_key_id: &str) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id)]).await?;
         sqlx::query(
             "UPDATE tenant_api_key SET revoked_at = NOW() WHERE id = $1 AND tenant_id = $2",
         )
@@ -494,6 +511,7 @@ impl TenantsService {
         .bind(tenant_id)
         .execute(&mut *conn)
         .await?;
+        conn.commit().await?;
         Ok(())
     }
 
@@ -503,7 +521,7 @@ impl TenantsService {
         account_id: &str,
         role: &str,
     ) -> Result<StaffMemberResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id)]).await?;
 
         let tenant_exists: bool =
             sqlx::query("SELECT EXISTS(SELECT 1 FROM tenant WHERE id = $1)")
@@ -549,6 +567,7 @@ impl TenantsService {
         .await?
         .get(0);
 
+        conn.commit().await?;
         Ok(StaffMemberResponse {
             id: membership_id,
             account_id: account_id.to_string(),
@@ -559,7 +578,7 @@ impl TenantsService {
     }
 
     pub async fn list_staff(&self, tenant_id: &str) -> Result<Vec<StaffMemberResponse>> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id)]).await?;
         let rows = sqlx::query(
             r#"
             SELECT m.id, m.account_id, m.role, a.phone, a.phone_verified_at
@@ -587,7 +606,7 @@ impl TenantsService {
     }
 
     pub async fn remove_staff(&self, tenant_id: &str, account_id: &str) -> Result<()> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.tenant_id", tenant_id)]).await?;
         sqlx::query(
             "DELETE FROM tenant_staff_membership WHERE tenant_id = $1 AND account_id = $2",
         )
@@ -595,6 +614,7 @@ impl TenantsService {
         .bind(account_id)
         .execute(&mut *conn)
         .await?;
+        conn.commit().await?;
         Ok(())
     }
 }

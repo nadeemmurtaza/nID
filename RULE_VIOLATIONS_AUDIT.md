@@ -125,118 +125,111 @@ consent banner that gates nothing, skeleton components nothing
 imports, legal pages describing a different product). Each is
 restated below with its real status.
 
-### Launch blockers: security and core function
+### Fixed 2026-11-16 (each verified live by `scripts/e2e-smoke.sh`, 30 checks, also from an empty database)
 
-1. **Row-level security does not apply to reads** (S2, S19). All 60
-   snake_case compat views in
-   `crates/db-schema/migrations/20261115000000_baseline_from_prisma.sql`
-   are owned by superuser `nid` and none is `security_invoker`, so a
-   read through a view runs with the owner's rights. LIVE: as
-   `nid_app` with no tenant context, or with another tenant's,
-   `"Subject"` returns 0 rows and `subject` returns the other
-   tenant's row. Queries with no tenant predicate therefore read
-   across tenants: `crates/verification_cases/src/lib.rs:373-383`
-   (latest 100 cases with subject name, email and phone), `:447`,
-   `:518`, `:544`; `crates/subjects/src/lib.rs:260`;
-   `crates/organizations/src/lib.rs:157`, `:173`. Separately,
-   `AccessGrant`, `RoleAssignment`, `Department`, `Invitation` and
-   `Brand` have no RLS enabled at all. Predates the SQLx cutover (the
-   views came from Prisma migration `20261114160000`).
-2. **Tenant context is set outside a transaction in three crates**
-   (S2, `MODULE_SPLIT_PLAYBOOK.md` §5.2). `crates/organizations` (6
-   sites), `crates/sessions` (5) and `crates/verification_cases` (9)
-   call `set_config('app.tenant_id', $1, true)` on a bare
-   `acquire()`. The pre-split code used `begin()` (`git show
-   4ff2241^`). LIVE: the setting is gone on the next statement and
-   the insert fails with "new row violates row-level security
-   policy". Writes do go through RLS (the view triggers run as the
-   caller), so creating organizations, verification sessions and
-   verification cases cannot succeed as `nid_app`.
-3. **A new tenant cannot obtain a credential.** LIVE: `POST
-   /v1/tenants` mints no API key, and every API-key and staff route
-   requires an existing API key (`modules/tenants/handlers.rs`,
-   `modules/tenant_staff/handlers.rs`). The create response returns
-   the webhook secret as both `webhookSecret` and
-   `billingWebhookSecret`, never returns the real billing secret,
-   and returns empty `name`, `slug`, `dataResidencyRegion` and
-   `createdAt` (`services/tenants/src/main.rs:84`,
-   `modules/tenants/service.rs:79-91`). Regression from the batch
-   split.
-4. **Uploaded files are discarded** (S18). `crates/sessions/src/lib.rs:194-214`
-   and `crates/profile_content/src/lib.rs:624-657` insert a row with
-   an invented URL; no crate or service depends on `nid-storage`
-   (the pre-split sessions code had six storage calls). Identity
-   documents and liveness captures return `accepted` and are lost.
-   `core/upload.rs:44-49` also trusts the client-supplied MIME type.
-5. **OAuth is not a working security boundary** (S3, S4).
-   `crates/oauth/src/lib.rs:150` compares the raw client secret to
-   `client_secret_hash`; `:146` ignores `redirect_uri` at token
-   exchange; `:184` issues `{account_id}_{uuid}` as the access
-   token, never stored, so it cannot be verified and it leaks the
-   account id. Reported by the read pass and not re-verified: poll
-   token and auth code stored unhashed, and unauthenticated `/claim`
-   returning the code. Pre-existing, not caused by the split.
-6. **Login OTP has no production path** (S12).
-   `services/accounts/src/main.rs:151` defaults `OTP_SMS_DEV_MODE`
-   to true. Dev mode logs the code with the phone number (LIVE);
-   non-dev mode errors because no SMS vendor exists
-   (`crates/accounts/src/lib.rs:104-110`). Email verification reuses
-   the same flag.
-7. **The 17 services are open on the network** (S9,
-   `COMMUNICATION.md`). All bind `0.0.0.0` in plaintext with no
-   authentication and trust the `tenant_id` and `account_id` in the
-   request. All fall back to the superuser `DATABASE_URL` when
-   `APP_DATABASE_URL` is unset.
-8. **Errors leak internals and lose their status** (S12). No module
-   maps gRPC status codes. LIVE: a public profile that does not
-   exist returns 500 with the raw tonic status and metadata in the
-   body; raw database error text reaches clients
-   (`modules/accounts/handlers.rs:129-134`, the same pattern in about
-   18 handler files).
-9. **`DELETE /v1/accounts/me` deletes nothing** (C8).
-   `modules/accounts/service.rs:136-146` revokes sessions, writes one
-   log line and returns 204. The request is not persisted, and no UI
-   calls the route.
-10. **Audit trail is partial and editable** (S20). `AuditService` is
-    constructed in `main.rs` and never called; the tenants, roles,
-    departments, invitations, tenant-staff and accounts crates write
-    no audit rows; `nid_app` holds UPDATE and DELETE on the audit
-    log (`20261115000001_grant_nid_app.sql`, reproducing Prisma's
-    blanket grant).
-11. **API-key scopes and `rate_limit_per_minute` are stored and
-    never enforced** (S4). Any key can do everything, including mint
-    more keys.
-12. **No input validation** (S6). The `validator` crate is unused.
-    Unauthenticated contact messages have no length or format check
-    (`crates/profile_content/src/lib.rs:783-790`); custom-link URLs
-    have no scheme check (`:379-386`), so a `javascript:` link can be
-    stored and served on a public profile.
-13. **Nothing gates a merge** (S13, S16). The only workflow is
-    `.github/workflows/qodo-review.yml`, paused for billing. No
-    build, test, Dependabot, CodeQL or Semgrep. PRs #11 and #12 were
-    merged with no review.
-14. **Secrets at rest and in the browser.** Tenant webhook secrets
-    are stored in `webhookSecretPlaintext` /
-    `billingWebhookSecretPlaintext`; session tokens are kept in
-    `localStorage` (`apps/login-ui/lib/api.ts:32`).
+- **Tenant isolation on reads** (S2, S19). The compat views ran with the
+  superuser owner's rights, so reads skipped RLS. They are now
+  `security_invoker`. Because that bypass was accidental and many paths
+  depended on it, the legitimate cross-tenant paths got explicit
+  policies (`20261116000003`): platform admin (`app.platform_admin`)
+  and account-owned records (`app.account_id`). About 20 functions in
+  `tenants`, `tenant-staff`, `account_verification`, `organizations` and
+  `access` now open a context transaction. The `Organization` table has
+  a deliberate `USING (true)` lookup policy, so its queries also filter
+  by `tenant_id` explicitly.
+- **Tenant context outside a transaction** in `organizations`,
+  `sessions` and `verification_cases` (S2). Now transactional with
+  commits, so those writes pass RLS.
+- **New tenants could not authenticate.** Tenant create now picks its id
+  first, sets the RLS context, mints the first API key and returns the
+  real name, slug, secrets and `createdAt`.
+- **OAuth** (S3, S4). Poll token and code hashed, code issued once at
+  claim time, `redirect_uri` matched exactly against the client's
+  registered URIs and bound to the code, client secret compared by
+  hash, 10-minute expiry, and the access token is a real
+  `account_session`. Also fixed a foreign key that made every login
+  request fail (the public client id was bound instead of the row id).
+- **Uploads** (S18). Verification documents, liveness frames and claim
+  documents are written to storage (the pre-split code had the same
+  `TODO`, so this was never working, not a regression). File type comes
+  from leading bytes (`nid_storage::sniff_content_type`), not the client
+  MIME type. Profile photo and gallery images were writing columns and
+  an enum value that do not exist; now aligned with the schema.
+- **Errors leaked gRPC and SQL text and lost their status** (S12). One
+  classifier (`core::error::http_error`) gives 400/403/404/409/501 for
+  domain errors and a generic 500 for infrastructure.
+- **`DELETE /v1/accounts/me`** (C8) now erases the account: the schema
+  cascades its own data and nulls the tenant-owned references.
+- **Services** (S9): bind `127.0.0.1` by default (`BIND_ADDR` to
+  override), require `APP_DATABASE_URL` (no superuser fallback), 5 s DB
+  acquire timeout, dev mode defaults off.
+- **Audit trail** (S20): API-key mint and revoke, staff add and remove,
+  role create, update, delete, assign and unassign, and tenant create
+  and update are recorded. The request-serving role can no longer
+  UPDATE or DELETE the log.
+- **Input validation** (S6), profile content only: http(s)-only link
+  URLs, length limits and an email check on the public contact form.
+- **Health check** (P15): `/health` queries Postgres and returns 503
+  when it is down.
+- **CI and scanning** (S13, S16): build, test and `cargo audit` on every
+  PR, Dependabot (cargo, npm, actions) and CodeQL for the TypeScript
+  apps. The workflows themselves have not run on GitHub yet; the same
+  commands pass locally. Two `cargo audit` advisories are ignored with
+  the reason recorded in `.cargo/audit.toml` (sqlx's sqlite and mysql
+  drivers are in the lockfile but not compiled).
+- **Rate limiting** (P7): the quota was one request per 10 seconds
+  (`per_second(10)` sets an interval); now 10 per second, burst 30.
+
+### Still open: security and core function
+
+1. **No RLS on** `AccessGrant`, `RoleAssignment`, `Department`,
+   `Invitation` and `Brand` (S2); they rely on application predicates
+   only. Other crates not exercised by the smoke test (`roles`,
+   `departments`, `invitations`, `brands`, `booking`) were converted by
+   a static scan, not tested live; run them before relying on them.
+2. **Production login codes** (S12): there is no SMS vendor. With dev
+   mode off (the new default) OTP login returns an error; with it on the
+   code is logged next to the phone number.
+3. **Services have no authentication or TLS** (S9). Loopback binding
+   makes that safe only on a single host; on a network they trust
+   whatever `tenant_id` and `account_id` the caller sends.
+4. **Sessions uploads are untested live.** They compile and use the same
+   `store_file` path as the profile images, but verification-session
+   document and liveness submission was not exercised end to end.
+   Stored images are not served back as bytes (the public photo
+   endpoints return a key); a bytes endpoint is new API surface.
+5. **Self-service verification cases** (`POST
+   /v1/accounts/me/verification/cases`) answer 501. They filed cases
+   under a tenant id `'self'` that never existed and with no policy;
+   what policy a person verifying themselves should get is a product
+   decision.
+6. **API-key scopes and `rate_limit_per_minute`** are stored and never
+   enforced (S4). Any key can do everything, including mint more keys.
+7. **Validation outside profile content** (S6): the `validator` crate is
+   unused everywhere else.
+8. **Audit coverage** (S20): departments, invitations, access grants,
+   brands and booking changes are not audited; deletion of an account
+   is logged to the application log only.
+9. **Secrets at rest and in the browser**: tenant webhook secrets are in
+   `webhookSecretPlaintext` columns; session tokens are in
+   `localStorage` (`apps/login-ui/lib/api.ts:32`).
 
 ### Production readiness
 
 - **Rate limiting** (P7, S5): partial. Per peer IP only, so behind a
   proxy every client shares one bucket; no per-user limit; state is
   in-process, so each replica counts separately; `/health` is
-  limited too; 429 responses carry no security headers. Fixed
-  2026-11-16: the quota was one request per 10 seconds
-  (`per_second(10)` sets an interval), LIVE 147 of 155 probe
-  requests got 429; now 10 per second with a burst of 30.
-- **Health checks** (P15): `modules/health.rs:17` returns a static
-  "ok" without touching the database; the services have none.
+  limited too; 429 responses carry no security headers. (The quota
+  itself is fixed, see above.)
+- **Health checks** (P15): the API checks Postgres; the 17 services
+  have no health endpoint.
 - **Timeouts, retries, circuit breaker** (P16, P17): 141 call sites
   open a new plaintext HTTP/2 connection per request with no
   timeout or retry; one slow service hangs API requests.
-- **Pooling** (P10): partial. The API pool is configured; each
-  service uses `max_connections(5)` with no timeouts, and the total
-  (17 x 5 + 10 + 1 = 96) sits against Postgres's default of 100.
+- **Pooling** (P10): partial. The API pool is configured and the
+  services now have a 5 s acquire timeout, but each uses
+  `max_connections(5)` and the total (17 x 5 + 10 + 1 = 96) sits
+  against Postgres's default of 100.
 - **Pagination** (P13): no page parameters anywhere in `modules/`
   (`crates/tenants/src/lib.rs:273-279`).
 - **Not present**: Redis or any cache (P6), a job queue or Temporal
@@ -250,9 +243,10 @@ restated below with its real status.
 
 - **Batch split commit `4ff2241`** broke the playbook's
   one-module-per-commit rule (9 modules, 78 files), and is the source
-  of blockers 2, 3 and 4. It also committed a binary file `null` at
-  the repo root and `allowBuilds: ... "set this to true or false"`
-  placeholders in `pnpm-workspace.yaml`.
+  of the lost transactions and the lossy tenant-create response (both
+  fixed). It also committed a binary file `null` at the repo root and
+  `allowBuilds: ... "set this to true or false"` placeholders in
+  `pnpm-workspace.yaml` (both still there).
 - **"No direct cross-module DB access"** (`CONVENTIONS.md` §3):
   violated. `account` is queried from 8 crates, `subject` from 6,
   `verification_case` from 5, `access_grant` from 4. The playbook
@@ -313,7 +307,7 @@ restated below with its real status.
   `support@newax.com` appears only on these two pages.
 - **Also violated**: `fullName` collected and never sent (C4); SDK
   disclosure says the vendor "may vary" (C5); Terms say 16+ and no
-  age step exists (C6); no deletion path in any UI (C8); no licence
+  age step exists (C6); the deletion endpoint now works but no UI calls it (C8); no licence
   record for Inter or `lucide-animated` (C10); gallery photos use
   `alt=""` (C16); upload inputs are unreachable by keyboard, the
   dashboard has 35 labels and no `htmlFor` (C18).

@@ -152,6 +152,15 @@ pub fn http_error(err: anyhow::Error) -> (axum::http::StatusCode, axum::Json<ser
         .iter()
         .any(|k| lower.contains(k));
 
+    // A value outside a Postgres enum is bad client input, not a server fault.
+    if lower.contains("invalid input value for enum") {
+        return (StatusCode::BAD_REQUEST, axum::Json(serde_json::json!({ "message": "One of the submitted values is not allowed" })));
+    }
+
+    if lower.contains("not available yet") {
+        return (StatusCode::NOT_IMPLEMENTED, axum::Json(serde_json::json!({ "message": msg })));
+    }
+
     let status = if infra {
         StatusCode::INTERNAL_SERVER_ERROR
     } else {
@@ -161,9 +170,9 @@ pub fn http_error(err: anyhow::Error) -> (axum::http::StatusCode, axum::Json<ser
             "InvalidArgument" | "FailedPrecondition" | "OutOfRange" => StatusCode::BAD_REQUEST,
             "PermissionDenied" => StatusCode::FORBIDDEN,
             "Unauthenticated" => StatusCode::UNAUTHORIZED,
-            _ if lower.contains("not found") || lower.contains("no published profile") => StatusCode::NOT_FOUND,
+            _ if lower.contains("not found") || lower.contains("no subject found") || lower.contains("no published profile") => StatusCode::NOT_FOUND,
             _ if lower.contains("already exists") || lower.contains("already ") => StatusCode::CONFLICT,
-            _ if lower.contains("not allowed") || lower.contains("not authorized") || lower.contains("forbidden") || lower.contains("not staff") => StatusCode::FORBIDDEN,
+            _ if lower.contains("not allowed") || lower.contains("not authorized") || lower.contains("forbidden") || lower.contains("not staff") || lower.contains("do not have access") => StatusCode::FORBIDDEN,
             _ if lower.contains("must ") || lower.contains("invalid") || lower.contains("required") || lower.contains("not registered") || lower.contains("unsupported") || lower.contains("at most") || lower.contains("not accepting") || lower.contains("not approved") || lower.contains("expired") => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }

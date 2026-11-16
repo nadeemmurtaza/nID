@@ -4,8 +4,11 @@
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::Json;
+use axum::{Extension, Json};
 use std::sync::Arc;
+
+use crate::core::audit::{log_admin_action, AuditActorType};
+use crate::core::db::DbPool;
 
 use crate::core::auth::session::AccountSession;
 use crate::core::config::AppEnv;
@@ -30,6 +33,7 @@ pub struct RolesQuery {
 /// POST /v1/roles
 pub async fn create(
     account: AccountSession,
+    Extension(db): Extension<DbPool>,
     Query(query): Query<RolesQuery>,
     State(state): State<Arc<RolesState>>,
     Json(req): Json<CreateRoleRequest>,
@@ -37,6 +41,7 @@ pub async fn create(
     let role = state.service.create_role(&account.id, &query.tenant_id, &req)
         .await
         .map_err(internal_error)?;
+    log_admin_action(&db, &query.tenant_id, AuditActorType::Account, &account.id, "role.create", serde_json::json!({ "roleId": role.id })).await;
     Ok(Json(role))
 }
 
@@ -68,6 +73,7 @@ pub async fn get(
 /// PATCH /v1/roles/:id
 pub async fn update(
     account: AccountSession,
+    Extension(db): Extension<DbPool>,
     Path(id): Path<String>,
     Query(query): Query<RolesQuery>,
     State(state): State<Arc<RolesState>>,
@@ -76,12 +82,14 @@ pub async fn update(
     let role = state.service.update_role(&account.id, &query.tenant_id, &id, &req)
         .await
         .map_err(not_found)?;
+    log_admin_action(&db, &query.tenant_id, AuditActorType::Account, &account.id, "role.update", serde_json::json!({ "roleId": id })).await;
     Ok(Json(role))
 }
 
 /// DELETE /v1/roles/:id
 pub async fn delete(
     account: AccountSession,
+    Extension(db): Extension<DbPool>,
     Path(id): Path<String>,
     Query(query): Query<RolesQuery>,
     State(state): State<Arc<RolesState>>,
@@ -89,6 +97,7 @@ pub async fn delete(
     state.service.delete_role(&account.id, &query.tenant_id, &id)
         .await
         .map_err(not_found)?;
+    log_admin_action(&db, &query.tenant_id, AuditActorType::Account, &account.id, "role.delete", serde_json::json!({ "roleId": id })).await;
     Ok(Json(MessageResponse {
         message: "Role deleted.".to_string(),
     }))
@@ -97,6 +106,7 @@ pub async fn delete(
 /// POST /v1/roles/:id/assign
 pub async fn assign(
     account: AccountSession,
+    Extension(db): Extension<DbPool>,
     Path(id): Path<String>,
     Query(query): Query<RolesQuery>,
     State(state): State<Arc<RolesState>>,
@@ -105,12 +115,14 @@ pub async fn assign(
     let assignment = state.service.assign_role(&account.id, &query.tenant_id, &id, &req)
         .await
         .map_err(internal_error)?;
+    log_admin_action(&db, &query.tenant_id, AuditActorType::Account, &account.id, "role.assign", serde_json::json!({ "roleId": id, "targetAccountId": req.account_id })).await;
     Ok(Json(assignment))
 }
 
 /// DELETE /v1/roles/:id/assign/:accountId
 pub async fn remove_assignment(
     account: AccountSession,
+    Extension(db): Extension<DbPool>,
     Path((id, target_account_id)): Path<(String, String)>,
     Query(query): Query<RolesQuery>,
     State(state): State<Arc<RolesState>>,
@@ -118,6 +130,7 @@ pub async fn remove_assignment(
     state.service.remove_role_assignment(&account.id, &query.tenant_id, &id, &target_account_id)
         .await
         .map_err(not_found)?;
+    log_admin_action(&db, &query.tenant_id, AuditActorType::Account, &account.id, "role.unassign", serde_json::json!({ "roleId": id, "targetAccountId": target_account_id })).await;
     Ok(Json(MessageResponse {
         message: "Role assignment removed.".to_string(),
     }))

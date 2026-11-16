@@ -5,8 +5,7 @@
 //! rather than nID's `core::db::DbPool` wrapper.
 
 use anyhow::{anyhow, Result};
-use sqlx::{FromRow, PgPool, Row};
-use uuid::Uuid;
+use sqlx::{FromRow, PgPool};
 
 /// Only http(s) links may be stored: these URLs are rendered as hrefs on
 /// public profiles, so `javascript:` and `data:` URLs would be stored XSS.

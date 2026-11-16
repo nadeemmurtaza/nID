@@ -1341,6 +1341,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "nid-shared-types",
  "sqlx",
  "uuid",
 ]
@@ -1378,6 +1379,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "nid-storage",
  "sqlx",
  "tracing",
  "uuid",
@@ -1410,6 +1412,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "nid-shared-types",
+ "nid-storage",
  "serde_json",
  "sqlx",
  "tracing",
@@ -2708,6 +2711,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-profile-content",
+ "nid-storage",
  "prost",
  "sqlx",
  "tokio",
@@ -2741,6 +2745,7 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "newax-sessions",
+ "nid-storage",
  "prost",
  "sqlx",
  "tokio",

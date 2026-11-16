@@ -5,7 +5,7 @@
 
 use anyhow::{anyhow, Result};
 use nid_shared_types::sha256_hex;
-use sqlx::{FromRow, PgPool, Row};
+use sqlx::{FromRow, PgPool};
 use tracing::info;
 
 const CLAIM_DOCUMENT_METHODS: &[&str] =

@@ -76,6 +76,21 @@ pub struct OrganizationsService {
 }
 
 impl OrganizationsService {
+    /// Open a transaction with RLS context settings applied. They are
+    /// transaction-local (`set_config(.., true)`), so they must be set on the
+    /// transaction itself and are gone once it ends.
+    async fn scoped(&self, settings: &[(&str, &str)]) -> Result<sqlx::Transaction<'_, sqlx::Postgres>> {
+        let mut tx = self.db.begin().await?;
+        for (k, v) in settings {
+            sqlx::query("SELECT set_config($1, $2, true)")
+                .bind(*k)
+                .bind(*v)
+                .execute(&mut *tx)
+                .await?;
+        }
+        Ok(tx)
+    }
+
     pub fn new(db: PgPool) -> Self {
         Self { db }
     }
@@ -349,7 +364,7 @@ impl OrganizationsService {
     }
 
     pub async fn list_my_memberships(&self, account_id: &str) -> Result<Vec<OrganizationResponse>> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.account_id", account_id)]).await?;
 
         let subject_id: Option<String> = sqlx::query_scalar(
             "SELECT id FROM subject WHERE account_id = $1 LIMIT 1",
@@ -358,7 +373,10 @@ impl OrganizationsService {
         .fetch_optional(&mut *conn)
         .await?;
 
-        let subject_id = subject_id.ok_or_else(|| anyhow!("No subject found for account"))?;
+        let Some(subject_id) = subject_id else {
+            // No personal subject yet means no memberships or invites, not an error.
+            return Ok(Vec::new());
+        };
 
         let org_ids: Vec<String> = sqlx::query_scalar(
             "SELECT organization_id FROM organization_membership
@@ -386,7 +404,7 @@ impl OrganizationsService {
     }
 
     pub async fn list_my_invites(&self, account_id: &str) -> Result<Vec<MembershipResponse>> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.account_id", account_id)]).await?;
 
         let subject_id: Option<String> = sqlx::query_scalar(
             "SELECT id FROM subject WHERE account_id = $1 LIMIT 1",
@@ -395,7 +413,10 @@ impl OrganizationsService {
         .fetch_optional(&mut *conn)
         .await?;
 
-        let subject_id = subject_id.ok_or_else(|| anyhow!("No subject found for account"))?;
+        let Some(subject_id) = subject_id else {
+            // No personal subject yet means no memberships or invites, not an error.
+            return Ok(Vec::new());
+        };
 
         let rows = sqlx::query(
             "SELECT id, tenant_id, organization_id, subject_id, role, status, phone, account_id, created_at
@@ -431,7 +452,7 @@ impl OrganizationsService {
         membership_id: &str,
         response: &str,
     ) -> Result<MembershipResponse> {
-        let mut conn = self.db.acquire().await?;
+        let mut conn = self.scoped(&[("app.account_id", account_id)]).await?;
 
         let subject_id: Option<String> = sqlx::query_scalar(
             "SELECT id FROM subject WHERE account_id = $1 LIMIT 1",
@@ -442,8 +463,8 @@ impl OrganizationsService {
 
         let subject_id = subject_id.ok_or_else(|| anyhow!("No subject found for account"))?;
 
-        let current_status: String = sqlx::query_scalar(
-            "SELECT status FROM organization_membership WHERE id = $1",
+        let (current_status, membership_tenant): (String, String) = sqlx::query_as(
+            "SELECT status, tenant_id FROM organization_membership WHERE id = $1",
         )
         .bind(membership_id)
         .fetch_optional(&mut *conn)
@@ -453,6 +474,13 @@ impl OrganizationsService {
         if current_status != "PENDING" {
             return Err(anyhow!("Invite is not pending"));
         }
+
+        // The invite belongs to another tenant; the write policy needs that
+        // tenant's context, which the invited account learns only from the row.
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(&membership_tenant)
+            .execute(&mut *conn)
+            .await?;
 
         let membership: (String, String, String, String, String, String, Option<String>, Option<String>, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
             "UPDATE organization_membership
@@ -467,6 +495,7 @@ impl OrganizationsService {
         .fetch_one(&mut *conn)
         .await?;
 
+        conn.commit().await?;
         Ok(MembershipResponse {
             id: membership.0,
             tenant_id: membership.1,
