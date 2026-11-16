@@ -178,7 +178,9 @@ fn build_router(state: AppState) -> Router {
             // peer IP; not yet implemented -- this covers the per-IP half.
             let config = std::sync::Arc::new(
                 GovernorConfigBuilder::default()
-                    .per_second(10)
+                    // The builder takes the replenish *interval*, not a rate:
+                    // per_second(10) would mean one request per 10 seconds.
+                    .per_millisecond(100)
                     .burst_size(30)
                     .finish()
                     .expect("valid governor rate-limit config"),
@@ -205,6 +207,8 @@ fn build_cors_layer(env: &AppEnv) -> CorsLayer {
             axum::http::header::AUTHORIZATION,
             axum::http::header::CONTENT_TYPE,
             axum::http::header::ACCEPT,
+            // core/auth/tenant_actor.rs tells multi-tenant staff to send this.
+            HeaderName::from_static("x-tenant-id"),
         ])
         .allow_credentials(true)
 }
