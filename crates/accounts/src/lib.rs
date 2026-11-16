@@ -4,6 +4,8 @@
 //! CONVENTIONS.md's crates/services split. Takes a plain `sqlx::PgPool`
 //! rather than nID's `core::db::DbPool` wrapper.
 
+pub mod sms;
+
 use anyhow::{anyhow, Result};
 use chrono::Utc;
 use nid_shared_types::{generate_session_token, sha256_hex};
@@ -101,14 +103,14 @@ impl AccountsService {
         .execute(&self.db)
         .await?;
 
-        if !otp_sms_dev_mode {
-            return Err(anyhow!(
-                "Account OTP delivery has no production SMS vendor wired up yet"
-            ));
+        if otp_sms_dev_mode {
+            info!("[accounts:dev] would send login code {} to {}", code, phone);
+            return Ok(());
         }
-
-        info!("[accounts:dev] would send login code {} to {}", code, phone);
-        Ok(())
+        sms::SmsConfig::from_env()?
+            .send(phone, &format!("Your nID login code is {code}. It expires in {OTP_TTL_MINUTES} minutes."))
+            .await
+    
     }
 
     pub async fn verify_otp(&self, phone: &str, code: &str) -> Result<VerifyOtpResponse> {
