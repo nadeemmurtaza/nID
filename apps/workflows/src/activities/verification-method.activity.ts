@@ -8,6 +8,7 @@ import {
 } from '@nid/verification-providers';
 import { LocalStorageDriver } from '@nid/storage';
 import { signWebhookPayload } from '@nid/shared-types';
+import { secretBox, webhookContext } from '@nid/shared-types';
 
 /**
  * Activities do I/O; workflows don't (Temporal workflows run in a
@@ -410,8 +411,8 @@ export async function resolveCaseActivity(input: ResolveCaseActivityInput): Prom
     return tx.tenant.findUnique({ where: { id: input.tenantId } });
   });
 
-  if (tenant?.webhookUrl && tenant.webhookSecretPlaintext) {
-    await deliverWebhook(tenant.webhookUrl, tenant.webhookSecretPlaintext, {
+  if (tenant?.webhookUrl && tenant.webhookSecretEnc) {
+    await deliverWebhook(tenant.webhookUrl, secretBox().decrypt(webhookContext(tenant.id), tenant.webhookSecretEnc), {
       caseId: input.caseId,
       tenantId: input.tenantId,
       subjectId: input.subjectId,

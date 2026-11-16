@@ -29,11 +29,7 @@ pub struct UpdateTenantRequest {
     #[serde(default)]
     pub webhook_url: Option<Option<String>>,
     #[serde(default)]
-    pub webhook_secret_plaintext: Option<Option<String>>,
-    #[serde(default)]
     pub billing_webhook_url: Option<Option<String>>,
-    #[serde(default)]
-    pub billing_webhook_secret_plaintext: Option<Option<String>>,
 }
 
 /// Request body for POST /v1/tenants/:id/api-keys

@@ -31,6 +31,12 @@ echo "== bootstrap: two tenants, each gets a first API key"
 A=$(mk e2e-a); B=$(mk e2e-b)
 TA=$(echo "$A"|j id); KA=$(echo "$A"|j apiKey); KB=$(echo "$B"|j apiKey)
 [ -n "$KA" ] && [ -n "$KB" ] && ok "tenant create returns an API key" a a || ok "tenant create returns an API key" missing a
+WS=$(echo "$A"|j webhookSecret)
+ok "tenant create returns the webhook secret once" "$([ -n "$WS" ] && echo y)" y
+STORED=$(psql "$DB" -tAc "select \"webhookSecretEnc\" from \"Tenant\" where id='$TA'")
+ok "webhook secret is stored as v1 ciphertext" "$(case "$STORED" in v1.*) echo y;; esac)" y
+ok "stored value does not contain the secret" "$(case "$STORED" in *"$WS"*) echo leak;; *) echo y;; esac)" y
+ok "plaintext webhook columns are gone" "$(psql "$DB" -tAc "select count(*) from information_schema.columns where table_name='Tenant' and column_name ilike '%SecretPlaintext'")" 0
 ok "no credentials is rejected" "$(code "$API/v1/tenants/me")" 401
 ok "API key authenticates" "$(code "$API/v1/tenants/me" -H "Authorization: Bearer $KA")" 200
 

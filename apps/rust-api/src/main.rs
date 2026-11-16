@@ -238,6 +238,26 @@ async fn main() -> anyhow::Result<()> {
         .max_connections(1)
         .connect(&migrate_db_url)
         .await?;
+    // Any webhook secret still stored as plaintext is encrypted first: the
+    // migration that drops the plaintext columns refuses to run otherwise.
+    // Only needs the key when there is something to encrypt.
+    let encrypt_legacy = async {
+        let legacy_present: bool = sqlx::query_scalar(
+            r#"SELECT EXISTS (SELECT 1 FROM information_schema.columns
+                              WHERE table_schema = 'public' AND table_name = 'Tenant'
+                                AND column_name = 'webhookSecretPlaintext')"#,
+        )
+        .fetch_one(&migrate_pool)
+        .await?;
+        if legacy_present {
+            let secrets = nid_shared_types::SecretBox::from_env()
+                .context("WEBHOOK_SECRET_KEY is required to encrypt existing tenant webhook secrets")?;
+            let n = nid_db_schema::encrypt_legacy_webhook_secrets(&migrate_pool, &secrets).await?;
+            tracing::info!(tenants = n, "Encrypted legacy plaintext webhook secrets");
+        }
+        anyhow::Ok(())
+    };
+    encrypt_legacy.await?;
     nid_db_schema::MIGRATOR.run(&migrate_pool).await?;
     migrate_pool.close().await;
 

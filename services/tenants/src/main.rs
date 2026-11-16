@@ -328,7 +328,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = format!("{bind}:{port}").parse()?;
 
     let grpc = TenantsGrpc {
-        service: TenantsService::new(pool),
+        service: TenantsService::new(pool, nid_shared_types::SecretBox::from_env().map_err(|e| format!("{e}: tenant webhook secrets are stored encrypted"))?),
     };
 
     info!(port, "svc-tenants starting (gRPC)");

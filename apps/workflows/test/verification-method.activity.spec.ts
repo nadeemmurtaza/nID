@@ -18,6 +18,8 @@ import { join } from 'node:path';
 import { createPrismaClient } from '@nid/db';
 import { sha256Hex, verifyWebhookSignature } from '@nid/shared-types';
 import { LocalStorageDriver } from '@nid/storage';
+import { randomUUID } from 'node:crypto';
+import { secretBox, webhookContext } from '@nid/shared-types';
 import {
   startMethodActivity,
   completeMethodActivity,
@@ -47,10 +49,15 @@ describeIfDb('verification-method activities (live Postgres, no Temporal)', () =
   const testTenantIds: string[] = [];
 
   async function makeCase(tenantSlug: string, methods: string[], subjectType: 'PERSON' | 'ORGANIZATION' = 'PERSON') {
+    // The secret is stored encrypted, bound to the tenant id, so the id is
+    // chosen up front.
+    const existing = await migratorPrisma.tenant.findUnique({ where: { slug: tenantSlug }, select: { id: true } });
+    const tenantId = existing?.id ?? randomUUID();
+    const webhookSecretEnc = secretBox().encrypt(webhookContext(tenantId), WEBHOOK_SECRET);
     const tenant = await migratorPrisma.tenant.upsert({
       where: { slug: tenantSlug },
-      update: { webhookUrl, webhookSecretPlaintext: WEBHOOK_SECRET },
-      create: { name: tenantSlug, slug: tenantSlug, webhookUrl, webhookSecretPlaintext: WEBHOOK_SECRET },
+      update: { webhookUrl, webhookSecretEnc },
+      create: { id: tenantId, name: tenantSlug, slug: tenantSlug, webhookUrl, webhookSecretEnc },
     });
     const policyName = `test-${methods.join('-')}`;
     const policy = await migratorPrisma.verificationPolicy.upsert({
