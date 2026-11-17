@@ -61,3 +61,6 @@ validator = { version = "0.19", features = ["derive"] }
 once_cell = "1"
 percent-encoding = "2"
 mime = "0.3"
+
+# Cross-repo events (see crates/event-bus)
+prost = "0.13"

@@ -99,3 +99,9 @@ pub mod profile_content {
         tonic::include_proto!("newax.profile_content.v1");
     }
 }
+
+pub mod identity_events {
+    pub mod v1 {
+        tonic::include_proto!("newax.identity.v1");
+    }
+}

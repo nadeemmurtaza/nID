@@ -313,7 +313,40 @@ Added in the second round (same verification):
   tonic-web or Connect), no moka or Redis, the four frontends are
   Next 15 and React 19 rather than Svelte, Prisma is still used by
   `apps/api`, `apps/workflows`, `verification-providers`, `billing`
-  and `db`, and there is no NATS code.
+  and `db`, and there is no NATS code. **Update 2026-11-16:** NATS
+  publish code now exists (`crates/event-bus`, wired into
+  `crates/tenants`, `crates/organizations`, and `apps/rust-api`'s
+  brands module) — it's a flagged, local-dev-only interim per
+  `COMMUNICATION.md`'s own rule that the real bus belongs in
+  `core-newax`, not a claim that the gap is closed. Account/customer
+  identity events are not wired (see below).
+- **Customer identity events**: now wired (2026-11-16, second pass)
+  into `crates/accounts`'s `verify_otp` ("updated"), `register`
+  ("created"), and `delete_account` ("deleted"). This crate had a
+  concurrent session's uncommitted onboarding changes in flight at
+  the time (`name`/`password` fields) — the publish calls were added
+  as small, additive hooks around existing queries rather than
+  restructuring anything, to minimize collision risk, and
+  `cargo check --workspace` stayed clean afterward. `login` (password
+  sign-in) was left alone: it's read-only, no identity field changes.
+  `verify_email` was also left alone: `CustomerEvent` doesn't carry a
+  verified-email flag, so there's nothing for it to publish yet.
+- **Found 2026-11-16, in Communicator, not fixed here**:
+  Communicator already has unused webhook-based sync scaffolding
+  (`crates/nid_tenant_sync`, `nid_organization_sync`, `nid_brand_sync`,
+  tables `nid_tenants`/`nid_tenant_mapping`/`nid_organization_mapping`)
+  that bypasses `COMMUNICATION.md`'s event-bus mandate by design
+  (`ProcessWebhook` RPCs, REST+HMAC) — nothing on nID's side calls
+  it, so it's dead code, not a live competing system, but it's
+  undocumented anywhere and should be removed or explicitly
+  superseded rather than left to confuse the next person who finds
+  it. Separately, migration `0064_nid_sync.sql`'s views (
+  `v_personal_profile`, `v_work_profile`, etc.) assume a literally
+  shared Postgres instance between nID and Communicator — the two
+  repos' `.env.example` files show they are not (`nid` vs.
+  `communicator` databases) — so those views cannot have ever
+  resolved and are not applied schema, just misleading dead SQL. See
+  Communicator's own copy of this file for the matching note.
 - **Ownership** (`ECOSYSTEM.md`): nID holds business data it is
   meant never to own: booking (appointments, availability,
   services), offers with prices, contact messages, and a full
@@ -617,7 +650,40 @@ Added in the second round (same verification):
   tonic-web or Connect), no moka or Redis, the four frontends are
   Next 15 and React 19 rather than Svelte, Prisma is still used by
   `apps/api`, `apps/workflows`, `verification-providers`, `billing`
-  and `db`, and there is no NATS code.
+  and `db`, and there is no NATS code. **Update 2026-11-16:** NATS
+  publish code now exists (`crates/event-bus`, wired into
+  `crates/tenants`, `crates/organizations`, and `apps/rust-api`'s
+  brands module) — it's a flagged, local-dev-only interim per
+  `COMMUNICATION.md`'s own rule that the real bus belongs in
+  `core-newax`, not a claim that the gap is closed. Account/customer
+  identity events are not wired (see below).
+- **Customer identity events**: now wired (2026-11-16, second pass)
+  into `crates/accounts`'s `verify_otp` ("updated"), `register`
+  ("created"), and `delete_account` ("deleted"). This crate had a
+  concurrent session's uncommitted onboarding changes in flight at
+  the time (`name`/`password` fields) — the publish calls were added
+  as small, additive hooks around existing queries rather than
+  restructuring anything, to minimize collision risk, and
+  `cargo check --workspace` stayed clean afterward. `login` (password
+  sign-in) was left alone: it's read-only, no identity field changes.
+  `verify_email` was also left alone: `CustomerEvent` doesn't carry a
+  verified-email flag, so there's nothing for it to publish yet.
+- **Found 2026-11-16, in Communicator, not fixed here**:
+  Communicator already has unused webhook-based sync scaffolding
+  (`crates/nid_tenant_sync`, `nid_organization_sync`, `nid_brand_sync`,
+  tables `nid_tenants`/`nid_tenant_mapping`/`nid_organization_mapping`)
+  that bypasses `COMMUNICATION.md`'s event-bus mandate by design
+  (`ProcessWebhook` RPCs, REST+HMAC) — nothing on nID's side calls
+  it, so it's dead code, not a live competing system, but it's
+  undocumented anywhere and should be removed or explicitly
+  superseded rather than left to confuse the next person who finds
+  it. Separately, migration `0064_nid_sync.sql`'s views (
+  `v_personal_profile`, `v_work_profile`, etc.) assume a literally
+  shared Postgres instance between nID and Communicator — the two
+  repos' `.env.example` files show they are not (`nid` vs.
+  `communicator` databases) — so those views cannot have ever
+  resolved and are not applied schema, just misleading dead SQL. See
+  Communicator's own copy of this file for the matching note.
 - **Ownership** (`ECOSYSTEM.md`): nID holds business data it is
   meant never to own: booking (appointments, availability,
   services), offers with prices, contact messages, and a full

@@ -8,6 +8,7 @@
 //! like the TypeScript service, not tenant/RLS based.
 
 use anyhow::{anyhow, Result};
+use newax_proto::identity_events::v1::BrandEvent;
 use sqlx::Connection;
 use sqlx::FromRow;
 
@@ -15,6 +16,28 @@ use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
 use crate::modules::brands::dto::{BrandMembershipResponse, BrandResponse, CreateBrandRequest, MessageResponse, UpdateBrandRequest};
 use crate::modules::organizations::service::OrganizationsService;
+
+/// Publishes a brand identity-change event (COMMUNICATION.md section 1,
+/// async path; `op` is "created"/"updated"/"deleted"). Fire-and-forget — see
+/// `newax-event-bus`'s doc comment. Brand isn't split into its own
+/// crate/service yet (CONVENTIONS.md's split table), so this is called
+/// in-process rather than from a `services/*` binary.
+async fn publish_brand_event(op: &str, brand: &BrandRow, deleted: bool) {
+    let event = BrandEvent {
+        event_id: uuid::Uuid::new_v4().to_string(),
+        occurred_at: chrono::Utc::now().to_rfc3339(),
+        id: brand.id.clone(),
+        organization_id: brand.organization_id.clone(),
+        name: brand.name.clone(),
+        slug: brand.slug.clone(),
+        active: brand.active,
+        deleted,
+    };
+    newax_event_bus::publisher()
+        .await
+        .publish(newax_event_bus::subjects::brand(op), &event)
+        .await;
+}
 
 #[derive(Debug, Clone, FromRow)]
 pub struct BrandRow {
@@ -216,9 +239,10 @@ impl BrandsService {
 
         let webhook_message = self.emit_webhook_event(&mut conn, &tenant_id, "brand.created").await?;
 
-        let mut response = Self::row_to_response(brand);
+        let mut response = Self::row_to_response(brand.clone());
         response.webhook_message = webhook_message;
         conn.commit().await?;
+        publish_brand_event("created", &brand, false).await;
         Ok(response)
     }
 
@@ -348,9 +372,10 @@ impl BrandsService {
 
         let webhook_message = self.emit_webhook_event(&mut conn, &tenant_id, "brand.updated").await?;
 
-        let mut response = Self::row_to_response(brand);
+        let mut response = Self::row_to_response(brand.clone());
         response.webhook_message = webhook_message;
         conn.commit().await?;
+        publish_brand_event("updated", &brand, false).await;
         Ok(response)
     }
 
@@ -367,14 +392,17 @@ impl BrandsService {
 
         let tenant_id = self.organizations.require_active_admin(&organization_id, account_id).await?;
 
-        sqlx::query("UPDATE brand SET active = false WHERE id = $1")
-            .bind(brand_id)
-            .execute(&mut *conn)
-            .await?;
+        let brand: BrandRow = sqlx::query_as(&format!(
+            "UPDATE brand SET active = false WHERE id = $1 RETURNING {BRAND_COLUMNS}"
+        ))
+        .bind(brand_id)
+        .fetch_one(&mut *conn)
+        .await?;
 
         self.emit_webhook_event(&mut conn, &tenant_id, "brand.deleted").await?;
 
         conn.commit().await?;
+        publish_brand_event("deleted", &brand, true).await;
         Ok(MessageResponse {
             message: "Brand deactivated successfully".to_string(),
         })

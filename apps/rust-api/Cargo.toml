@@ -8,6 +8,7 @@ license.workspace = true
 # gRPC clients for modules split out into services/ -- see crates/proto
 tonic = "0.12"
 newax-proto = { path = "../../crates/proto" }
+newax-event-bus = { path = "../../crates/event-bus" }
 
 # Workspace
 axum = { workspace = true }

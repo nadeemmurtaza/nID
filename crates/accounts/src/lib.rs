@@ -8,10 +8,32 @@ pub mod sms;
 
 use anyhow::{anyhow, Result};
 use chrono::Utc;
+use newax_proto::identity_events::v1::CustomerEvent;
 use nid_shared_types::{generate_session_token, sha256_hex};
 use rand::Rng;
 use sqlx::{FromRow, PgPool, Row};
 use tracing::info;
+
+/// Publishes a customer identity-change event (COMMUNICATION.md section 1,
+/// async path; `op` is "created"/"updated"/"deleted"). `customer_id` here
+/// is nID's `Account.id` — COMMUNICATION.md's ownership table treats a
+/// person's identity as nID's regardless of which module first saw them.
+/// Fire-and-forget — see `newax-event-bus`'s doc comment.
+async fn publish_customer_event(op: &str, account: &AccountRow, deleted: bool) {
+    let event = CustomerEvent {
+        event_id: uuid::Uuid::new_v4().to_string(),
+        occurred_at: chrono::Utc::now().to_rfc3339(),
+        id: account.id.clone(),
+        phone: Some(account.phone.clone()),
+        email: account.email.clone(),
+        name: account.name.clone(),
+        deleted,
+    };
+    newax_event_bus::publisher()
+        .await
+        .publish(newax_event_bus::subjects::customer(op), &event)
+        .await;
+}
 
 const OTP_CODE_LENGTH: usize = 6;
 const OTP_TTL_MINUTES: i64 = 10;
@@ -24,6 +46,7 @@ pub struct AccountRow {
     pub id: String,
     pub phone: String,
     pub email: Option<String>,
+    pub name: Option<String>,
     pub phone_verified_at: Option<chrono::DateTime<chrono::Utc>>,
     pub email_verified_at: Option<chrono::DateTime<chrono::Utc>>,
 }
@@ -33,6 +56,7 @@ pub struct AccountResponse {
     pub id: String,
     pub phone: String,
     pub email: Option<String>,
+    pub name: Option<String>,
     pub phone_verified_at: Option<String>,
     pub email_verified_at: Option<String>,
 }
@@ -43,11 +67,14 @@ impl From<AccountRow> for AccountResponse {
             id: row.id,
             phone: row.phone,
             email: row.email,
+            name: row.name,
             phone_verified_at: row.phone_verified_at.map(|dt| dt.to_rfc3339()),
             email_verified_at: row.email_verified_at.map(|dt| dt.to_rfc3339()),
         }
     }
 }
+
+const BCRYPT_COST: u32 = bcrypt::DEFAULT_COST;
 
 #[derive(Debug, Clone)]
 pub struct VerifyOtpResponse {
@@ -161,13 +188,14 @@ impl AccountsService {
             VALUES (gen_random_uuid(), $1, $2)
             ON CONFLICT (phone)
             DO UPDATE SET phone_verified_at = $2
-            RETURNING id, phone, email, phone_verified_at, email_verified_at
+            RETURNING id, phone, email, name, phone_verified_at, email_verified_at
             "#,
         )
         .bind(phone)
         .bind(now)
         .fetch_one(&self.db)
         .await?;
+        publish_customer_event("updated", &account, false).await;
 
         let session = generate_session_token();
         let expires_at = Utc::now() + chrono::Duration::days(SESSION_TTL_DAYS);
@@ -192,7 +220,7 @@ impl AccountsService {
 
     pub async fn get_account(&self, account_id: &str) -> Result<AccountResponse> {
         let account: AccountRow = sqlx::query_as(
-            "SELECT id, phone, email, phone_verified_at, email_verified_at FROM account WHERE id = $1",
+            "SELECT id, phone, email, name, phone_verified_at, email_verified_at FROM account WHERE id = $1",
         )
         .bind(account_id)
         .fetch_one(&self.db)
@@ -218,13 +246,15 @@ impl AccountsService {
     /// are removed here.
     pub async fn delete_account(&self, account_id: &str) -> Result<()> {
         let mut tx = self.db.begin().await?;
-        let phone: String = sqlx::query_scalar("SELECT phone FROM account WHERE id = $1")
-            .bind(account_id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or_else(|| anyhow!("Account not found"))?;
+        let account: AccountRow = sqlx::query_as(
+            "SELECT id, phone, email, name, phone_verified_at, email_verified_at FROM account WHERE id = $1",
+        )
+        .bind(account_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| anyhow!("Account not found"))?;
         sqlx::query("DELETE FROM account_otp_code WHERE phone = $1")
-            .bind(&phone)
+            .bind(&account.phone)
             .execute(&mut *tx)
             .await?;
         sqlx::query("DELETE FROM account WHERE id = $1")
@@ -232,6 +262,7 @@ impl AccountsService {
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
+        publish_customer_event("deleted", &account, true).await;
         Ok(())
     }
 
@@ -341,12 +372,101 @@ impl AccountsService {
 
         let account: AccountRow = sqlx::query_as(
             "UPDATE account SET email_verified_at = NOW() WHERE id = $1
-             RETURNING id, phone, email, phone_verified_at, email_verified_at",
+             RETURNING id, phone, email, name, phone_verified_at, email_verified_at",
         )
         .bind(account_id)
         .fetch_one(&self.db)
         .await?;
 
         Ok(account.into())
+    }
+
+    /// Detailed sign-up: name + email + phone + password, as an alternative
+    /// to the passwordless phone+OTP flow above. Creates the Account but
+    /// does not sign it in -- `login` is the separate step for that,
+    /// mirroring how OTP sign-up and sign-in are two separate requests too.
+    pub async fn register(
+        &self,
+        name: &str,
+        email: &str,
+        phone: &str,
+        password: &str,
+    ) -> Result<AccountResponse> {
+        let existing: Option<(String,)> =
+            sqlx::query_as("SELECT id FROM account WHERE phone = $1 OR email = $2")
+                .bind(phone)
+                .bind(email)
+                .fetch_optional(&self.db)
+                .await?;
+        if existing.is_some() {
+            return Err(anyhow!("An account with this phone or email already exists."));
+        }
+
+        let password_hash = bcrypt::hash(password, BCRYPT_COST)
+            .map_err(|e| anyhow!("Could not process that password: {e}"))?;
+
+        let account: AccountRow = sqlx::query_as(
+            r#"
+            INSERT INTO account (id, phone, email, name, password_hash)
+            VALUES (gen_random_uuid(), $1, $2, $3, $4)
+            RETURNING id, phone, email, name, phone_verified_at, email_verified_at
+            "#,
+        )
+        .bind(phone)
+        .bind(email)
+        .bind(name)
+        .bind(&password_hash)
+        .fetch_one(&self.db)
+        .await?;
+        publish_customer_event("created", &account, false).await;
+
+        Ok(account.into())
+    }
+
+    /// Password sign-in -- the counterpart to `register`. Only ever
+    /// succeeds for an Account that has a password set (i.e. was created
+    /// via `register`, not via phone+OTP).
+    pub async fn login(&self, email: &str, password: &str) -> Result<VerifyOtpResponse> {
+        let row: Option<(String, Option<String>)> =
+            sqlx::query_as("SELECT id, password_hash FROM account WHERE email = $1")
+                .bind(email)
+                .fetch_optional(&self.db)
+                .await?;
+
+        let (account_id, password_hash) =
+            row.ok_or_else(|| anyhow!("Invalid email or password."))?;
+        let password_hash = password_hash.ok_or_else(|| anyhow!("Invalid email or password."))?;
+
+        let matches = bcrypt::verify(password, &password_hash)
+            .map_err(|e| anyhow!("Could not verify that password: {e}"))?;
+        if !matches {
+            return Err(anyhow!("Invalid email or password."));
+        }
+
+        let account: AccountRow = sqlx::query_as(
+            "SELECT id, phone, email, name, phone_verified_at, email_verified_at FROM account WHERE id = $1",
+        )
+        .bind(&account_id)
+        .fetch_one(&self.db)
+        .await?;
+
+        let session = generate_session_token();
+        let expires_at = Utc::now() + chrono::Duration::days(SESSION_TTL_DAYS);
+        sqlx::query(
+            r#"
+            INSERT INTO account_session (id, account_id, token_hash, expires_at)
+            VALUES (gen_random_uuid(), $1, $2, $3)
+            "#,
+        )
+        .bind(&account_id)
+        .bind(&session.hash)
+        .bind(expires_at)
+        .execute(&self.db)
+        .await?;
+
+        Ok(VerifyOtpResponse {
+            session_token: session.plaintext,
+            account: account.into(),
+        })
     }
 }

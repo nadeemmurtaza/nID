@@ -5,7 +5,29 @@
 //! rather than nID's `core::db::DbPool` wrapper.
 
 use anyhow::{anyhow, Result};
+use newax_proto::identity_events::v1::OrganizationEvent;
 use sqlx::{FromRow, PgPool, Row};
+
+/// Publishes an organization identity-change event (COMMUNICATION.md
+/// section 1, async path). Fire-and-forget — see `newax-event-bus`'s doc
+/// comment.
+async fn publish_organization_event(op: &str, org: &OrganizationRow) {
+    let event = OrganizationEvent {
+        event_id: uuid::Uuid::new_v4().to_string(),
+        occurred_at: chrono::Utc::now().to_rfc3339(),
+        id: org.id.clone(),
+        tenant_id: org.tenant_id.clone(),
+        subject_id: org.subject_id.clone(),
+        legal_name: org.legal_name.clone(),
+        registration_number: org.registration_number.clone(),
+        country_code: org.country_code.clone(),
+        deleted: false,
+    };
+    newax_event_bus::publisher()
+        .await
+        .publish(newax_event_bus::subjects::organization(op), &event)
+        .await;
+}
 
 #[derive(Debug, Clone, FromRow)]
 struct OrganizationRow {
@@ -159,6 +181,7 @@ impl OrganizationsService {
         .await?;
 
         conn.commit().await?;
+        publish_organization_event("created", &org).await;
         Ok(Self::row_to_response(org))
     }
 

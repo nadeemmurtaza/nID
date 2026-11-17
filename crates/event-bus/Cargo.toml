@@ -1,0 +1,12 @@
+[package]
+name = "newax-event-bus"
+version.workspace = true
+edition.workspace = true
+description = "Thin NATS JetStream publish client for the tenant/organization/brand/customer identity events nID owns (COMMUNICATION.md section 1, async path). Interim local-dev bus — see lib.rs doc comment."
+
+[dependencies]
+async-nats = "0.38"
+prost = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+// Wire payloads for the NATS JetStream events nID publishes as the owner of
+// tenant/organization/brand/customer identity (COMMUNICATION.md's "who owns
+// which ID" table). These are NOT a gRPC service — nothing calls them over
+// tonic — they're just the message shapes `crates/event-bus` serializes
+// (via prost) onto subjects named `newax.identity.<entity>.<event>`.
+//
+// Every event carries `event_id` as its idempotency key: NATS JetStream is
+// at-least-once delivery, so a consumer may see the same event twice and
+// must upsert keyed on `event_id`, never assume single delivery
+// (COMMUNICATION.md, "Idempotency is mandatory, not optional").
+package newax.identity.v1;
+
+message TenantEvent {
+  string event_id = 1;
+  string occurred_at = 2; // RFC3339
+  string id = 3;
+  string name = 4;
+  string slug = 5;
+  string data_residency_region = 6;
+  bool deleted = 7;
+}
+
+message OrganizationEvent {
+  string event_id = 1;
+  string occurred_at = 2;
+  string id = 3;
+  string tenant_id = 4;
+  string subject_id = 5;
+  string legal_name = 6;
+  optional string registration_number = 7;
+  optional string country_code = 8;
+  bool deleted = 9;
+}
+
+message BrandEvent {
+  string event_id = 1;
+  string occurred_at = 2;
+  string id = 3;
+  string organization_id = 4;
+  string name = 5;
+  string slug = 6;
+  bool active = 7;
+  bool deleted = 8;
+}
+
+// `customer_id` per COMMUNICATION.md's ownership table is a person's
+// identity, derived from nID's Account — not a separate table.
+message CustomerEvent {
+  string event_id = 1;
+  string occurred_at = 2;
+  string id = 3; // Account.id
+  optional string phone = 4;
+  optional string email = 5;
+  optional string name = 6;
+  bool deleted = 7;
+}
