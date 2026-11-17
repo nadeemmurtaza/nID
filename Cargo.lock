@@ -1705,7 +1705,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-nats",
- "prost",
+ "prost 0.14.6",
  "tokio",
  "tracing",
 ]
@@ -1777,7 +1777,7 @@ dependencies = [
 name = "newax-proto"
 version = "0.1.0"
 dependencies = [
- "prost",
+ "prost 0.14.6",
  "tonic 0.12.3",
  "tonic-build",
 ]
@@ -2302,7 +2302,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2796faa41db3ec313a31f7624d9286acf277b52de526150b7e69f3debf891ee5"
 dependencies = [
  "bytes",
- "prost-derive",
+ "prost-derive 0.13.5",
+]
+
+[[package]]
+name = "prost"
+version = "0.14.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ef0b569d1d907ab3a28596aee62cf1f61dacb0529a4bedcd8e7460e2d5228b4"
+dependencies = [
+ "bytes",
+ "prost-derive 0.14.6",
 ]
 
 [[package]]
@@ -2318,7 +2328,7 @@ dependencies = [
  "once_cell",
  "petgraph",
  "prettyplease",
- "prost",
+ "prost 0.13.5",
  "prost-types",
  "regex",
  "syn 2.0.119",
@@ -2339,12 +2349,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.14.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ad9c5423459fa2f729b8d9235fab810aa29628b171467744fc86d21460ad70d"
+dependencies = [
+ "anyhow",
+ "itertools 0.14.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52c2c1bf36ddb1a1c396b3601a3cec27c2462e45f07c386894ec3ccf5332bd16"
 dependencies = [
- "prost",
+ "prost 0.13.5",
 ]
 
 [[package]]
@@ -3342,7 +3365,7 @@ dependencies = [
  "dotenvy",
  "newax-access",
  "nid-service-auth",
- "prost",
+ "prost 0.14.6",
  "sqlx",
  "tokio",
  "tonic 0.12.3",
@@ -3359,7 +3382,7 @@ dependencies = [
  "dotenvy",
  "newax-account-verification",
  "nid-service-auth",
- "prost",
+ "prost 0.14.6",
  "sqlx",
  "tokio",
  "tonic 0.12.3",
@@ -3376,7 +3399,7 @@ dependencies = [
  "dotenvy",
  "newax-accounts",
  "nid-service-auth",
- "prost",
+ "prost 0.14.6",
  "sqlx",
  "tokio",
  "tonic 0.12.3",
@@ -3393,7 +3416,7 @@ dependencies = [
  "dotenvy",
  "newax-booking",
  "nid-service-auth",
- "prost",
+ "prost 0.14.6",
  "sqlx",
  "tokio",
  "tonic 0.12.3",
@@ -3410,7 +3433,7 @@ dependencies = [
  "dotenvy",
  "newax-departments",
  "nid-service-auth",
- "prost",
+ "prost 0.14.6",
  "serde_json",
  "sqlx",
  "tokio",
@@ -3428,7 +3451,7 @@ dependencies = [
  "dotenvy",
  "newax-invitations",
  "nid-service-auth",
- "prost",
+ "prost 0.14.6",
  "sqlx",
  "tokio",
  "tonic 0.12.3",
@@ -3445,7 +3468,7 @@ dependencies = [
  "dotenvy",
  "newax-oauth",
  "nid-service-auth",
- "prost",
+ "prost 0.14.6",
  "sqlx",
  "tokio",
  "tonic 0.12.3",
@@ -3462,7 +3485,7 @@ dependencies = [
  "dotenvy",
  "newax-organization-profiles",
  "nid-service-auth",
- "prost",
+ "prost 0.14.6",
  "sqlx",
  "tokio",
  "tonic 0.12.3",
@@ -3479,7 +3502,7 @@ dependencies = [
  "dotenvy",
  "newax-organizations",
  "nid-service-auth",
- "prost",
+ "prost 0.14.6",
  "sqlx",
  "tokio",
  "tonic 0.12.3",
@@ -3496,7 +3519,7 @@ dependencies = [
  "dotenvy",
  "newax-permissions",
  "nid-service-auth",
- "prost",
+ "prost 0.14.6",
  "sqlx",
  "tokio",
  "tonic 0.12.3",
@@ -3514,7 +3537,7 @@ dependencies = [
  "newax-profile-content",
  "nid-service-auth",
  "nid-storage",
- "prost",
+ "prost 0.14.6",
  "sqlx",
  "tokio",
  "tonic 0.12.3",
@@ -3531,7 +3554,7 @@ dependencies = [
  "dotenvy",
  "newax-roles",
  "nid-service-auth",
- "prost",
+ "prost 0.14.6",
  "serde_json",
  "sqlx",
  "tokio",
@@ -3550,7 +3573,7 @@ dependencies = [
  "newax-sessions",
  "nid-service-auth",
  "nid-storage",
- "prost",
+ "prost 0.14.6",
  "sqlx",
  "tokio",
  "tonic 0.12.3",
@@ -3567,7 +3590,7 @@ dependencies = [
  "dotenvy",
  "newax-subjects",
  "nid-service-auth",
- "prost",
+ "prost 0.14.6",
  "sqlx",
  "tokio",
  "tonic 0.12.3",
@@ -3584,7 +3607,7 @@ dependencies = [
  "dotenvy",
  "newax-tenant-staff",
  "nid-service-auth",
- "prost",
+ "prost 0.14.6",
  "sqlx",
  "tokio",
  "tonic 0.12.3",
@@ -3602,7 +3625,7 @@ dependencies = [
  "newax-tenants",
  "nid-service-auth",
  "nid-shared-types",
- "prost",
+ "prost 0.14.6",
  "sqlx",
  "tokio",
  "tonic 0.12.3",
@@ -3619,7 +3642,7 @@ dependencies = [
  "dotenvy",
  "newax-verification-cases",
  "nid-service-auth",
- "prost",
+ "prost 0.14.6",
  "serde_json",
  "sqlx",
  "tokio",
@@ -3889,7 +3912,7 @@ dependencies = [
  "hyper-util",
  "percent-encoding",
  "pin-project",
- "prost",
+ "prost 0.13.5",
  "rustls-pemfile",
  "socket2 0.5.10",
  "tokio",

@@ -63,4 +63,4 @@ percent-encoding = "2"
 mime = "0.3"
 
 # Cross-repo events (see crates/event-bus)
-prost = "0.13"
+prost = "0.14"
