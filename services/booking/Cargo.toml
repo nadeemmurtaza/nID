@@ -11,7 +11,7 @@ path = "src/main.rs"
 nid-service-auth = { path = "../../crates/service-auth" }
 newax-booking = { path = "../../crates/booking" }
 tonic = "0.12"
-prost = "0.13"
+prost = "0.14"
 tokio = { workspace = true }
 sqlx = { workspace = true }
 anyhow = { workspace = true }

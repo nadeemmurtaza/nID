@@ -6,7 +6,7 @@ description = "Generated Rust client types for every .proto service under proto/
 
 [dependencies]
 tonic = "0.12"
-prost = "0.13"
+prost = "0.14"
 
 [build-dependencies]
 tonic-build = "0.12"

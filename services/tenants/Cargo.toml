@@ -12,7 +12,7 @@ nid-shared-types = { path = "../../crates/shared-types" }
 nid-service-auth = { path = "../../crates/service-auth" }
 newax-tenants = { path = "../../crates/tenants" }
 tonic = "0.12"
-prost = "0.13"
+prost = "0.14"
 tokio = { workspace = true }
 sqlx = { workspace = true }
 anyhow = { workspace = true }
