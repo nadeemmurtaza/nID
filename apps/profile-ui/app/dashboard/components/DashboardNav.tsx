@@ -29,6 +29,10 @@ const NAV_ITEMS = [
 ] as const;
 
 interface Props {
+  /** '' before the account has a profile yet -- every link still renders
+   * (see app/dashboard/layout.tsx: it shows the same create-page panel for
+   * any route until a profile exists, so nothing here can 404 or crash),
+   * just without the "View page" link, which has nothing to point at yet. */
   slug: string;
   pathname: string | null;
   onSignOut: () => void;
@@ -64,9 +68,11 @@ export function DashboardNav({ slug, pathname, onSignOut }: Props) {
       </div>
 
       <div className="dashboard-nav-footer">
-        <a href={`/${slug}`} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
-          View page →
-        </a>
+        {slug && (
+          <a href={`/${slug}`} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
+            View page →
+          </a>
+        )}
         <button type="button" className="btn btn-secondary btn-sm" onClick={onSignOut}>
           Sign out
         </button>

@@ -182,9 +182,12 @@ impl AccessService {
             return Err(anyhow!("Cannot grant access to yourself."));
         }
 
-        // Check for duplicate grant
+        // Check for duplicate grant. organization_id/brand_id are nullable
+        // (the tenant-wide default scope is NULL/NULL), and SQL's `= NULL`
+        // is never true even when both sides are NULL -- IS NOT DISTINCT
+        // FROM is the null-safe equality this needs.
         let existing = sqlx::query(
-            "SELECT id FROM access_grant WHERE account_id = $1 AND tenant_id = $2 AND organization_id = $3 AND brand_id = $4",
+            "SELECT id FROM access_grant WHERE account_id = $1 AND tenant_id = $2 AND organization_id IS NOT DISTINCT FROM $3 AND brand_id IS NOT DISTINCT FROM $4",
         )
         .bind(&req.account_id)
         .bind(tenant_id)
@@ -456,9 +459,10 @@ impl AccessService {
         self.verify_caller_is_owner_or_partner(&mut conn, caller_id, tenant_id)
             .await?;
 
-        // Find existing grant for new owner
+        // Find existing grant for new owner. Same null-safe equality as
+        // create_grant's duplicate check above, for the same reason.
         let grant = sqlx::query_as::<_, AccessGrantRow>(
-            "SELECT id, account_id, tenant_id, organization_id, brand_id, access_type, partnership_percentage, granted_by, status, granted_at FROM access_grant WHERE account_id = $1 AND tenant_id = $2 AND organization_id = $3 AND brand_id = $4",
+            "SELECT id, account_id, tenant_id, organization_id, brand_id, access_type, partnership_percentage, granted_by, status, granted_at FROM access_grant WHERE account_id = $1 AND tenant_id = $2 AND organization_id IS NOT DISTINCT FROM $3 AND brand_id IS NOT DISTINCT FROM $4",
         )
         .bind(&req.new_owner_id)
         .bind(tenant_id)

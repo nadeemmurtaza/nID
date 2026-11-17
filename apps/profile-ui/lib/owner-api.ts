@@ -35,14 +35,6 @@ export interface Account {
   phoneVerifiedAt: string | null;
 }
 
-export async function startOtp(phone: string): Promise<void> {
-  await apiFetch('/v1/accounts/otp/start', { method: 'POST', body: JSON.stringify({ phone }) });
-}
-
-export function verifyOtp(phone: string, code: string): Promise<{ sessionToken: string; account: Account }> {
-  return apiFetch('/v1/accounts/otp/verify', { method: 'POST', body: JSON.stringify({ phone, code }) });
-}
-
 export function getMe(token: string): Promise<Account> {
   return authedFetch('/v1/accounts/me', token);
 }

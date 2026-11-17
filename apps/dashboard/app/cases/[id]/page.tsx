@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowLeftIcon } from '@newax/design-tokens/icons';
-import { apiFetch, resolveCase, type SubjectBadges, type VerificationCaseDetail } from '../../../lib/api-client';
+import { apiFetch, resolveCase, submitAgentAttestation, type SubjectBadges, type VerificationCaseDetail } from '../../../lib/api-client';
 import { useDashboardSession } from '../../../lib/use-dashboard-session';
 import { Header } from '../../components/header';
 import { subjectName } from '../../format';
@@ -155,6 +155,12 @@ function CaseDetail({ credential, caseId }: { credential: string; caseId: string
             )}
           </section>
 
+          {kase.attempts
+            .filter((a) => a.method === 'agent_in_person_document' && a.status === 'PENDING')
+            .map((a) => (
+              <AgentAttestationPanel key={a.id} credential={credential} caseId={kase.id} method={a.method} onSubmitted={load} />
+            ))}
+
           {kase.status === 'NEEDS_REVIEW' && <ResolvePanel credential={credential} caseId={kase.id} onResolved={load} />}
         </>
       )}
@@ -212,6 +218,68 @@ function ResolvePanel({ credential, caseId, onResolved }: { credential: string; 
             disabled={submitting || reason.trim().length < 3}
             onClick={() => submit('REJECTED')}
           >
+            Reject
+          </button>
+        </div>
+        {error && <p className="error-text">{error}</p>}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * A tenant staff agent's in-person decision for an `agent_in_person_document`
+ * attempt (the subject physically presented a document to staff, who
+ * attest to what they saw) -- previously had a real backend endpoint
+ * (POST .../claims/:method/agent-attest) and no UI anywhere to call it.
+ */
+function AgentAttestationPanel({
+  credential,
+  caseId,
+  method,
+  onSubmitted,
+}: {
+  credential: string;
+  caseId: string;
+  method: string;
+  onSubmitted: () => void;
+}) {
+  const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(decision: 'APPROVED' | 'REJECTED'): Promise<void> {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await submitAgentAttestation(credential, caseId, method, decision, notes.trim() || undefined);
+      onSubmitted();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not submit this attestation.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="panel-card resolve-card">
+      <h2>Agent attestation — {method}</h2>
+      <p className="lead">
+        Record what the staff member physically reviewing this document observed.
+      </p>
+      <div className="resolve-panel">
+        <textarea
+          placeholder="Notes (optional)"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          disabled={submitting}
+          rows={3}
+        />
+        <div className="resolve-actions">
+          <button type="button" className="btn btn-success" disabled={submitting} onClick={() => submit('APPROVED')}>
+            Document verified
+          </button>
+          <button type="button" className="btn btn-danger" disabled={submitting} onClick={() => submit('REJECTED')}>
             Reject
           </button>
         </div>

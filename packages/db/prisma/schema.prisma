@@ -568,6 +568,12 @@ model Account {
   id              String    @id @default(cuid())
   phone           String    @unique
   email           String?   @unique
+  name            String?
+  /// Set only for accounts created via the detailed sign-up form
+  /// (name + email + phone + password) — the phone+OTP flow never sets
+  /// this, so its presence is what distinguishes "has a password" from
+  /// "passwordless only" rather than a separate boolean flag.
+  passwordHash    String?
   phoneVerifiedAt DateTime?
   /// Set only by a real verifyEmail() success (accounts.service.ts) —
   /// never backfilled or inferred. Null means exactly what it says:

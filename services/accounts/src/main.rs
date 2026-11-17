@@ -10,7 +10,7 @@ pub mod proto {
 use proto::{
     accounts_api_service_server::{AccountsApiService as AccountsRpc, AccountsApiServiceServer},
     AccountIdRequest, AccountResponse as ProtoAccountResponse,
-    Empty, SessionTokenRequest, StartEmailVerificationRequest,
+    Empty, LoginRequest, RegisterRequest, SessionTokenRequest, StartEmailVerificationRequest,
     StartOtpRequest, VerifyEmailRequest, VerifyOtpRequest,
     VerifyOtpResponse as ProtoVerifyOtpResponse,
 };
@@ -28,6 +28,8 @@ fn to_status(e: anyhow::Error) -> Status {
         Status::invalid_argument(msg)
     } else if msg.contains("Too many") {
         Status::failed_precondition(msg)
+    } else if msg.contains("already exists") {
+        Status::already_exists(msg)
     } else {
         Status::internal(msg)
     }
@@ -40,6 +42,7 @@ fn account_to_proto(a: AccountResponse) -> ProtoAccountResponse {
         email: a.email,
         phone_verified_at: a.phone_verified_at,
         email_verified_at: a.email_verified_at,
+        name: a.name,
     }
 }
 
@@ -139,6 +142,32 @@ impl AccountsRpc for AccountsGrpc {
             .await
             .map_err(to_status)?;
         Ok(Response::new(account_to_proto(result)))
+    }
+
+    async fn register(
+        &self,
+        req: Request<RegisterRequest>,
+    ) -> Result<Response<ProtoAccountResponse>, Status> {
+        let r = req.into_inner();
+        let result = self
+            .service
+            .register(&r.name, &r.email, &r.phone, &r.password)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(account_to_proto(result)))
+    }
+
+    async fn login(
+        &self,
+        req: Request<LoginRequest>,
+    ) -> Result<Response<ProtoVerifyOtpResponse>, Status> {
+        let r = req.into_inner();
+        let result = self
+            .service
+            .login(&r.email, &r.password)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(verify_otp_to_proto(result)))
     }
 }
 

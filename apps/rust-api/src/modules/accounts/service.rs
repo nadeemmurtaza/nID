@@ -8,7 +8,8 @@ use anyhow::{anyhow, Result};
 use newax_proto::accounts::v1::{
     accounts_api_service_client::AccountsApiServiceClient,
     AccountIdRequest, AccountResponse as ProtoAccountResponse,
-    Empty, SessionTokenRequest, StartEmailVerificationRequest,
+    Empty, LoginRequest as ProtoLoginRequest, RegisterRequest as ProtoRegisterRequest,
+    SessionTokenRequest, StartEmailVerificationRequest,
     StartOtpRequest, VerifyEmailRequest, VerifyOtpRequest,
     VerifyOtpResponse as ProtoVerifyOtpResponse,
 };
@@ -28,6 +29,7 @@ fn account_from_proto(p: ProtoAccountResponse) -> AccountResponse {
         id: p.id,
         phone: p.phone,
         email: p.email,
+        name: p.name,
         phone_verified_at: p.phone_verified_at,
         email_verified_at: p.email_verified_at,
     }
@@ -67,6 +69,7 @@ impl AccountsService {
             id: String::new(),
             phone: String::new(),
             email: None,
+            name: None,
             phone_verified_at: None,
             email_verified_at: None,
         });
@@ -126,6 +129,42 @@ impl AccountsService {
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(account_from_proto(resp.into_inner()))
+    }
+
+    pub async fn register(&self, name: &str, email: &str, phone: &str, password: &str) -> Result<AccountResponse> {
+        let mut c = client().await?;
+        let resp = c.register(ProtoRegisterRequest {
+            name: name.to_string(),
+            email: email.to_string(),
+            phone: phone.to_string(),
+            password: password.to_string(),
+        })
+        .await
+        .map_err(|e| anyhow!(e.message().to_string()))?;
+        Ok(account_from_proto(resp.into_inner()))
+    }
+
+    pub async fn login(&self, email: &str, password: &str) -> Result<VerifyOtpResponse> {
+        let mut c = client().await?;
+        let resp = c.login(ProtoLoginRequest {
+            email: email.to_string(),
+            password: password.to_string(),
+        })
+        .await
+        .map_err(|e| anyhow!(e.message().to_string()))?;
+        let p = resp.into_inner();
+        let account = p.account.map(account_from_proto).unwrap_or_else(|| AccountResponse {
+            id: String::new(),
+            phone: String::new(),
+            email: None,
+            name: None,
+            phone_verified_at: None,
+            email_verified_at: None,
+        });
+        Ok(VerifyOtpResponse {
+            session_token: p.session_token,
+            account,
+        })
     }
 
     /// COMPLIANCE_AND_ACCESSIBILITY_RULES.md §8: data deletion request.

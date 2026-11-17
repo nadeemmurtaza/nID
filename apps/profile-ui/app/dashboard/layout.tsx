@@ -67,7 +67,25 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }
 
   if (!profile) {
-    return <CreateProfileForm token={token} onCreated={setProfile} />;
+    // The dashboard itself is still the first thing shown after login --
+    // creating the public page is just this shell's content until that's
+    // done, not a separate full-screen wizard in front of it. The full
+    // nav is shown too (slug='' just hides "View page", which has
+    // nothing to point at yet): every other item is still safe to click
+    // because this whole branch applies to every /dashboard/* route --
+    // `children` (the real per-section pages, which assume a profile via
+    // DashboardProvider) never renders until profile is actually set, no
+    // matter which nav link was followed to get here.
+    return (
+      <div className="dashboard-shell">
+        <DashboardNav slug="" pathname={pathname} onSignOut={handleSignOut} />
+        <div className="dashboard-content">
+          <div className="tab-panel">
+            <CreateProfileForm token={token} onCreated={setProfile} />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

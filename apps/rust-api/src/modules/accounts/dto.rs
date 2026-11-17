@@ -46,8 +46,28 @@ pub struct AccountResponse {
     pub id: String,
     pub phone: String,
     pub email: Option<String>,
+    pub name: Option<String>,
     pub phone_verified_at: Option<String>,
     pub email_verified_at: Option<String>,
+}
+
+/// Request body for POST /v1/accounts/register -- the detailed sign-up
+/// form, an alternative to the passwordless phone+OTP flow above.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterRequest {
+    pub name: String,
+    pub email: String,
+    pub phone: String,
+    pub password: String,
+}
+
+/// Request body for POST /v1/accounts/login
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoginRequest {
+    pub email: String,
+    pub password: String,
 }
 
 /// Generic accepted response

@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use crate::core::auth::session::AccountSession;
 use crate::modules::accounts::dto::{
-    AcceptedResponse, AccountResponse, StartOtpRequest, VerifyOtpRequest, VerifyOtpResponse,
-    StartEmailVerificationRequest, VerifyEmailRequest,
+    AcceptedResponse, AccountResponse, LoginRequest, RegisterRequest, StartOtpRequest,
+    VerifyOtpRequest, VerifyOtpResponse, StartEmailVerificationRequest, VerifyEmailRequest,
 };
 use crate::modules::accounts::service::AccountsService;
 
@@ -123,6 +123,44 @@ pub async fn delete_account(
         .await
         .map_err(internal_error)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST /v1/accounts/register -- detailed sign-up form (name/email/phone/password).
+pub async fn register(
+    State(state): State<Arc<AccountsState>>,
+    Json(req): Json<RegisterRequest>,
+) -> Result<Json<AccountResponse>, (StatusCode, Json<serde_json::Value>)> {
+    if req.name.trim().is_empty() || req.email.trim().is_empty() || req.phone.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "message": "Name, email, and phone are all required." })),
+        ));
+    }
+    if req.password.len() < 8 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "message": "Password must be at least 8 characters." })),
+        ));
+    }
+    let acct = state
+        .service
+        .register(req.name.trim(), req.email.trim(), req.phone.trim(), &req.password)
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(acct))
+}
+
+/// POST /v1/accounts/login -- password sign-in, the counterpart to `register`.
+pub async fn login(
+    State(state): State<Arc<AccountsState>>,
+    Json(req): Json<LoginRequest>,
+) -> Result<Json<VerifyOtpResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let response = state
+        .service
+        .login(req.email.trim(), &req.password)
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(response))
 }
 
 /// Convert anyhow error to HTTP error response

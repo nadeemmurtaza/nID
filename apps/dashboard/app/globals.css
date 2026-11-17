@@ -651,6 +651,23 @@ tbody tr:hover {
   filter: brightness(1.08);
 }
 
+.secondary-btn {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--card-bg);
+  color: var(--fg);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.secondary-btn:hover {
+  background: var(--bg-subtle);
+}
+
 /* Danger button */
 .danger-btn {
   font-size: 12px;

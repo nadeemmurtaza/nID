@@ -151,6 +151,23 @@ export function resolveCase(
   });
 }
 
+/** A tenant staff agent's in-person decision for an `agent_in_person_document`
+ * (or similar in-person) method attempt — previously had no client wrapper or
+ * UI at all (see apps/rust-api's verification_cases::handlers::submit_agent_attestation). */
+export function submitAgentAttestation(
+  credential: string,
+  caseId: string,
+  method: string,
+  decision: 'APPROVED' | 'REJECTED',
+  notes?: string,
+): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(`/v1/verification-cases/${caseId}/claims/${method}/agent-attest`, credential, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ decision, notes }),
+  });
+}
+
 /** One entry per ClaimType a Subject has ever passed a case for — see apps/api's badges endpoint. */
 export interface SubjectBadge {
   claimType: ClaimType;
@@ -646,12 +663,19 @@ export interface UpdateAccessGrantRequest {
   status?: 'ACTIVE' | 'REVOKED' | 'PENDING';
 }
 
+// NOTE: every /v1/access/* route takes tenantId (and optionally
+// organizationId/brandId) as a QUERY parameter (see
+// apps/rust-api/src/modules/access/handlers.rs's AccessQuery), never as a
+// path segment -- there is no "/v1/access/:tenantId/..." route registered
+// (see access/routes.rs). The functions below previously built URLs with
+// tenantId in the path, which 404'd on every call.
+
 export function createAccessGrant(
   credential: string,
   tenantId: string,
   dto: CreateAccessGrantRequest,
 ): Promise<AccessGrantRecord> {
-  return apiFetch<AccessGrantRecord>(`/v1/access/${tenantId}/grant`, credential, {
+  return apiFetch<AccessGrantRecord>(`/v1/access/grant?tenantId=${encodeURIComponent(tenantId)}`, credential, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(dto),
@@ -664,10 +688,10 @@ export function listAccessGrants(
   organizationId?: string,
   brandId?: string,
 ): Promise<AccessGrantRecord[]> {
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({ tenantId });
   if (organizationId) params.set('organizationId', organizationId);
   if (brandId) params.set('brandId', brandId);
-  return apiFetch<AccessGrantRecord[]>(`/v1/access/${tenantId}/grants?${params}`, credential);
+  return apiFetch<AccessGrantRecord[]>(`/v1/access/grants?${params}`, credential);
 }
 
 export function getAccessGrant(
@@ -675,7 +699,7 @@ export function getAccessGrant(
   tenantId: string,
   grantId: string,
 ): Promise<AccessGrantRecord> {
-  return apiFetch<AccessGrantRecord>(`/v1/access/${tenantId}/grant/${grantId}`, credential);
+  return apiFetch<AccessGrantRecord>(`/v1/access/grant/${grantId}?tenantId=${encodeURIComponent(tenantId)}`, credential);
 }
 
 export function updateAccessGrant(
@@ -684,7 +708,7 @@ export function updateAccessGrant(
   grantId: string,
   dto: UpdateAccessGrantRequest,
 ): Promise<AccessGrantRecord> {
-  return apiFetch<AccessGrantRecord>(`/v1/access/${tenantId}/grant/${grantId}`, credential, {
+  return apiFetch<AccessGrantRecord>(`/v1/access/grant/${grantId}?tenantId=${encodeURIComponent(tenantId)}`, credential, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(dto),
@@ -696,7 +720,7 @@ export function revokeAccessGrant(
   tenantId: string,
   grantId: string,
 ): Promise<{ message: string }> {
-  return apiFetch<{ message: string }>(`/v1/access/${tenantId}/grant/${grantId}`, credential, {
+  return apiFetch<{ message: string }>(`/v1/access/grant/${grantId}?tenantId=${encodeURIComponent(tenantId)}`, credential, {
     method: 'DELETE',
   });
 }
@@ -706,36 +730,59 @@ export function transferOwnership(
   tenantId: string,
   dto: { newOwnerId: string; organizationId?: string; brandId?: string },
 ): Promise<{ message: string }> {
-  return apiFetch<{ message: string }>(`/v1/access/${tenantId}/transfer-ownership`, credential, {
+  return apiFetch<{ message: string }>(`/v1/access/transfer-ownership?tenantId=${encodeURIComponent(tenantId)}`, credential, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(dto),
   });
 }
 
+/** POST /v1/access/partner -- body is just {accountId, percentage} (see
+ * access::dto::AddPartnerRequest); organizationId/brandId, like
+ * everywhere else in this module, are query parameters, not body fields. */
 export function addPartner(
   credential: string,
   tenantId: string,
-  dto: { accountId: string; partnershipPercentage: number; organizationId?: string; brandId?: string },
+  dto: { accountId: string; percentage: number; organizationId?: string; brandId?: string },
 ): Promise<AccessGrantRecord> {
-  return apiFetch<AccessGrantRecord>(`/v1/access/${tenantId}/partner`, credential, {
+  const params = new URLSearchParams({ tenantId });
+  if (dto.organizationId) params.set('organizationId', dto.organizationId);
+  if (dto.brandId) params.set('brandId', dto.brandId);
+  return apiFetch<AccessGrantRecord>(`/v1/access/partner?${params}`, credential, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(dto),
+    body: JSON.stringify({ accountId: dto.accountId, percentage: dto.percentage }),
   });
 }
 
+export interface PermissionEntry {
+  groupName: string;
+  serviceName: string;
+  permissionKey: string;
+  label: string;
+  granted: boolean;
+}
+
+export interface MyPermissionsResponse {
+  accountId: string;
+  tenantId: string;
+  permissions: PermissionEntry[];
+}
+
+/** GET /v1/access/my-permissions -- returns MyPermissionsResponse (an
+ * object with a `permissions` array of {groupName, serviceName,
+ * permissionKey, label, granted}), not a flat string[]. */
 export function getMyPermissions(
   credential: string,
   tenantId: string,
   organizationId?: string,
   brandId?: string,
-): Promise<string[]> {
+): Promise<MyPermissionsResponse> {
   const params = new URLSearchParams();
   params.set('tenantId', tenantId);
   if (organizationId) params.set('organizationId', organizationId);
   if (brandId) params.set('brandId', brandId);
-  return apiFetch<string[]>('/v1/access/my-permissions?' + params, credential);
+  return apiFetch<MyPermissionsResponse>('/v1/access/my-permissions?' + params, credential);
 }
 
 // Layer 2: Departments

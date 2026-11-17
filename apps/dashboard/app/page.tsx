@@ -24,6 +24,9 @@ import {
   createAccessGrant,
   listAccessGrants,
   revokeAccessGrant,
+  transferOwnership,
+  addPartner,
+  getMyPermissions,
   createDepartment,
   listDepartments,
   createRole,
@@ -42,6 +45,7 @@ import {
   type BrandRecord,
   type CreateBrandRequest,
   type AccessGrantRecord,
+  type MyPermissionsResponse,
   type DepartmentRecord,
   type RoleDefinitionRecord,
   type PermissionCatalogGroup,
@@ -66,7 +70,14 @@ export default function DashboardHome() {
     return (
       <LoginScreen
         onLogin={login}
-        onPlatformAdminLogin={() => setPlatformAdminSecret('')}
+        // handlePlatformAdminLogin already persists the secret
+        // (setPlatformAdminSecret(platformSecret.trim())) before calling
+        // this -- it previously immediately wiped that same secret back
+        // out with setPlatformAdminSecret(''), so the "Platform Admin"
+        // login never actually worked. It's picked up by DashboardLayout
+        // after a real staff sign-in (see getPlatformAdminSecret() there);
+        // nothing else needs to happen here.
+        onPlatformAdminLogin={() => {}}
         error={loginError}
         loading={loggingIn}
       />
@@ -1418,6 +1429,18 @@ function AccessTab({ credential }: { credential: string }) {
   const [partnershipPercentage, setPartnershipPercentage] = useState<number>(50);
   const [creating, setCreating] = useState(false);
 
+  const [showTransferForm, setShowTransferForm] = useState(false);
+  const [newOwnerId, setNewOwnerId] = useState('');
+  const [transferring, setTransferring] = useState(false);
+
+  const [showPartnerForm, setShowPartnerForm] = useState(false);
+  const [partnerAccountId, setPartnerAccountId] = useState('');
+  const [partnerPercentage, setPartnerPercentage] = useState<number>(10);
+  const [addingPartner, setAddingPartner] = useState(false);
+
+  const [myPermissions, setMyPermissions] = useState<MyPermissionsResponse | null>(null);
+  const [permissionsError, setPermissionsError] = useState<string | null>(null);
+
   useEffect(() => {
     loadTenant();
   }, []);
@@ -1427,6 +1450,7 @@ function AccessTab({ credential }: { credential: string }) {
       const data = await apiFetch<any>('/v1/tenants/me', credential);
       setTenant(data);
       await loadGrants(data.id);
+      await loadMyPermissions(data.id);
     } catch (e) {
       setError((e as Error).message);
       setLoading(false);
@@ -1441,6 +1465,15 @@ function AccessTab({ credential }: { credential: string }) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMyPermissions(tenantId: string) {
+    setPermissionsError(null);
+    try {
+      setMyPermissions(await getMyPermissions(credential, tenantId));
+    } catch (e) {
+      setPermissionsError((e as Error).message);
     }
   }
 
@@ -1478,6 +1511,47 @@ function AccessTab({ credential }: { credential: string }) {
     }
   }
 
+  async function handleTransferOwnership(e: React.FormEvent) {
+    e.preventDefault();
+    if (!tenant || !newOwnerId.trim()) return;
+    if (!(await confirm({
+      title: 'Transfer tenant ownership?',
+      body: 'The new owner gets full tenant access, including the ability to transfer ownership again. This cannot be undone by revoking a grant alone.',
+      confirmLabel: 'Transfer ownership',
+    }))) return;
+    setTransferring(true);
+    setError(null);
+    try {
+      await transferOwnership(credential, tenant.id, { newOwnerId: newOwnerId.trim() });
+      setSuccess('Ownership transferred');
+      setNewOwnerId('');
+      setShowTransferForm(false);
+      await loadGrants(tenant.id);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setTransferring(false);
+    }
+  }
+
+  async function handleAddPartner(e: React.FormEvent) {
+    e.preventDefault();
+    if (!tenant || !partnerAccountId.trim()) return;
+    setAddingPartner(true);
+    setError(null);
+    try {
+      await addPartner(credential, tenant.id, { accountId: partnerAccountId.trim(), percentage: partnerPercentage });
+      setSuccess('Partner added');
+      setPartnerAccountId('');
+      setShowPartnerForm(false);
+      await loadGrants(tenant.id);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setAddingPartner(false);
+    }
+  }
+
   if (loading) return <div aria-busy="true" aria-label="Loading"><Skeleton count={4} /></div>;
   if (!tenant) return <p>Failed to load tenant.</p>;
 
@@ -1486,13 +1560,70 @@ function AccessTab({ credential }: { credential: string }) {
       {dialog}
       <div className="tab-header">
         <h1>Access Management</h1>
-        <button className="primary-btn" onClick={() => setShowForm(!showForm)}>
-          {showForm ? 'Cancel' : '+ Grant Access'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="secondary-btn" onClick={() => setShowPartnerForm(!showPartnerForm)}>
+            {showPartnerForm ? 'Cancel' : '+ Add Partner'}
+          </button>
+          <button className="secondary-btn" onClick={() => setShowTransferForm(!showTransferForm)}>
+            {showTransferForm ? 'Cancel' : 'Transfer Ownership'}
+          </button>
+          <button className="primary-btn" onClick={() => setShowForm(!showForm)}>
+            {showForm ? 'Cancel' : '+ Grant Access'}
+          </button>
+        </div>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
       {success && <div className="alert alert-success">{success}</div>}
+
+      {showTransferForm && (
+        <form onSubmit={handleTransferOwnership} className="create-tenant-form">
+          <h3>Transfer Ownership</h3>
+          <div className="form-group">
+            <label>New Owner's Account ID *</label>
+            <input
+              type="text"
+              value={newOwnerId}
+              onChange={(e) => setNewOwnerId(e.target.value)}
+              placeholder="ckx7z8a9b000001la2m3n4o5p"
+              required
+            />
+            <small>This account becomes the tenant's sole OWNER. This cannot be undone by revoking a grant.</small>
+          </div>
+          <button type="submit" className="btn-danger" disabled={transferring || !newOwnerId.trim()}>
+            {transferring ? 'Transferring…' : 'Transfer Ownership'}
+          </button>
+        </form>
+      )}
+
+      {showPartnerForm && (
+        <form onSubmit={handleAddPartner} className="create-tenant-form">
+          <h3>Add Partner</h3>
+          <div className="form-group">
+            <label>Account ID *</label>
+            <input
+              type="text"
+              value={partnerAccountId}
+              onChange={(e) => setPartnerAccountId(e.target.value)}
+              placeholder="ckx7z8a9b000001la2m3n4o5p"
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>Ownership Percentage *</label>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={partnerPercentage}
+              onChange={(e) => setPartnerPercentage(Number(e.target.value))}
+            />
+          </div>
+          <button type="submit" className="primary-btn" disabled={addingPartner || !partnerAccountId.trim()}>
+            {addingPartner ? 'Adding…' : 'Add Partner'}
+          </button>
+        </form>
+      )}
 
       {showForm && (
         <form onSubmit={handleSubmit} className="create-tenant-form">
@@ -1577,6 +1708,39 @@ function AccessTab({ credential }: { credential: string }) {
           </tbody>
         </table>
       </div>
+
+      <div className="tab-header" style={{ marginTop: 32 }}>
+        <h2>My Permissions</h2>
+      </div>
+      {permissionsError && <div className="alert alert-error">{permissionsError}</div>}
+      {!permissionsError && !myPermissions && <p>Loading…</p>}
+      {myPermissions && (
+        <div className="data-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Group</th>
+                <th>Service</th>
+                <th>Permission</th>
+                <th>Granted</th>
+              </tr>
+            </thead>
+            <tbody>
+              {myPermissions.permissions.map((p) => (
+                <tr key={p.permissionKey}>
+                  <td>{p.groupName}</td>
+                  <td>{p.serviceName}</td>
+                  <td>{p.label}</td>
+                  <td><span className={`badge badge-${p.granted ? 'active' : 'revoked'}`}>{p.granted ? 'Granted' : 'Not granted'}</span></td>
+                </tr>
+              ))}
+              {myPermissions.permissions.length === 0 && (
+                <tr><td colSpan={4}>No permissions defined in the catalog yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

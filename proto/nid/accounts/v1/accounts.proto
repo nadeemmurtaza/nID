@@ -11,6 +11,8 @@ service AccountsApiService {
   rpc DeleteAccount(AccountIdRequest) returns (Empty);
   rpc StartEmailVerification(StartEmailVerificationRequest) returns (Empty);
   rpc VerifyEmail(VerifyEmailRequest) returns (AccountResponse);
+  rpc Register(RegisterRequest) returns (AccountResponse);
+  rpc Login(LoginRequest) returns (VerifyOtpResponse);
 }
 
 message Empty {}
@@ -53,4 +55,17 @@ message AccountResponse {
   optional string email = 3;
   optional string phone_verified_at = 4;
   optional string email_verified_at = 5;
+  optional string name = 6;
+}
+
+message RegisterRequest {
+  string name = 1;
+  string email = 2;
+  string phone = 3;
+  string password = 4;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
 }
