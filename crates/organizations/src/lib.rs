@@ -57,6 +57,20 @@ pub struct OrganizationResponse {
     pub updated_at: String,
 }
 
+/// Shaped for GET /v1/organizations/my-memberships specifically --
+/// callers need role/isAdmin alongside the organization's own id/name to
+/// decide what to show, not the raw organization row OrganizationResponse
+/// carries.
+#[derive(Debug, Clone)]
+pub struct MyMembershipResponse {
+    pub organization_id: String,
+    pub organization_name: String,
+    pub tenant_id: String,
+    pub country_code: Option<String>,
+    pub role: String,
+    pub is_admin: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct MembershipResponse {
     pub id: String,
@@ -445,7 +459,7 @@ impl OrganizationsService {
         Ok(())
     }
 
-    pub async fn list_my_memberships(&self, account_id: &str) -> Result<Vec<OrganizationResponse>> {
+    pub async fn list_my_memberships(&self, account_id: &str) -> Result<Vec<MyMembershipResponse>> {
         let mut conn = self.scoped(&[("app.account_id", account_id)]).await?;
 
         let subject_id: Option<String> = sqlx::query_scalar(
@@ -460,29 +474,27 @@ impl OrganizationsService {
             return Ok(Vec::new());
         };
 
-        let org_ids: Vec<String> = sqlx::query_scalar(
-            "SELECT organization_id FROM organization_membership
-             WHERE person_subject_id = $1 AND status = 'ACTIVE'",
+        let rows: Vec<(String, String, String, Option<String>, String, bool)> = sqlx::query_as(
+            "SELECT o.id, o.legal_name, o.tenant_id, o.country_code, om.role, om.is_admin
+             FROM organization_membership om
+             JOIN organization o ON o.id = om.organization_id
+             WHERE om.person_subject_id = $1 AND om.status = 'ACTIVE'",
         )
         .bind(&subject_id)
         .fetch_all(&mut *conn)
         .await?;
 
-        let mut results = Vec::new();
-        for org_id in org_ids {
-            let org: OrganizationRow = sqlx::query_as(
-                "SELECT id, tenant_id, subject_id, legal_name, registration_number, country_code, address, created_at, updated_at
-                 FROM organization WHERE id = $1",
-            )
-            .bind(&org_id)
-            .fetch_optional(&mut *conn)
-            .await?
-            .ok_or_else(|| anyhow!("Organization not found"))?;
-
-            results.push(Self::row_to_response(org));
-        }
-
-        Ok(results)
+        Ok(rows
+            .into_iter()
+            .map(|(organization_id, organization_name, tenant_id, country_code, role, is_admin)| MyMembershipResponse {
+                organization_id,
+                organization_name,
+                tenant_id,
+                country_code,
+                role,
+                is_admin,
+            })
+            .collect())
     }
 
     pub async fn list_my_invites(&self, account_id: &str) -> Result<Vec<MembershipResponse>> {

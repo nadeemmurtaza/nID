@@ -53,6 +53,20 @@ pub struct OrganizationResponse {
     pub updated_at: String,
 }
 
+/// GET /v1/organizations/my-memberships -- role/isAdmin alongside the
+/// organization's own id/name, which the raw OrganizationResponse above
+/// doesn't carry.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MyMembershipResponse {
+    pub organization_id: String,
+    pub organization_name: String,
+    pub tenant_id: String,
+    pub country_code: Option<String>,
+    pub role: String,
+    pub is_admin: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MembershipResponse {

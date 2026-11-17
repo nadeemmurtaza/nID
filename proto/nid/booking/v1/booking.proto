@@ -23,6 +23,10 @@ message Empty {}
 
 message AccountIdRequest {
   string account_id = 1;
+  // Set to resolve the caller's work profile for some organization they
+  // administer instead of their own personal profile. See
+  // ProfileOwner::Organization in crates/booking.
+  optional string organization_id = 2;
 }
 
 message SlugRequest {
@@ -37,6 +41,7 @@ message CreateServiceRequest {
   optional string currency = 5;
   optional string description = 6;
   optional bool is_active = 7;
+  optional string organization_id = 8;
 }
 
 message UpdateServiceRequest {
@@ -48,11 +53,13 @@ message UpdateServiceRequest {
   optional bool is_active = 6;
   optional string description = 7;
   optional string currency = 8;
+  optional string organization_id = 9;
 }
 
 message RemoveServiceRequest {
   string account_id = 1;
   string service_id = 2;
+  optional string organization_id = 3;
 }
 
 message CreateAvailabilityRuleRequest {
@@ -61,11 +68,13 @@ message CreateAvailabilityRuleRequest {
   int32 start_minute = 3;
   int32 end_minute = 4;
   optional bool is_active = 5;
+  optional string organization_id = 6;
 }
 
 message RemoveAvailabilityRuleRequest {
   string account_id = 1;
   string rule_id = 2;
+  optional string organization_id = 3;
 }
 
 message UpdateAvailabilityRuleRequest {
@@ -75,6 +84,7 @@ message UpdateAvailabilityRuleRequest {
   optional int32 start_minute = 4;
   optional int32 end_minute = 5;
   optional bool is_active = 6;
+  optional string organization_id = 7;
 }
 
 message ComputeFreeSlotsRequest {
@@ -87,11 +97,13 @@ message ComputeFreeSlotsRequest {
 message ConfirmAppointmentRequest {
   string account_id = 1;
   string appointment_id = 2;
+  optional string organization_id = 3;
 }
 
 message CancelAppointmentRequest {
   string account_id = 1;
   string appointment_id = 2;
+  optional string organization_id = 3;
 }
 
 message CreatePublicAppointmentRequest {

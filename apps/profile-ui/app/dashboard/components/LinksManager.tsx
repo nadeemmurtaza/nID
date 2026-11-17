@@ -5,18 +5,27 @@ import { useEffect, useState } from 'react';
 import {
   ApiError,
   createCustomLink,
+  createOrgCustomLink,
+  createOrgSocialLink,
   createSocialLink,
   deleteCustomLink,
+  deleteOrgCustomLink,
+  deleteOrgSocialLink,
   deleteSocialLink,
   listMyCustomLinks,
   listMySocialLinks,
+  listOrgCustomLinks,
+  listOrgSocialLinks,
   type OwnerCustomLink,
   type OwnerSocialLink,
 } from '../../../lib/owner-api';
 
 const PLATFORMS = ['FACEBOOK', 'INSTAGRAM', 'LINKEDIN', 'TWITTER', 'YOUTUBE', 'TIKTOK', 'OTHER'];
 
-export function LinksManager({ token }: { token: string }) {
+/** organizationId present -> this organization's work profile; absent ->
+ * the caller's own personal profile -- see ServicesManager.tsx's doc
+ * comment for the pattern this mirrors. */
+export function LinksManager({ token, organizationId }: { token: string; organizationId?: string }) {
   const { confirm, dialog } = useConfirm();
   const [customLinks, setCustomLinks] = useState<OwnerCustomLink[] | null>(null);
   const [socialLinks, setSocialLinks] = useState<OwnerSocialLink[] | null>(null);
@@ -28,21 +37,41 @@ export function LinksManager({ token }: { token: string }) {
   const [socialUrl, setSocialUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  function listCustom() {
+    return organizationId ? listOrgCustomLinks(token, organizationId) : listMyCustomLinks(token);
+  }
+  function listSocial() {
+    return organizationId ? listOrgSocialLinks(token, organizationId) : listMySocialLinks(token);
+  }
+  function addCustom(input: { label: string; url: string }) {
+    return organizationId ? createOrgCustomLink(token, organizationId, input) : createCustomLink(token, input);
+  }
+  function addSocial(input: { platform: string; url: string }) {
+    return organizationId ? createOrgSocialLink(token, organizationId, input) : createSocialLink(token, input);
+  }
+  function removeCustom(id: string) {
+    return organizationId ? deleteOrgCustomLink(token, organizationId, id) : deleteCustomLink(token, id);
+  }
+  function removeSocial(id: string) {
+    return organizationId ? deleteOrgSocialLink(token, organizationId, id) : deleteSocialLink(token, id);
+  }
+
   useEffect(() => {
-    Promise.all([listMyCustomLinks(token), listMySocialLinks(token)])
+    Promise.all([listCustom(), listSocial()])
       .then(([c, s]) => {
         setCustomLinks(c);
         setSocialLinks(s);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load links.'));
-  }, [token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, organizationId]);
 
   async function handleAddCustom(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      const created = await createCustomLink(token, { label, url });
+      const created = await addCustom({ label, url });
       setCustomLinks((prev) => [...(prev ?? []), created]);
       setLabel('');
       setUrl('');
@@ -58,7 +87,7 @@ export function LinksManager({ token }: { token: string }) {
     setError(null);
     setSubmitting(true);
     try {
-      const created = await createSocialLink(token, { platform, url: socialUrl });
+      const created = await addSocial({ platform, url: socialUrl });
       setSocialLinks((prev) => [...(prev ?? []), created]);
       setSocialUrl('');
     } catch (err) {
@@ -70,13 +99,13 @@ export function LinksManager({ token }: { token: string }) {
 
   async function handleDeleteCustom(id: string): Promise<void> {
     if (!(await confirm({ title: 'Remove this link?', body: 'It is removed from your public profile.', confirmLabel: 'Remove link' }))) return;
-    await deleteCustomLink(token, id);
+    await removeCustom(id);
     setCustomLinks((prev) => prev?.filter((l) => l.id !== id) ?? null);
   }
 
   async function handleDeleteSocial(id: string): Promise<void> {
     if (!(await confirm({ title: 'Remove this social link?', body: 'It is removed from your public profile.', confirmLabel: 'Remove link' }))) return;
-    await deleteSocialLink(token, id);
+    await removeSocial(id);
     setSocialLinks((prev) => prev?.filter((l) => l.id !== id) ?? null);
   }
 

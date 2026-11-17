@@ -68,7 +68,6 @@ impl AppEnv {
                         "http://localhost:3200".to_string(), // dashboard
                         "http://localhost:3300".to_string(), // login-ui
                         "http://localhost:3400".to_string(), // profile-ui
-                        "http://localhost:3500".to_string(), // onboarding
                     ]
                 }),
         })

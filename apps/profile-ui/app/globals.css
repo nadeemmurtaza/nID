@@ -461,6 +461,7 @@ label {
 input[type='text'],
 input[type='tel'],
 input[type='email'],
+input[type='password'],
 input[type='date'],
 textarea,
 select {
@@ -490,6 +491,7 @@ select:focus {
 input[type='text'],
 input[type='tel'],
 input[type='email'],
+input[type='password'],
 input[type='date'],
 textarea,
 select {
@@ -696,10 +698,60 @@ button {
    pattern the public app already uses for compact nav). At >= 880px the
    same .tabs markup becomes a persistent left sidebar instead. */
 
-.dashboard-shell {
+.dashboard-outer {
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
+}
+
+/* Always visible, on every /dashboard/* page -- the Personal/Work switch
+   lives here (centered), with Account and Sign out on the right. Each of
+   Personal and Work then gets its own sidebar below this, never a shared
+   one -- see DashboardNav (Personal) and WorkSidebar (Work). */
+.dashboard-topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.dashboard-topbar .subnav {
+  flex: 1;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.topbar-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-strong);
+  background: var(--card-bg);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.topbar-link:hover {
+  background: var(--bg-subtle);
+}
+
+.topbar-link.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.dashboard-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .dashboard-nav {
@@ -858,10 +910,6 @@ button {
     flex-shrink: 0;
     border-bottom: none;
     border-right: 1px solid var(--border);
-    height: 100dvh;
-    position: sticky;
-    top: 0;
-    overflow-y: auto;
   }
 
   .dashboard-nav .tabs {

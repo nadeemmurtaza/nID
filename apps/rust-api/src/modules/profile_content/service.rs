@@ -134,6 +134,7 @@ mod inner {
         pub async fn create_offer(
             &self,
             account_id: &str,
+            organization_id: Option<&str>,
             req: &CreateOfferRequest,
         ) -> Result<OfferResponse> {
             let mut c = client().await?;
@@ -143,14 +144,16 @@ mod inner {
                 description: req.description.clone(),
                 valid_until: req.valid_until.clone(),
                 is_active: req.is_active,
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(offer_from_proto(resp))
         }
 
-        pub async fn list_my_offers(&self, account_id: &str) -> Result<Vec<OfferResponse>> {
+        pub async fn list_my_offers(&self, account_id: &str, organization_id: Option<&str>) -> Result<Vec<OfferResponse>> {
             let mut c = client().await?;
             let resp = c.list_my_offers(AccountIdRequest {
                 account_id: account_id.to_string(),
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(resp.offers.into_iter().map(offer_from_proto).collect())
         }
@@ -158,6 +161,7 @@ mod inner {
         pub async fn update_offer(
             &self,
             account_id: &str,
+            organization_id: Option<&str>,
             offer_id: &str,
             req: &UpdateOfferRequest,
         ) -> Result<OfferResponse> {
@@ -169,15 +173,17 @@ mod inner {
                 description: req.description.clone(),
                 valid_until: req.valid_until.clone(),
                 is_active: req.is_active,
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(offer_from_proto(resp))
         }
 
-        pub async fn remove_offer(&self, account_id: &str, offer_id: &str) -> Result<()> {
+        pub async fn remove_offer(&self, account_id: &str, organization_id: Option<&str>, offer_id: &str) -> Result<()> {
             let mut c = client().await?;
             c.remove_offer(RemoveOfferRequest {
                 account_id: account_id.to_string(),
                 offer_id: offer_id.to_string(),
+                organization_id: organization_id.map(str::to_string),
             }).await?;
             Ok(())
         }
@@ -187,6 +193,7 @@ mod inner {
         pub async fn upsert_business_hour(
             &self,
             account_id: &str,
+            organization_id: Option<&str>,
             day: &str,
             req: &UpsertBusinessHourRequest,
         ) -> Result<BusinessHourResponse> {
@@ -197,23 +204,26 @@ mod inner {
                 open_minute: req.open_minute,
                 close_minute: req.close_minute,
                 is_closed: req.is_closed,
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(business_hour_from_proto(resp))
         }
 
-        pub async fn list_my_business_hours(&self, account_id: &str) -> Result<Vec<BusinessHourResponse>> {
+        pub async fn list_my_business_hours(&self, account_id: &str, organization_id: Option<&str>) -> Result<Vec<BusinessHourResponse>> {
             let mut c = client().await?;
             let resp = c.list_my_business_hours(AccountIdRequest {
                 account_id: account_id.to_string(),
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(resp.hours.into_iter().map(business_hour_from_proto).collect())
         }
 
-        pub async fn remove_business_hour(&self, account_id: &str, day: &str) -> Result<()> {
+        pub async fn remove_business_hour(&self, account_id: &str, organization_id: Option<&str>, day: &str) -> Result<()> {
             let mut c = client().await?;
             c.remove_business_hour(RemoveBusinessHourRequest {
                 account_id: account_id.to_string(),
                 day: day.to_string(),
+                organization_id: organization_id.map(str::to_string),
             }).await?;
             Ok(())
         }
@@ -223,6 +233,7 @@ mod inner {
         pub async fn create_custom_link(
             &self,
             account_id: &str,
+            organization_id: Option<&str>,
             req: &CreateCustomLinkRequest,
         ) -> Result<CustomLinkResponse> {
             let mut c = client().await?;
@@ -231,23 +242,26 @@ mod inner {
                 label: req.label.clone(),
                 url: req.url.clone(),
                 order_idx: Some(req.order.unwrap_or(0)),
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(custom_link_from_proto(resp))
         }
 
-        pub async fn list_my_custom_links(&self, account_id: &str) -> Result<Vec<CustomLinkResponse>> {
+        pub async fn list_my_custom_links(&self, account_id: &str, organization_id: Option<&str>) -> Result<Vec<CustomLinkResponse>> {
             let mut c = client().await?;
             let resp = c.list_my_custom_links(AccountIdRequest {
                 account_id: account_id.to_string(),
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(resp.links.into_iter().map(custom_link_from_proto).collect())
         }
 
-        pub async fn remove_custom_link(&self, account_id: &str, link_id: &str) -> Result<()> {
+        pub async fn remove_custom_link(&self, account_id: &str, organization_id: Option<&str>, link_id: &str) -> Result<()> {
             let mut c = client().await?;
             c.remove_custom_link(RemoveCustomLinkRequest {
                 account_id: account_id.to_string(),
                 link_id: link_id.to_string(),
+                organization_id: organization_id.map(str::to_string),
             }).await?;
             Ok(())
         }
@@ -255,6 +269,7 @@ mod inner {
         pub async fn update_custom_link(
             &self,
             account_id: &str,
+            organization_id: Option<&str>,
             link_id: &str,
             req: &UpdateCustomLinkRequest,
         ) -> Result<CustomLinkResponse> {
@@ -265,6 +280,7 @@ mod inner {
                 label: req.label.clone(),
                 url: req.url.clone(),
                 order_idx: Some(req.order.unwrap_or(0)),
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(custom_link_from_proto(resp))
         }
@@ -274,6 +290,7 @@ mod inner {
         pub async fn create_social_link(
             &self,
             account_id: &str,
+            organization_id: Option<&str>,
             req: &CreateSocialLinkRequest,
         ) -> Result<SocialLinkResponse> {
             let mut c = client().await?;
@@ -282,23 +299,26 @@ mod inner {
                 platform: req.platform.clone(),
                 url: req.url.clone(),
                 order_idx: req.order,
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(social_link_from_proto(resp))
         }
 
-        pub async fn list_my_social_links(&self, account_id: &str) -> Result<Vec<SocialLinkResponse>> {
+        pub async fn list_my_social_links(&self, account_id: &str, organization_id: Option<&str>) -> Result<Vec<SocialLinkResponse>> {
             let mut c = client().await?;
             let resp = c.list_my_social_links(AccountIdRequest {
                 account_id: account_id.to_string(),
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(resp.links.into_iter().map(social_link_from_proto).collect())
         }
 
-        pub async fn remove_social_link(&self, account_id: &str, link_id: &str) -> Result<()> {
+        pub async fn remove_social_link(&self, account_id: &str, organization_id: Option<&str>, link_id: &str) -> Result<()> {
             let mut c = client().await?;
             c.remove_social_link(RemoveSocialLinkRequest {
                 account_id: account_id.to_string(),
                 link_id: link_id.to_string(),
+                organization_id: organization_id.map(str::to_string),
             }).await?;
             Ok(())
         }
@@ -306,6 +326,7 @@ mod inner {
         pub async fn update_social_link(
             &self,
             account_id: &str,
+            organization_id: Option<&str>,
             link_id: &str,
             req: &UpdateSocialLinkRequest,
         ) -> Result<SocialLinkResponse> {
@@ -316,6 +337,7 @@ mod inner {
                 platform: req.platform.clone(),
                 url: req.url.clone(),
                 order_idx: req.order,
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(social_link_from_proto(resp))
         }
@@ -325,6 +347,7 @@ mod inner {
         pub async fn upload_photo(
             &self,
             account_id: &str,
+            organization_id: Option<&str>,
             file: UploadedFile,
         ) -> Result<ProfileImageResponse> {
             let mut c = client().await?;
@@ -332,6 +355,7 @@ mod inner {
                 account_id: account_id.to_string(),
                 content_type: file.content_type,
                 data: file.buffer,
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(profile_image_from_proto(resp))
         }
@@ -339,6 +363,7 @@ mod inner {
         pub async fn upload_gallery_image(
             &self,
             account_id: &str,
+            organization_id: Option<&str>,
             kind: &str,
             file: UploadedFile,
         ) -> Result<ProfileImageResponse> {
@@ -348,23 +373,26 @@ mod inner {
                 kind: kind.to_string(),
                 content_type: file.content_type,
                 data: file.buffer,
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(profile_image_from_proto(resp))
         }
 
-        pub async fn list_my_images(&self, account_id: &str) -> Result<Vec<ProfileImageResponse>> {
+        pub async fn list_my_images(&self, account_id: &str, organization_id: Option<&str>) -> Result<Vec<ProfileImageResponse>> {
             let mut c = client().await?;
             let resp = c.list_my_images(AccountIdRequest {
                 account_id: account_id.to_string(),
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(resp.images.into_iter().map(profile_image_from_proto).collect())
         }
 
-        pub async fn remove_image(&self, account_id: &str, image_id: &str) -> Result<()> {
+        pub async fn remove_image(&self, account_id: &str, organization_id: Option<&str>, image_id: &str) -> Result<()> {
             let mut c = client().await?;
             c.remove_image(RemoveImageRequest {
                 account_id: account_id.to_string(),
                 image_id: image_id.to_string(),
+                organization_id: organization_id.map(str::to_string),
             }).await?;
             Ok(())
         }
@@ -379,19 +407,21 @@ mod inner {
 
         // ── Contact Messages ──
 
-        pub async fn list_my_contact_messages(&self, account_id: &str) -> Result<Vec<ContactMessageResponse>> {
+        pub async fn list_my_contact_messages(&self, account_id: &str, organization_id: Option<&str>) -> Result<Vec<ContactMessageResponse>> {
             let mut c = client().await?;
             let resp = c.list_my_contact_messages(AccountIdRequest {
                 account_id: account_id.to_string(),
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(resp.messages.into_iter().map(contact_message_from_proto).collect())
         }
 
-        pub async fn mark_contact_message_read(&self, account_id: &str, message_id: &str) -> Result<ContactMessageResponse> {
+        pub async fn mark_contact_message_read(&self, account_id: &str, organization_id: Option<&str>, message_id: &str) -> Result<ContactMessageResponse> {
             let mut c = client().await?;
             let resp = c.mark_contact_message_read(MarkContactMessageReadRequest {
                 account_id: account_id.to_string(),
                 message_id: message_id.to_string(),
+                organization_id: organization_id.map(str::to_string),
             }).await?.into_inner();
             Ok(contact_message_from_proto(resp))
         }

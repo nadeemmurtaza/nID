@@ -209,17 +209,24 @@ impl OrganizationProfilesService {
 
         // An organization is verified once its own subject has an APPROVED
         // IDENTITY case (real KYB), the same derivation the TypeScript API
-        // uses; there is no stored flag. Cases are tenant-RLS rows.
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-            .bind(&org_tenant)
-            .execute(&mut *conn)
-            .await?;
-        let verified: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM verification_case WHERE subject_id = $1 AND status = 'APPROVED' AND claim_type = 'IDENTITY')",
-        )
-        .bind(&org_subject)
-        .fetch_one(&mut *conn)
-        .await?;
+        // uses; there is no stored flag. Cases are tenant-RLS rows, so the
+        // set_config(..., true) below is transaction-local -- it needs its
+        // own transaction on self.db rather than the caller's `conn`,
+        // otherwise it resets (autocommit) before the SELECT runs and the
+        // check always reports unverified.
+        let verified: bool = {
+            let mut tx = self.db.begin().await?;
+            sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+                .bind(&org_tenant)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM verification_case WHERE subject_id = $1 AND status = 'APPROVED' AND claim_type = 'IDENTITY')",
+            )
+            .bind(&org_subject)
+            .fetch_one(&mut *tx)
+            .await?
+        };
         let org = OrgRow { id: org_id, is_verified: verified };
 
         if !org.is_verified {
@@ -293,7 +300,9 @@ impl OrganizationProfilesService {
         .bind(slug)
         .bind(display_name)
         .bind(headline)
-        .bind(category.unwrap_or("GENERAL"))
+        // "GENERAL" is not a ProfileCategory enum value (DOCTOR, BUSINESS,
+        // PROFESSIONAL, OTHER) -- see the same fix in profiles::service.
+        .bind(category.unwrap_or("OTHER"))
         .bind(bio)
         .bind(phone)
         .bind(whatsapp)

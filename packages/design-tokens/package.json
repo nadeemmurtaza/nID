@@ -18,7 +18,7 @@
     "./Field": "./Field.tsx",
     "./StatePages": "./StatePages.tsx",
     "./patterns.css": "./patterns.css",
-    "./formGuard": "./formGuard.ts",
+    "./form-guard-logic": "./form-guard-logic.ts",
     "./FormGuard": "./FormGuard.tsx"
   },
   "files": [
@@ -35,7 +35,7 @@
     "Field.tsx",
     "StatePages.tsx",
     "patterns.css",
-    "formGuard.ts",
+    "form-guard-logic.ts",
     "FormGuard.tsx"
   ],
   "scripts": {

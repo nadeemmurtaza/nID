@@ -50,6 +50,7 @@ message Empty {}
 
 message AccountIdRequest {
   string account_id = 1;
+  optional string organization_id = 2;
 }
 
 message SlugRequest {
@@ -64,6 +65,7 @@ message CreateOfferRequest {
   optional string description = 3;
   optional string valid_until = 4;
   optional bool is_active = 5;
+  optional string organization_id = 6;
 }
 
 message UpdateOfferRequest {
@@ -73,11 +75,13 @@ message UpdateOfferRequest {
   optional string description = 4;
   optional string valid_until = 5;
   optional bool is_active = 6;
+  optional string organization_id = 7;
 }
 
 message RemoveOfferRequest {
   string account_id = 1;
   string offer_id = 2;
+  optional string organization_id = 3;
 }
 
 message OfferResponse {
@@ -101,11 +105,13 @@ message UpsertBusinessHourRequest {
   optional int32 open_minute = 3;
   optional int32 close_minute = 4;
   bool is_closed = 5;
+  optional string organization_id = 6;
 }
 
 message RemoveBusinessHourRequest {
   string account_id = 1;
   string day = 2;
+  optional string organization_id = 3;
 }
 
 message BusinessHourResponse {
@@ -128,6 +134,7 @@ message CreateCustomLinkRequest {
   string label = 2;
   string url = 3;
   optional int32 order_idx = 4;
+  optional string organization_id = 5;
 }
 
 message UpdateCustomLinkRequest {
@@ -136,11 +143,13 @@ message UpdateCustomLinkRequest {
   optional string label = 3;
   optional string url = 4;
   optional int32 order_idx = 5;
+  optional string organization_id = 6;
 }
 
 message RemoveCustomLinkRequest {
   string account_id = 1;
   string link_id = 2;
+  optional string organization_id = 3;
 }
 
 message CustomLinkResponse {
@@ -162,6 +171,7 @@ message CreateSocialLinkRequest {
   string platform = 2;
   string url = 3;
   optional int32 order_idx = 4;
+  optional string organization_id = 5;
 }
 
 message UpdateSocialLinkRequest {
@@ -170,11 +180,13 @@ message UpdateSocialLinkRequest {
   optional string platform = 3;
   optional string url = 4;
   optional int32 order_idx = 5;
+  optional string organization_id = 6;
 }
 
 message RemoveSocialLinkRequest {
   string account_id = 1;
   string link_id = 2;
+  optional string organization_id = 3;
 }
 
 message SocialLinkResponse {
@@ -195,6 +207,7 @@ message UploadPhotoRequest {
   string account_id = 1;
   string content_type = 2;
   bytes data = 3;
+  optional string organization_id = 4;
 }
 
 message UploadGalleryImageRequest {
@@ -202,11 +215,13 @@ message UploadGalleryImageRequest {
   string kind = 2;
   string content_type = 3;
   bytes data = 4;
+  optional string organization_id = 5;
 }
 
 message RemoveImageRequest {
   string account_id = 1;
   string image_id = 2;
+  optional string organization_id = 3;
 }
 
 message ProfileImageResponse {
@@ -227,6 +242,7 @@ message ProfileImageListResponse {
 message MarkContactMessageReadRequest {
   string account_id = 1;
   string message_id = 2;
+  optional string organization_id = 3;
 }
 
 message CreatePublicContactMessageRequest {

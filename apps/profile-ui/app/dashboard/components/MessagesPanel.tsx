@@ -1,20 +1,38 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ApiError, listMyContactMessages, markContactMessageRead, type OwnerContactMessage } from '../../../lib/owner-api';
+import {
+  ApiError,
+  listMyContactMessages,
+  listOrgContactMessages,
+  markContactMessageRead,
+  markOrgContactMessageRead,
+  type OwnerContactMessage,
+} from '../../../lib/owner-api';
 
-export function MessagesPanel({ token }: { token: string }) {
+/** organizationId present -> this organization's work profile; absent ->
+ * the caller's own personal profile -- see ServicesManager.tsx's doc
+ * comment for the pattern this mirrors. */
+export function MessagesPanel({ token, organizationId }: { token: string; organizationId?: string }) {
   const [messages, setMessages] = useState<OwnerContactMessage[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  function list() {
+    return organizationId ? listOrgContactMessages(token, organizationId) : listMyContactMessages(token);
+  }
+  function markRead(id: string) {
+    return organizationId ? markOrgContactMessageRead(token, organizationId, id) : markContactMessageRead(token, id);
+  }
+
   useEffect(() => {
-    listMyContactMessages(token)
+    list()
       .then(setMessages)
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load messages.'));
-  }, [token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, organizationId]);
 
   async function handleMarkRead(id: string): Promise<void> {
-    const updated = await markContactMessageRead(token, id);
+    const updated = await markRead(id);
     setMessages((prev) => prev?.map((m) => (m.id === id ? updated : m)) ?? null);
   }
 

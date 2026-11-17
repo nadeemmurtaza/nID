@@ -1,6 +1,6 @@
 use newax_organizations::{
-    BeneficialOwnerResponse, CreateOrganizationRequest, MembershipResponse, OrganizationResponse,
-    OrganizationsService,
+    BeneficialOwnerResponse, CreateOrganizationRequest, MembershipResponse, MyMembershipResponse,
+    OrganizationResponse, OrganizationsService,
 };
 use sqlx::postgres::PgPoolOptions;
 use tonic::{transport::Server, Request, Response, Status};
@@ -19,6 +19,7 @@ use proto::{
     CreateOrganizationRequest as ProtoCreateOrgRequest, Empty, GetOrganizationRequest,
     InviteMemberRequest, MembershipListResponse,
     MembershipResponse as ProtoMembershipResponse,
+    MyMembership, MyMembershipListResponse,
     OrganizationListResponse,
     OrganizationResponse as ProtoOrganizationResponse, RespondToInviteRequest, TenantIdRequest,
     TenantIdResponse,
@@ -50,6 +51,17 @@ fn org_to_proto(o: OrganizationResponse) -> ProtoOrganizationResponse {
         address: o.address,
         created_at: o.created_at,
         updated_at: o.updated_at,
+    }
+}
+
+fn my_membership_to_proto(m: MyMembershipResponse) -> MyMembership {
+    MyMembership {
+        organization_id: m.organization_id,
+        organization_name: m.organization_name,
+        country_code: m.country_code,
+        role: m.role,
+        is_admin: m.is_admin,
+        tenant_id: m.tenant_id,
     }
 }
 
@@ -199,15 +211,15 @@ impl OrgRpc for OrgGrpc {
     async fn list_my_memberships(
         &self,
         req: Request<AccountIdRequest>,
-    ) -> Result<Response<OrganizationListResponse>, Status> {
+    ) -> Result<Response<MyMembershipListResponse>, Status> {
         let r = req.into_inner();
-        let orgs = self
+        let memberships = self
             .service
             .list_my_memberships(&r.account_id)
             .await
             .map_err(to_status)?;
-        Ok(Response::new(OrganizationListResponse {
-            organizations: orgs.into_iter().map(org_to_proto).collect(),
+        Ok(Response::new(MyMembershipListResponse {
+            memberships: memberships.into_iter().map(my_membership_to_proto).collect(),
         }))
     }
 

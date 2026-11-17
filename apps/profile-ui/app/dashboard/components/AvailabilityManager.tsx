@@ -5,8 +5,12 @@ import { useEffect, useState } from 'react';
 import {
   ApiError,
   createAvailabilityRule,
+  createOrgAvailabilityRule,
   deleteAvailabilityRule,
+  deleteOrgAvailabilityRule,
   listMyAvailabilityRules,
+  listOrgAvailabilityRules,
+  type AvailabilityRuleInput,
   type OwnerAvailabilityRule,
 } from '../../../lib/owner-api';
 
@@ -23,7 +27,10 @@ function minutesToTime(minutes: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-export function AvailabilityManager({ token }: { token: string }) {
+/** organizationId present -> this organization's work profile; absent ->
+ * the caller's own personal profile -- see ServicesManager.tsx's doc
+ * comment for the pattern this mirrors. */
+export function AvailabilityManager({ token, organizationId }: { token: string; organizationId?: string }) {
   const { confirm, dialog } = useConfirm();
   const [rules, setRules] = useState<OwnerAvailabilityRule[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,18 +39,29 @@ export function AvailabilityManager({ token }: { token: string }) {
   const [end, setEnd] = useState('17:00');
   const [submitting, setSubmitting] = useState(false);
 
+  function list() {
+    return organizationId ? listOrgAvailabilityRules(token, organizationId) : listMyAvailabilityRules(token);
+  }
+  function create(input: AvailabilityRuleInput) {
+    return organizationId ? createOrgAvailabilityRule(token, organizationId, input) : createAvailabilityRule(token, input);
+  }
+  function remove(id: string) {
+    return organizationId ? deleteOrgAvailabilityRule(token, organizationId, id) : deleteAvailabilityRule(token, id);
+  }
+
   useEffect(() => {
-    listMyAvailabilityRules(token)
+    list()
       .then(setRules)
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load availability.'));
-  }, [token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, organizationId]);
 
   async function handleCreate(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      const created = await createAvailabilityRule(token, {
+      const created = await create({
         day,
         startMinute: timeToMinutes(start),
         endMinute: timeToMinutes(end),
@@ -59,7 +77,7 @@ export function AvailabilityManager({ token }: { token: string }) {
   async function handleDelete(id: string): Promise<void> {
     if (!(await confirm({ title: 'Delete this availability rule?', body: 'Those times stop being offered to visitors.', confirmLabel: 'Delete rule' }))) return;
     try {
-      await deleteAvailabilityRule(token, id);
+      await remove(id);
       setRules((prev) => prev?.filter((r) => r.id !== id) ?? null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not remove that window.');

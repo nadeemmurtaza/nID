@@ -4,14 +4,23 @@ import { useConfirm } from '@newax/design-tokens/ConfirmDialog';
 import { useEffect, useState } from 'react';
 import {
   ApiError,
+  createOrgService,
   createService,
+  deleteOrgService,
   deleteService,
   listMyServices,
+  listOrgServices,
+  updateOrgService,
   updateService,
   type OwnerService,
+  type ServiceInput,
 } from '../../../lib/owner-api';
 
-export function ServicesManager({ token }: { token: string }) {
+/** organizationId present -> this organization's work profile; absent ->
+ * the caller's own personal profile. Same UI and behaviour either way,
+ * just a different set of API calls underneath -- see owner-api.ts's
+ * "services (an organization's work profile)" section. */
+export function ServicesManager({ token, organizationId }: { token: string; organizationId?: string }) {
   const { confirm, dialog } = useConfirm();
   const [services, setServices] = useState<OwnerService[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,18 +30,32 @@ export function ServicesManager({ token }: { token: string }) {
   const [currency, setCurrency] = useState('USD');
   const [submitting, setSubmitting] = useState(false);
 
+  function list() {
+    return organizationId ? listOrgServices(token, organizationId) : listMyServices(token);
+  }
+  function create(input: ServiceInput) {
+    return organizationId ? createOrgService(token, organizationId, input) : createService(token, input);
+  }
+  function update(id: string, input: ServiceInput) {
+    return organizationId ? updateOrgService(token, organizationId, id, input) : updateService(token, id, input);
+  }
+  function remove(id: string) {
+    return organizationId ? deleteOrgService(token, organizationId, id) : deleteService(token, id);
+  }
+
   useEffect(() => {
-    listMyServices(token)
+    list()
       .then(setServices)
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load services.'));
-  }, [token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, organizationId]);
 
   async function handleCreate(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      const created = await createService(token, {
+      const created = await create({
         name,
         durationMinutes: Number(duration),
         price: price ? Number(price) : undefined,
@@ -50,14 +73,14 @@ export function ServicesManager({ token }: { token: string }) {
   }
 
   async function handleToggleActive(service: OwnerService): Promise<void> {
-    const updated = await updateService(token, service.id, { isActive: !service.isActive });
+    const updated = await update(service.id, { isActive: !service.isActive });
     setServices((prev) => prev?.map((s) => (s.id === service.id ? updated : s)) ?? null);
   }
 
   async function handleDelete(id: string): Promise<void> {
-    if (!(await confirm({ title: 'Delete this service?', body: 'It is removed from your public profile and cannot be restored.', confirmLabel: 'Delete service' }))) return;
+    if (!(await confirm({ title: 'Delete this service?', body: 'It is removed from the public profile and cannot be restored.', confirmLabel: 'Delete service' }))) return;
     try {
-      await deleteService(token, id);
+      await remove(id);
       setServices((prev) => prev?.filter((s) => s.id !== id) ?? null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not delete that service.');

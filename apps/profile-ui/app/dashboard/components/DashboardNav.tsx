@@ -35,21 +35,19 @@ interface Props {
    * just without the "View page" link, which has nothing to point at yet. */
   slug: string;
   pathname: string | null;
-  onSignOut: () => void;
 }
 
-/** The persistent dashboard app shell: a brand header, one link per dashboard
- * route (reusing the app's existing .tabs/.tab-btn visual style, a
- * horizontally-scrolling strip on narrow screens, a proper left sidebar from
- * 880px up via the media query in globals.css), and sign-out/view-page
- * actions. Active state is driven by the real route (usePathname in the
- * layout), not client-side tab state. */
-export function DashboardNav({ slug, pathname, onSignOut }: Props) {
+/** The Personal section's own sidebar nav -- separate from Work's (see
+ * WorkSidebar.tsx), each reachable via the TopBar's Personal/Work switch,
+ * which stays visible above whichever of the two is showing. Sign out
+ * moved to the TopBar (shared across both sections), so this only has
+ * "View page" left in its footer. */
+export function DashboardNav({ slug, pathname }: Props) {
   return (
-    <nav className="dashboard-nav" aria-label="Dashboard sections">
+    <nav className="dashboard-nav" aria-label="Personal profile sections">
       <div className="dashboard-nav-header">
         <Logomark size={26} />
-        <span className="brand">nID Profiles</span>
+        <span className="brand">Personal</span>
       </div>
 
       <div className="tabs">
@@ -67,16 +65,13 @@ export function DashboardNav({ slug, pathname, onSignOut }: Props) {
         })}
       </div>
 
-      <div className="dashboard-nav-footer">
-        {slug && (
+      {slug && (
+        <div className="dashboard-nav-footer">
           <a href={`/${slug}`} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
             View page →
           </a>
-        )}
-        <button type="button" className="btn btn-secondary btn-sm" onClick={onSignOut}>
-          Sign out
-        </button>
-      </div>
+        </div>
+      )}
     </nav>
   );
 }

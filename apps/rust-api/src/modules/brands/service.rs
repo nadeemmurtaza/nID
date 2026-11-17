@@ -432,13 +432,15 @@ impl BrandsService {
 
         let mut results = Vec::new();
         for (org_id, role, is_admin) in memberships {
-            let org: Option<(String, String, String)> = sqlx::query_as(
-                "SELECT id, legal_name, tenant_id FROM organization WHERE id = $1",
+            let org: Option<(String, String, String, String)> = sqlx::query_as(
+                "SELECT o.id, o.legal_name, o.tenant_id, t.name
+                 FROM organization o JOIN tenant t ON t.id = o.tenant_id
+                 WHERE o.id = $1",
             )
             .bind(&org_id)
             .fetch_optional(&mut *conn)
             .await?;
-            let Some((organization_id, organization_name, tenant_id)) = org else { continue };
+            let Some((organization_id, organization_name, tenant_id, tenant_name)) = org else { continue };
 
             let brands: Vec<(String, String, String)> = sqlx::query_as(
                 "SELECT id, name, slug FROM brand WHERE organization_id = $1 AND active = true ORDER BY created_at ASC",
@@ -457,6 +459,7 @@ impl BrandsService {
                     organization_id: organization_id.clone(),
                     organization_name: organization_name.clone(),
                     tenant_id: tenant_id.clone(),
+                    tenant_name: tenant_name.clone(),
                     role: member_role.clone(),
                 });
             }

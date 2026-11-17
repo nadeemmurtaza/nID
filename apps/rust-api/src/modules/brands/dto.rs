@@ -142,6 +142,7 @@ pub struct BrandMembershipResponse {
     pub organization_id: String,
     pub organization_name: String,
     pub tenant_id: String,
+    pub tenant_name: String,
     pub role: String,
 }
 

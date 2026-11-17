@@ -1,10 +1,10 @@
 'use client';
 
 import { createContext, useContext, type ReactNode } from 'react';
-import type { MembershipInvite, Organization, OrgProfile } from './api';
+import type { MembershipInvite, OrganizationMembership, OrgProfile } from './owner-api';
 
 export interface WorkEntry {
-  organization: Organization;
+  membership: OrganizationMembership;
   profile: OrgProfile | null;
 }
 
@@ -17,9 +17,10 @@ export interface WorkContextValue {
 const WorkContext = createContext<WorkContextValue | null>(null);
 
 /** Wraps every /dashboard/work/* route below app/dashboard/work/layout.tsx,
- * which fetches invites + organizations (and each organization's profile)
- * once and exposes them here -- so the overview page and each
- * [organizationId] page don't each re-fetch the same data. */
+ * which fetches invites + organization memberships (and each org's public
+ * profile) once and exposes them here -- so the sidebar and the overview/
+ * per-organization pages all read the same data instead of each
+ * re-fetching it separately. */
 export function WorkProvider({ value, children }: { value: WorkContextValue; children: ReactNode }) {
   return <WorkContext.Provider value={value}>{children}</WorkContext.Provider>;
 }

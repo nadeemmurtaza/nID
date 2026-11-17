@@ -1,7 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ApiError, listMyBusinessHours, upsertBusinessHour, type OwnerBusinessHour } from '../../../lib/owner-api';
+import {
+  ApiError,
+  listMyBusinessHours,
+  listOrgBusinessHours,
+  upsertBusinessHour,
+  upsertOrgBusinessHour,
+  type OwnerBusinessHour,
+} from '../../../lib/owner-api';
 
 const DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 
@@ -23,15 +30,25 @@ interface Row {
   closed: boolean;
 }
 
-export function HoursManager({ token }: { token: string }) {
+/** organizationId present -> this organization's work profile; absent ->
+ * the caller's own personal profile -- see ServicesManager.tsx's doc
+ * comment for the pattern this mirrors. */
+export function HoursManager({ token, organizationId }: { token: string; organizationId?: string }) {
   const [rows, setRows] = useState<Record<string, Row>>(() =>
     Object.fromEntries(DAYS.map((d) => [d, { open: '09:00', close: '17:00', closed: false }])),
   );
   const [error, setError] = useState<string | null>(null);
   const [savingDay, setSavingDay] = useState<string | null>(null);
 
+  function list() {
+    return organizationId ? listOrgBusinessHours(token, organizationId) : listMyBusinessHours(token);
+  }
+  function upsert(day: string, input: { openMinute?: number; closeMinute?: number; isClosed?: boolean }) {
+    return organizationId ? upsertOrgBusinessHour(token, organizationId, day, input) : upsertBusinessHour(token, day, input);
+  }
+
   useEffect(() => {
-    listMyBusinessHours(token)
+    list()
       .then((hours: OwnerBusinessHour[]) => {
         setRows((prev) => {
           const next = { ...prev };
@@ -46,14 +63,15 @@ export function HoursManager({ token }: { token: string }) {
         });
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load hours.'));
-  }, [token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, organizationId]);
 
   async function saveDay(day: string): Promise<void> {
     setSavingDay(day);
     setError(null);
     const row = rows[day];
     try {
-      await upsertBusinessHour(token, day, {
+      await upsert(day, {
         isClosed: row?.closed,
         openMinute: row?.closed ? undefined : timeToMinutes(row?.open ?? '09:00'),
         closeMinute: row?.closed ? undefined : timeToMinutes(row?.close ?? '17:00'),

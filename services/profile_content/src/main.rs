@@ -1,6 +1,6 @@
 use newax_profile_content::{
-    BusinessHourResponse, ContactMessageResponse, CustomLinkResponse, OfferResponse,
-    ProfileContentService, ProfileImageResponse, SocialLinkResponse,
+    BusinessHourResponse, ContactMessageResponse, CustomLinkResponse, OfferResponse, ProfileContentService,
+    ProfileImageResponse, ProfileOwner, SocialLinkResponse,
 };
 use sqlx::postgres::PgPoolOptions;
 use tonic::{transport::Server, Request, Response, Status};
@@ -40,10 +40,21 @@ struct ProfileContentGrpc {
 
 fn to_status(e: anyhow::Error) -> Status {
     let msg = e.to_string();
-    if msg.contains("not found") {
+    if msg.contains("not found") || msg.contains("has no public profile yet") {
         Status::not_found(msg)
+    } else if msg.contains("not authorized") {
+        Status::permission_denied(msg)
+    } else if msg.contains("must be verified") {
+        Status::failed_precondition(msg)
     } else {
         Status::internal(msg)
+    }
+}
+
+fn owner_of<'a>(account_id: &'a str, organization_id: &'a Option<String>) -> ProfileOwner<'a> {
+    match organization_id {
+        Some(org_id) if !org_id.is_empty() => ProfileOwner::Organization(account_id, org_id),
+        _ => ProfileOwner::Account(account_id),
     }
 }
 
@@ -119,7 +130,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn create_offer(&self, req: Request<ProtoCreateOffer>) -> Result<Response<ProtoOffer>, Status> {
         let r = req.into_inner();
-        let result = self.service.create_offer(&r.account_id, &newax_profile_content::CreateOfferRequest {
+        let result = self.service.create_offer(&owner_of(&r.account_id, &r.organization_id), &newax_profile_content::CreateOfferRequest {
             title: r.title,
             description: r.description,
             valid_until: r.valid_until,
@@ -130,7 +141,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn list_my_offers(&self, req: Request<AccountIdRequest>) -> Result<Response<OfferListResponse>, Status> {
         let r = req.into_inner();
-        let offers = self.service.list_my_offers(&r.account_id).await.map_err(to_status)?;
+        let offers = self.service.list_my_offers(&owner_of(&r.account_id, &r.organization_id)).await.map_err(to_status)?;
         Ok(Response::new(OfferListResponse {
             offers: offers.into_iter().map(offer_to_proto).collect(),
         }))
@@ -138,7 +149,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn update_offer(&self, req: Request<ProtoUpdateOffer>) -> Result<Response<ProtoOffer>, Status> {
         let r = req.into_inner();
-        let result = self.service.update_offer(&r.account_id, &r.offer_id, &newax_profile_content::UpdateOfferRequest {
+        let result = self.service.update_offer(&owner_of(&r.account_id, &r.organization_id), &r.offer_id, &newax_profile_content::UpdateOfferRequest {
             title: r.title,
             description: r.description,
             valid_until: r.valid_until,
@@ -149,7 +160,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn remove_offer(&self, req: Request<RemoveOfferRequest>) -> Result<Response<Empty>, Status> {
         let r = req.into_inner();
-        self.service.remove_offer(&r.account_id, &r.offer_id).await.map_err(to_status)?;
+        self.service.remove_offer(&owner_of(&r.account_id, &r.organization_id), &r.offer_id).await.map_err(to_status)?;
         Ok(Response::new(Empty {}))
     }
 
@@ -157,7 +168,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn upsert_business_hour(&self, req: Request<UpsertBusinessHourRequest>) -> Result<Response<ProtoBusinessHour>, Status> {
         let r = req.into_inner();
-        let result = self.service.upsert_business_hour(&r.account_id, &r.day, &newax_profile_content::UpsertBusinessHourRequest {
+        let result = self.service.upsert_business_hour(&owner_of(&r.account_id, &r.organization_id), &r.day, &newax_profile_content::UpsertBusinessHourRequest {
             open_minute: r.open_minute,
             close_minute: r.close_minute,
             is_closed: r.is_closed,
@@ -167,7 +178,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn list_my_business_hours(&self, req: Request<AccountIdRequest>) -> Result<Response<BusinessHourListResponse>, Status> {
         let r = req.into_inner();
-        let hours = self.service.list_my_business_hours(&r.account_id).await.map_err(to_status)?;
+        let hours = self.service.list_my_business_hours(&owner_of(&r.account_id, &r.organization_id)).await.map_err(to_status)?;
         Ok(Response::new(BusinessHourListResponse {
             hours: hours.into_iter().map(business_hour_to_proto).collect(),
         }))
@@ -175,7 +186,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn remove_business_hour(&self, req: Request<RemoveBusinessHourRequest>) -> Result<Response<Empty>, Status> {
         let r = req.into_inner();
-        self.service.remove_business_hour(&r.account_id, &r.day).await.map_err(to_status)?;
+        self.service.remove_business_hour(&owner_of(&r.account_id, &r.organization_id), &r.day).await.map_err(to_status)?;
         Ok(Response::new(Empty {}))
     }
 
@@ -183,7 +194,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn create_custom_link(&self, req: Request<ProtoCreateCustomLink>) -> Result<Response<ProtoCustomLink>, Status> {
         let r = req.into_inner();
-        let result = self.service.create_custom_link(&r.account_id, &newax_profile_content::CreateCustomLinkRequest {
+        let result = self.service.create_custom_link(&owner_of(&r.account_id, &r.organization_id), &newax_profile_content::CreateCustomLinkRequest {
             label: r.label,
             url: r.url,
             order: r.order_idx,
@@ -193,7 +204,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn list_my_custom_links(&self, req: Request<AccountIdRequest>) -> Result<Response<CustomLinkListResponse>, Status> {
         let r = req.into_inner();
-        let links = self.service.list_my_custom_links(&r.account_id).await.map_err(to_status)?;
+        let links = self.service.list_my_custom_links(&owner_of(&r.account_id, &r.organization_id)).await.map_err(to_status)?;
         Ok(Response::new(CustomLinkListResponse {
             links: links.into_iter().map(custom_link_to_proto).collect(),
         }))
@@ -201,13 +212,13 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn remove_custom_link(&self, req: Request<RemoveCustomLinkRequest>) -> Result<Response<Empty>, Status> {
         let r = req.into_inner();
-        self.service.remove_custom_link(&r.account_id, &r.link_id).await.map_err(to_status)?;
+        self.service.remove_custom_link(&owner_of(&r.account_id, &r.organization_id), &r.link_id).await.map_err(to_status)?;
         Ok(Response::new(Empty {}))
     }
 
     async fn update_custom_link(&self, req: Request<ProtoUpdateCustomLink>) -> Result<Response<ProtoCustomLink>, Status> {
         let r = req.into_inner();
-        let result = self.service.update_custom_link(&r.account_id, &r.link_id, &newax_profile_content::UpdateCustomLinkRequest {
+        let result = self.service.update_custom_link(&owner_of(&r.account_id, &r.organization_id), &r.link_id, &newax_profile_content::UpdateCustomLinkRequest {
             label: r.label,
             url: r.url,
             order: r.order_idx,
@@ -219,7 +230,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn create_social_link(&self, req: Request<ProtoCreateSocialLink>) -> Result<Response<ProtoSocialLink>, Status> {
         let r = req.into_inner();
-        let result = self.service.create_social_link(&r.account_id, &newax_profile_content::CreateSocialLinkRequest {
+        let result = self.service.create_social_link(&owner_of(&r.account_id, &r.organization_id), &newax_profile_content::CreateSocialLinkRequest {
             platform: r.platform,
             url: r.url,
             order: r.order_idx,
@@ -229,7 +240,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn list_my_social_links(&self, req: Request<AccountIdRequest>) -> Result<Response<SocialLinkListResponse>, Status> {
         let r = req.into_inner();
-        let links = self.service.list_my_social_links(&r.account_id).await.map_err(to_status)?;
+        let links = self.service.list_my_social_links(&owner_of(&r.account_id, &r.organization_id)).await.map_err(to_status)?;
         Ok(Response::new(SocialLinkListResponse {
             links: links.into_iter().map(social_link_to_proto).collect(),
         }))
@@ -237,13 +248,13 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn remove_social_link(&self, req: Request<RemoveSocialLinkRequest>) -> Result<Response<Empty>, Status> {
         let r = req.into_inner();
-        self.service.remove_social_link(&r.account_id, &r.link_id).await.map_err(to_status)?;
+        self.service.remove_social_link(&owner_of(&r.account_id, &r.organization_id), &r.link_id).await.map_err(to_status)?;
         Ok(Response::new(Empty {}))
     }
 
     async fn update_social_link(&self, req: Request<ProtoUpdateSocialLink>) -> Result<Response<ProtoSocialLink>, Status> {
         let r = req.into_inner();
-        let result = self.service.update_social_link(&r.account_id, &r.link_id, &newax_profile_content::UpdateSocialLinkRequest {
+        let result = self.service.update_social_link(&owner_of(&r.account_id, &r.organization_id), &r.link_id, &newax_profile_content::UpdateSocialLinkRequest {
             platform: r.platform,
             url: r.url,
             order: r.order_idx,
@@ -255,7 +266,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn upload_photo(&self, req: Request<UploadPhotoRequest>) -> Result<Response<ProtoProfileImage>, Status> {
         let r = req.into_inner();
-        let result = self.service.upload_photo(&r.account_id, newax_profile_content::UploadedFile {
+        let result = self.service.upload_photo(&owner_of(&r.account_id, &r.organization_id), newax_profile_content::UploadedFile {
             content_type: r.content_type,
             data: r.data,
         }).await.map_err(to_status)?;
@@ -264,7 +275,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn upload_gallery_image(&self, req: Request<UploadGalleryImageRequest>) -> Result<Response<ProtoProfileImage>, Status> {
         let r = req.into_inner();
-        let result = self.service.upload_gallery_image(&r.account_id, &r.kind, newax_profile_content::UploadedFile {
+        let result = self.service.upload_gallery_image(&owner_of(&r.account_id, &r.organization_id), &r.kind, newax_profile_content::UploadedFile {
             content_type: r.content_type,
             data: r.data,
         }).await.map_err(to_status)?;
@@ -273,7 +284,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn list_my_images(&self, req: Request<AccountIdRequest>) -> Result<Response<ProfileImageListResponse>, Status> {
         let r = req.into_inner();
-        let images = self.service.list_my_images(&r.account_id).await.map_err(to_status)?;
+        let images = self.service.list_my_images(&owner_of(&r.account_id, &r.organization_id)).await.map_err(to_status)?;
         Ok(Response::new(ProfileImageListResponse {
             images: images.into_iter().map(profile_image_to_proto).collect(),
         }))
@@ -281,7 +292,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn remove_image(&self, req: Request<RemoveImageRequest>) -> Result<Response<Empty>, Status> {
         let r = req.into_inner();
-        self.service.remove_image(&r.account_id, &r.image_id).await.map_err(to_status)?;
+        self.service.remove_image(&owner_of(&r.account_id, &r.organization_id), &r.image_id).await.map_err(to_status)?;
         Ok(Response::new(Empty {}))
     }
 
@@ -289,7 +300,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn list_my_contact_messages(&self, req: Request<AccountIdRequest>) -> Result<Response<ContactMessageListResponse>, Status> {
         let r = req.into_inner();
-        let messages = self.service.list_my_contact_messages(&r.account_id).await.map_err(to_status)?;
+        let messages = self.service.list_my_contact_messages(&owner_of(&r.account_id, &r.organization_id)).await.map_err(to_status)?;
         Ok(Response::new(ContactMessageListResponse {
             messages: messages.into_iter().map(contact_message_to_proto).collect(),
         }))
@@ -297,7 +308,7 @@ impl ProfileContentRpc for ProfileContentGrpc {
 
     async fn mark_contact_message_read(&self, req: Request<MarkContactMessageReadRequest>) -> Result<Response<ProtoContactMessage>, Status> {
         let r = req.into_inner();
-        let result = self.service.mark_contact_message_read(&r.account_id, &r.message_id).await.map_err(to_status)?;
+        let result = self.service.mark_contact_message_read(&owner_of(&r.account_id, &r.organization_id), &r.message_id).await.map_err(to_status)?;
         Ok(Response::new(contact_message_to_proto(result)))
     }
 

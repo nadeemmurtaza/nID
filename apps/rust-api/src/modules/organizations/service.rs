@@ -12,6 +12,7 @@ use newax_proto::organizations::v1::{
     CreateOrganizationRequest as ProtoCreateOrgRequest, Empty, GetOrganizationRequest,
     InviteMemberRequest, MembershipListResponse,
     MembershipResponse as ProtoMembershipResponse,
+    MyMembership as ProtoMyMembership,
     OrganizationListResponse,
     OrganizationResponse as ProtoOrganizationResponse, RespondToInviteRequest, TenantIdRequest,
 };
@@ -19,7 +20,8 @@ use newax_proto::organizations::v1::{
 use crate::core::config::AppEnv;
 use crate::core::db::DbPool;
 use crate::modules::organizations::dto::{
-    BeneficialOwnerResponse, CreateOrganizationRequest, MembershipResponse, OrganizationResponse,
+    BeneficialOwnerResponse, CreateOrganizationRequest, MembershipResponse, MyMembershipResponse,
+    OrganizationResponse,
 };
 
 pub struct OrganizationsService {
@@ -39,6 +41,17 @@ fn org_from_proto(p: ProtoOrganizationResponse) -> OrganizationResponse {
         address: p.address,
         created_at: p.created_at,
         updated_at: p.updated_at,
+    }
+}
+
+fn my_membership_from_proto(p: ProtoMyMembership) -> MyMembershipResponse {
+    MyMembershipResponse {
+        organization_id: p.organization_id,
+        organization_name: p.organization_name,
+        tenant_id: p.tenant_id,
+        country_code: p.country_code,
+        role: p.role,
+        is_admin: p.is_admin,
     }
 }
 
@@ -210,7 +223,7 @@ impl OrganizationsService {
         Ok(())
     }
 
-    pub async fn list_my_memberships(&self, account_id: &str) -> Result<Vec<OrganizationResponse>> {
+    pub async fn list_my_memberships(&self, account_id: &str) -> Result<Vec<MyMembershipResponse>> {
         let mut c = client().await?;
         let resp = c
             .list_my_memberships(AccountIdRequest {
@@ -220,9 +233,9 @@ impl OrganizationsService {
             .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(resp
             .into_inner()
-            .organizations
+            .memberships
             .into_iter()
-            .map(org_from_proto)
+            .map(my_membership_from_proto)
             .collect())
     }
 

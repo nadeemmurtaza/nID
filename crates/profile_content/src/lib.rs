@@ -248,6 +248,16 @@ fn bad_enum(e: sqlx::Error) -> anyhow::Error {
     }
 }
 
+/// Which profile a call acts on -- the caller's own personal profile, or
+/// an organization's work profile (gated on KYB verification + an ACTIVE
+/// admin membership). Mirrors crates/booking's ProfileOwner; business
+/// logic is identical either way once resolve_profile_id() has found the
+/// row, only *which* row is found differs.
+pub enum ProfileOwner<'a> {
+    Account(&'a str),
+    Organization(&'a str, &'a str),
+}
+
 pub struct ProfileContentService {
     db: PgPool,
     storage: Option<std::sync::Arc<nid_storage::LocalStorageDriver>>,
@@ -292,13 +302,61 @@ impl ProfileContentService {
         Self { db, storage: None }
     }
 
-    async fn get_profile_id(&self, account_id: &str) -> Result<String> {
-        let profile_id = sqlx::query_scalar("SELECT id FROM profile WHERE account_id = $1 LIMIT 1")
-            .bind(account_id)
-            .fetch_optional(&self.db)
-            .await?
-            .ok_or_else(|| anyhow!("No profile found for this account"))?;
-        Ok(profile_id)
+    async fn resolve_profile_id(&self, owner: &ProfileOwner<'_>) -> Result<String> {
+        match owner {
+            ProfileOwner::Account(account_id) => sqlx::query_scalar("SELECT id FROM profile WHERE account_id = $1 LIMIT 1")
+                .bind(account_id)
+                .fetch_optional(&self.db)
+                .await?
+                .ok_or_else(|| anyhow!("No profile found for this account")),
+            ProfileOwner::Organization(caller_account_id, organization_id) => {
+                // A transaction, not a plain pooled connection: set_config(...,
+                // true) is transaction-local, so without one each statement
+                // below runs as its own autocommit transaction and the
+                // tenant_id set here would already be gone by the next query.
+                let mut tx = self.db.begin().await?;
+
+                let (org_tenant, org_subject): (String, String) =
+                    sqlx::query_as("SELECT tenant_id, subject_id FROM organization WHERE id = $1")
+                        .bind(organization_id)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                        .ok_or_else(|| anyhow!("Organization not found"))?;
+
+                sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+                    .bind(&org_tenant)
+                    .execute(&mut *tx)
+                    .await?;
+
+                let verified: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM verification_case WHERE subject_id = $1 AND status = 'APPROVED' AND claim_type = 'IDENTITY')",
+                )
+                .bind(&org_subject)
+                .fetch_one(&mut *tx)
+                .await?;
+                if !verified {
+                    return Err(anyhow!("Organization must be verified to manage its profile's content."));
+                }
+
+                let membership: Option<(String, bool)> = sqlx::query_as(
+                    "SELECT status, is_admin FROM organization_membership WHERE organization_id = $1 AND account_id = $2",
+                )
+                .bind(organization_id)
+                .bind(caller_account_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                match membership {
+                    Some((status, true)) if status == "ACTIVE" => {}
+                    _ => return Err(anyhow!("You are not authorized to manage this organization's profile.")),
+                }
+
+                sqlx::query_scalar("SELECT id FROM profile WHERE organization_id = $1 LIMIT 1")
+                    .bind(organization_id)
+                    .fetch_optional(&mut *tx)
+                    .await?
+                    .ok_or_else(|| anyhow!("This organization has no public profile yet."))
+            }
+        }
     }
 
     async fn get_published_profile_id(&self, slug: &str) -> Result<String> {
@@ -314,14 +372,14 @@ impl ProfileContentService {
 
     pub async fn create_offer(
         &self,
-        account_id: &str,
+        owner: &ProfileOwner<'_>,
         req: &CreateOfferRequest,
     ) -> Result<OfferResponse> {
         validate_len("title", &req.title, 1, 120)?;
         if let Some(d) = &req.description {
             validate_len("description", d, 0, 2000)?;
         }
-        let profile_id = self.get_profile_id(account_id).await?;
+        let profile_id = self.resolve_profile_id(owner).await?;
 
         let row: OfferRow = sqlx::query_as(
             r#"
@@ -341,8 +399,8 @@ impl ProfileContentService {
         Ok(row.into())
     }
 
-    pub async fn list_my_offers(&self, account_id: &str) -> Result<Vec<OfferResponse>> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn list_my_offers(&self, owner: &ProfileOwner<'_>) -> Result<Vec<OfferResponse>> {
+        let profile_id = self.resolve_profile_id(owner).await?;
         let rows: Vec<OfferRow> = sqlx::query_as(
             "SELECT id, profile_id, title, description, valid_until, is_active FROM offer WHERE profile_id = $1 ORDER BY created_at DESC",
         )
@@ -354,7 +412,7 @@ impl ProfileContentService {
 
     pub async fn update_offer(
         &self,
-        account_id: &str,
+        owner: &ProfileOwner<'_>,
         offer_id: &str,
         req: &UpdateOfferRequest,
     ) -> Result<OfferResponse> {
@@ -364,7 +422,7 @@ impl ProfileContentService {
         if let Some(d) = &req.description {
             validate_len("description", d, 0, 2000)?;
         }
-        let profile_id = self.get_profile_id(account_id).await?;
+        let profile_id = self.resolve_profile_id(owner).await?;
         let row: OfferRow = sqlx::query_as(
             r#"
             UPDATE offer SET
@@ -389,8 +447,8 @@ impl ProfileContentService {
         Ok(row.into())
     }
 
-    pub async fn remove_offer(&self, account_id: &str, offer_id: &str) -> Result<()> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn remove_offer(&self, owner: &ProfileOwner<'_>, offer_id: &str) -> Result<()> {
+        let profile_id = self.resolve_profile_id(owner).await?;
         let result = sqlx::query("DELETE FROM offer WHERE id = $1 AND profile_id = $2")
             .bind(offer_id)
             .bind(&profile_id)
@@ -406,7 +464,7 @@ impl ProfileContentService {
 
     pub async fn upsert_business_hour(
         &self,
-        account_id: &str,
+        owner: &ProfileOwner<'_>,
         day: &str,
         req: &UpsertBusinessHourRequest,
     ) -> Result<BusinessHourResponse> {
@@ -417,7 +475,7 @@ impl ProfileContentService {
             }
         }
         let (open, close) = if req.is_closed { (None, None) } else { (req.open_minute, req.close_minute) };
-        let profile_id = self.get_profile_id(account_id).await?;
+        let profile_id = self.resolve_profile_id(owner).await?;
 
         // The table is reached through a view, which cannot take ON CONFLICT,
         // so update first and insert only if the day has no row yet.
@@ -457,8 +515,8 @@ impl ProfileContentService {
         Ok(row.into())
     }
 
-    pub async fn list_my_business_hours(&self, account_id: &str) -> Result<Vec<BusinessHourResponse>> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn list_my_business_hours(&self, owner: &ProfileOwner<'_>) -> Result<Vec<BusinessHourResponse>> {
+        let profile_id = self.resolve_profile_id(owner).await?;
         self.hours_for(&profile_id).await
     }
 
@@ -477,8 +535,8 @@ impl ProfileContentService {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
-    pub async fn remove_business_hour(&self, account_id: &str, day: &str) -> Result<()> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn remove_business_hour(&self, owner: &ProfileOwner<'_>, day: &str) -> Result<()> {
+        let profile_id = self.resolve_profile_id(owner).await?;
         let result = sqlx::query("DELETE FROM business_hour WHERE profile_id = $1 AND day = $2")
             .bind(&profile_id)
             .bind(day)
@@ -494,12 +552,12 @@ impl ProfileContentService {
 
     pub async fn create_custom_link(
         &self,
-        account_id: &str,
+        owner: &ProfileOwner<'_>,
         req: &CreateCustomLinkRequest,
     ) -> Result<CustomLinkResponse> {
         validate_url("url", &req.url)?;
         validate_len("label", &req.label, 1, 100)?;
-        let profile_id = self.get_profile_id(account_id).await?;
+        let profile_id = self.resolve_profile_id(owner).await?;
         let row: LinkRow = sqlx::query_as(
             r#"
             INSERT INTO custom_link (id, profile_id, label, url, "order")
@@ -516,8 +574,8 @@ impl ProfileContentService {
         Ok(row.into())
     }
 
-    pub async fn list_my_custom_links(&self, account_id: &str) -> Result<Vec<CustomLinkResponse>> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn list_my_custom_links(&self, owner: &ProfileOwner<'_>) -> Result<Vec<CustomLinkResponse>> {
+        let profile_id = self.resolve_profile_id(owner).await?;
         self.custom_links_for(&profile_id).await
     }
 
@@ -531,8 +589,8 @@ impl ProfileContentService {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
-    pub async fn remove_custom_link(&self, account_id: &str, link_id: &str) -> Result<()> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn remove_custom_link(&self, owner: &ProfileOwner<'_>, link_id: &str) -> Result<()> {
+        let profile_id = self.resolve_profile_id(owner).await?;
         let result = sqlx::query("DELETE FROM custom_link WHERE id = $1 AND profile_id = $2")
             .bind(link_id)
             .bind(&profile_id)
@@ -546,7 +604,7 @@ impl ProfileContentService {
 
     pub async fn update_custom_link(
         &self,
-        account_id: &str,
+        owner: &ProfileOwner<'_>,
         link_id: &str,
         req: &UpdateCustomLinkRequest,
     ) -> Result<CustomLinkResponse> {
@@ -556,7 +614,7 @@ impl ProfileContentService {
         if let Some(l) = &req.label {
             validate_len("label", l, 1, 100)?;
         }
-        let profile_id = self.get_profile_id(account_id).await?;
+        let profile_id = self.resolve_profile_id(owner).await?;
         let row: LinkRow = sqlx::query_as(
             r#"
             UPDATE custom_link SET
@@ -582,11 +640,11 @@ impl ProfileContentService {
 
     pub async fn create_social_link(
         &self,
-        account_id: &str,
+        owner: &ProfileOwner<'_>,
         req: &CreateSocialLinkRequest,
     ) -> Result<SocialLinkResponse> {
         validate_url("url", &req.url)?;
-        let profile_id = self.get_profile_id(account_id).await?;
+        let profile_id = self.resolve_profile_id(owner).await?;
         let row: LinkRow = sqlx::query_as(
             r#"
             INSERT INTO social_link (id, profile_id, platform, url, "order")
@@ -604,8 +662,8 @@ impl ProfileContentService {
         Ok(row.into())
     }
 
-    pub async fn list_my_social_links(&self, account_id: &str) -> Result<Vec<SocialLinkResponse>> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn list_my_social_links(&self, owner: &ProfileOwner<'_>) -> Result<Vec<SocialLinkResponse>> {
+        let profile_id = self.resolve_profile_id(owner).await?;
         self.social_links_for(&profile_id).await
     }
 
@@ -619,8 +677,8 @@ impl ProfileContentService {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
-    pub async fn remove_social_link(&self, account_id: &str, link_id: &str) -> Result<()> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn remove_social_link(&self, owner: &ProfileOwner<'_>, link_id: &str) -> Result<()> {
+        let profile_id = self.resolve_profile_id(owner).await?;
         let result = sqlx::query("DELETE FROM social_link WHERE id = $1 AND profile_id = $2")
             .bind(link_id)
             .bind(&profile_id)
@@ -634,14 +692,14 @@ impl ProfileContentService {
 
     pub async fn update_social_link(
         &self,
-        account_id: &str,
+        owner: &ProfileOwner<'_>,
         link_id: &str,
         req: &UpdateSocialLinkRequest,
     ) -> Result<SocialLinkResponse> {
         if let Some(u) = &req.url {
             validate_url("url", u)?;
         }
-        let profile_id = self.get_profile_id(account_id).await?;
+        let profile_id = self.resolve_profile_id(owner).await?;
         let row: LinkRow = sqlx::query_as(
             r#"
             UPDATE social_link SET
@@ -668,10 +726,10 @@ impl ProfileContentService {
 
     pub async fn upload_photo(
         &self,
-        account_id: &str,
+        owner: &ProfileOwner<'_>,
         file: UploadedFile,
     ) -> Result<ProfileImageResponse> {
-        let profile_id = self.get_profile_id(account_id).await?;
+        let profile_id = self.resolve_profile_id(owner).await?;
 
         let (file_id, content_type) = self.store_image(&profile_id, "photo", &file).await?;
 
@@ -698,11 +756,11 @@ impl ProfileContentService {
 
     pub async fn upload_gallery_image(
         &self,
-        account_id: &str,
+        owner: &ProfileOwner<'_>,
         kind: &str,
         file: UploadedFile,
     ) -> Result<ProfileImageResponse> {
-        let profile_id = self.get_profile_id(account_id).await?;
+        let profile_id = self.resolve_profile_id(owner).await?;
 
         let kind = kind.to_uppercase();
         if kind != "BANNER" && kind != "GALLERY" {
@@ -732,8 +790,8 @@ impl ProfileContentService {
         })
     }
 
-    pub async fn list_my_images(&self, account_id: &str) -> Result<Vec<ProfileImageResponse>> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn list_my_images(&self, owner: &ProfileOwner<'_>) -> Result<Vec<ProfileImageResponse>> {
+        let profile_id = self.resolve_profile_id(owner).await?;
 
         let rows: Vec<(String, String, String, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
             "SELECT id, profile_id, kind, storage_key, content_type, created_at FROM profile_image WHERE profile_id = $1 ORDER BY created_at DESC",
@@ -747,8 +805,8 @@ impl ProfileContentService {
         }).collect())
     }
 
-    pub async fn remove_image(&self, account_id: &str, image_id: &str) -> Result<()> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn remove_image(&self, owner: &ProfileOwner<'_>, image_id: &str) -> Result<()> {
+        let profile_id = self.resolve_profile_id(owner).await?;
 
         let result = sqlx::query("DELETE FROM profile_image WHERE id = $1 AND profile_id = $2")
             .bind(image_id)
@@ -779,8 +837,8 @@ impl ProfileContentService {
 
     // ── Contact Messages ──
 
-    pub async fn list_my_contact_messages(&self, account_id: &str) -> Result<Vec<ContactMessageResponse>> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn list_my_contact_messages(&self, owner: &ProfileOwner<'_>) -> Result<Vec<ContactMessageResponse>> {
+        let profile_id = self.resolve_profile_id(owner).await?;
         let rows: Vec<MessageRow> = sqlx::query_as(
             "SELECT id, profile_id, sender_name, sender_phone, sender_email, message, read_at, created_at FROM contact_message WHERE profile_id = $1 ORDER BY created_at DESC",
         )
@@ -790,8 +848,8 @@ impl ProfileContentService {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
-    pub async fn mark_contact_message_read(&self, account_id: &str, message_id: &str) -> Result<ContactMessageResponse> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn mark_contact_message_read(&self, owner: &ProfileOwner<'_>, message_id: &str) -> Result<ContactMessageResponse> {
+        let profile_id = self.resolve_profile_id(owner).await?;
         let row: MessageRow = sqlx::query_as(
             "UPDATE contact_message SET read_at = COALESCE(read_at, NOW()) WHERE id = $1 AND profile_id = $2 RETURNING id, profile_id, sender_name, sender_phone, sender_email, message, read_at, created_at",
         )

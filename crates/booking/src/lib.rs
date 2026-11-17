@@ -154,6 +154,22 @@ fn is_serialization_failure(err: &anyhow::Error) -> bool {
         .unwrap_or(false)
 }
 
+/// Which profile a "my services/hours/appointments/..." call should
+/// resolve to -- a person's own (personal) profile, or a work profile
+/// owned by an organization they administer. Both are plain rows in the
+/// same `profile` table (Profile.accountId XOR Profile.organizationId,
+/// see schema.prisma's own comment on that), so every CRUD query below
+/// is identical either way once resolve_profile_id() has found the row;
+/// only *which* row is found differs.
+pub enum ProfileOwner<'a> {
+    Account(&'a str),
+    /// (caller_account_id, organization_id) -- the caller must be an
+    /// ACTIVE admin member of a KYB-verified organization to manage its
+    /// profile's content, the same bar OrganizationProfilesService sets
+    /// for the profile itself.
+    Organization(&'a str, &'a str),
+}
+
 pub struct BookingService {
     db: PgPool,
 }
@@ -163,12 +179,61 @@ impl BookingService {
         Self { db }
     }
 
-    async fn get_profile_id(&self, account_id: &str) -> Result<String> {
-        sqlx::query_scalar("SELECT id FROM profile WHERE account_id = $1 LIMIT 1")
-            .bind(account_id)
-            .fetch_optional(&self.db)
-            .await?
-            .ok_or_else(|| anyhow!("No profile found"))
+    async fn resolve_profile_id(&self, owner: &ProfileOwner<'_>) -> Result<String> {
+        match owner {
+            ProfileOwner::Account(account_id) => sqlx::query_scalar("SELECT id FROM profile WHERE account_id = $1 LIMIT 1")
+                .bind(account_id)
+                .fetch_optional(&self.db)
+                .await?
+                .ok_or_else(|| anyhow!("No profile found")),
+            ProfileOwner::Organization(caller_account_id, organization_id) => {
+                // A transaction, not a plain pooled connection: set_config(...,
+                // true) is transaction-local, so without one each statement
+                // below runs as its own autocommit transaction and the
+                // tenant_id set here would already be gone by the next query.
+                let mut tx = self.db.begin().await?;
+
+                let (org_tenant, org_subject): (String, String) =
+                    sqlx::query_as("SELECT tenant_id, subject_id FROM organization WHERE id = $1")
+                        .bind(organization_id)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                        .ok_or_else(|| anyhow!("Organization not found"))?;
+
+                sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+                    .bind(&org_tenant)
+                    .execute(&mut *tx)
+                    .await?;
+
+                let verified: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM verification_case WHERE subject_id = $1 AND status = 'APPROVED' AND claim_type = 'IDENTITY')",
+                )
+                .bind(&org_subject)
+                .fetch_one(&mut *tx)
+                .await?;
+                if !verified {
+                    return Err(anyhow!("Organization must be verified to manage its profile's content."));
+                }
+
+                let membership: Option<(String, bool)> = sqlx::query_as(
+                    "SELECT status, is_admin FROM organization_membership WHERE organization_id = $1 AND account_id = $2",
+                )
+                .bind(organization_id)
+                .bind(caller_account_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                match membership {
+                    Some((status, true)) if status == "ACTIVE" => {}
+                    _ => return Err(anyhow!("You are not authorized to manage this organization's profile.")),
+                }
+
+                sqlx::query_scalar("SELECT id FROM profile WHERE organization_id = $1 LIMIT 1")
+                    .bind(organization_id)
+                    .fetch_optional(&mut *tx)
+                    .await?
+                    .ok_or_else(|| anyhow!("This organization has no public profile yet."))
+            }
+        }
     }
 
     /// Profile id and IANA timezone of a published profile that takes bookings.
@@ -186,7 +251,7 @@ impl BookingService {
 
     pub async fn create_service(
         &self,
-        account_id: &str,
+        owner: &ProfileOwner<'_>,
         name: &str,
         duration_minutes: i32,
         price: Option<f64>,
@@ -207,7 +272,7 @@ impl BookingService {
         if let Some(d) = description {
             check_len("description", d, 0, 2000)?;
         }
-        let profile_id = self.get_profile_id(account_id).await?;
+        let profile_id = self.resolve_profile_id(owner).await?;
 
         let row: ServiceRow = sqlx::query_as(
             r#"
@@ -228,8 +293,8 @@ impl BookingService {
         Ok(service_from(row))
     }
 
-    pub async fn list_my_services(&self, account_id: &str) -> Result<Vec<ServiceResponse>> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn list_my_services(&self, owner: &ProfileOwner<'_>) -> Result<Vec<ServiceResponse>> {
+        let profile_id = self.resolve_profile_id(owner).await?;
         let rows: Vec<ServiceRow> = sqlx::query_as(
             "SELECT id, profile_id, name, description, duration_minutes, price, currency, is_active FROM service WHERE profile_id = $1 ORDER BY name",
         )
@@ -241,7 +306,7 @@ impl BookingService {
 
     pub async fn update_service(
         &self,
-        account_id: &str,
+        owner: &ProfileOwner<'_>,
         service_id: &str,
         name: Option<&str>,
         duration_minutes: Option<i32>,
@@ -265,7 +330,7 @@ impl BookingService {
         if let Some(d) = description {
             check_len("description", d, 0, 2000)?;
         }
-        let profile_id = self.get_profile_id(account_id).await?;
+        let profile_id = self.resolve_profile_id(owner).await?;
 
         let row: Option<ServiceRow> = sqlx::query_as(
             r#"
@@ -294,8 +359,8 @@ impl BookingService {
         row.map(service_from).ok_or_else(|| anyhow!("Service not found"))
     }
 
-    pub async fn remove_service(&self, account_id: &str, service_id: &str) -> Result<()> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn remove_service(&self, owner: &ProfileOwner<'_>, service_id: &str) -> Result<()> {
+        let profile_id = self.resolve_profile_id(owner).await?;
         let result = sqlx::query("DELETE FROM service WHERE id = $1 AND profile_id = $2")
             .bind(service_id)
             .bind(&profile_id)
@@ -311,7 +376,7 @@ impl BookingService {
 
     pub async fn create_availability_rule(
         &self,
-        account_id: &str,
+        owner: &ProfileOwner<'_>,
         day: &str,
         start_minute: i32,
         end_minute: i32,
@@ -319,7 +384,7 @@ impl BookingService {
     ) -> Result<AvailabilityRuleResponse> {
         let day = normalise_day(day)?;
         check_window(start_minute, end_minute)?;
-        let profile_id = self.get_profile_id(account_id).await?;
+        let profile_id = self.resolve_profile_id(owner).await?;
 
         let row: RuleRow = sqlx::query_as(
             r#"
@@ -338,8 +403,8 @@ impl BookingService {
         Ok(rule_from(row))
     }
 
-    pub async fn list_my_availability_rules(&self, account_id: &str) -> Result<Vec<AvailabilityRuleResponse>> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn list_my_availability_rules(&self, owner: &ProfileOwner<'_>) -> Result<Vec<AvailabilityRuleResponse>> {
+        let profile_id = self.resolve_profile_id(owner).await?;
         let rows: Vec<RuleRow> = sqlx::query_as(
             r#"
             SELECT id, profile_id, day, start_minute, end_minute, is_active
@@ -355,8 +420,8 @@ impl BookingService {
         Ok(rows.into_iter().map(rule_from).collect())
     }
 
-    pub async fn remove_availability_rule(&self, account_id: &str, rule_id: &str) -> Result<()> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn remove_availability_rule(&self, owner: &ProfileOwner<'_>, rule_id: &str) -> Result<()> {
+        let profile_id = self.resolve_profile_id(owner).await?;
         let result = sqlx::query("DELETE FROM availability_rule WHERE id = $1 AND profile_id = $2")
             .bind(rule_id)
             .bind(&profile_id)
@@ -370,14 +435,14 @@ impl BookingService {
 
     pub async fn update_availability_rule(
         &self,
-        account_id: &str,
+        owner: &ProfileOwner<'_>,
         rule_id: &str,
         day: Option<&str>,
         start_minute: Option<i32>,
         end_minute: Option<i32>,
         is_active: Option<bool>,
     ) -> Result<AvailabilityRuleResponse> {
-        let profile_id = self.get_profile_id(account_id).await?;
+        let profile_id = self.resolve_profile_id(owner).await?;
         let day = day.map(normalise_day).transpose()?;
 
         let existing: Option<(i32, i32)> = sqlx::query_as(
@@ -492,8 +557,8 @@ impl BookingService {
         row.map(appointment_from).ok_or_else(|| anyhow!("Appointment not found"))
     }
 
-    pub async fn list_my_appointments(&self, account_id: &str) -> Result<Vec<AppointmentResponse>> {
-        let profile_id = self.get_profile_id(account_id).await?;
+    pub async fn list_my_appointments(&self, owner: &ProfileOwner<'_>) -> Result<Vec<AppointmentResponse>> {
+        let profile_id = self.resolve_profile_id(owner).await?;
         let rows: Vec<AppointmentRow> = sqlx::query_as(
             r#"
             SELECT a.id, a.profile_id, a.service_id, a.starts_at, a.ends_at, a.status, a.visitor_name,
@@ -513,12 +578,12 @@ impl BookingService {
     /// why it cannot (not found vs already past that state).
     async fn transition(
         &self,
-        account_id: &str,
+        owner: &ProfileOwner<'_>,
         appointment_id: &str,
         from_statuses: &[&str],
         to_status: &str,
     ) -> Result<AppointmentResponse> {
-        let profile_id = self.get_profile_id(account_id).await?;
+        let profile_id = self.resolve_profile_id(owner).await?;
         let from: Vec<String> = from_statuses.iter().map(|s| s.to_string()).collect();
 
         let updated: Option<String> = sqlx::query_scalar(
@@ -551,12 +616,12 @@ impl BookingService {
         self.get_appointment(&profile_id, appointment_id).await
     }
 
-    pub async fn confirm_appointment(&self, account_id: &str, appointment_id: &str) -> Result<AppointmentResponse> {
-        self.transition(account_id, appointment_id, &["PENDING"], "CONFIRMED").await
+    pub async fn confirm_appointment(&self, owner: &ProfileOwner<'_>, appointment_id: &str) -> Result<AppointmentResponse> {
+        self.transition(owner, appointment_id, &["PENDING"], "CONFIRMED").await
     }
 
-    pub async fn cancel_appointment(&self, account_id: &str, appointment_id: &str) -> Result<AppointmentResponse> {
-        self.transition(account_id, appointment_id, &["PENDING", "CONFIRMED"], "CANCELLED").await
+    pub async fn cancel_appointment(&self, owner: &ProfileOwner<'_>, appointment_id: &str) -> Result<AppointmentResponse> {
+        self.transition(owner, appointment_id, &["PENDING", "CONFIRMED"], "CANCELLED").await
     }
 
     // ── Public endpoints ──

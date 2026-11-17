@@ -11,7 +11,7 @@ service OrganizationsApiService {
   rpc ListBeneficialOwners(GetOrganizationRequest) returns (BeneficialOwnerListResponse);
   rpc RequireActiveAdmin(ActiveAdminRequest) returns (TenantIdResponse);
   rpc RequireActiveMember(ActiveMemberRequest) returns (Empty);
-  rpc ListMyMemberships(AccountIdRequest) returns (OrganizationListResponse);
+  rpc ListMyMemberships(AccountIdRequest) returns (MyMembershipListResponse);
   rpc ListMyInvites(AccountIdRequest) returns (MembershipListResponse);
   rpc RespondToInvite(RespondToInviteRequest) returns (MembershipResponse);
 }
@@ -83,6 +83,19 @@ message OrganizationResponse {
 
 message OrganizationListResponse {
   repeated OrganizationResponse organizations = 1;
+}
+
+message MyMembership {
+  string organization_id = 1;
+  string organization_name = 2;
+  optional string country_code = 3;
+  string role = 4;
+  bool is_admin = 5;
+  string tenant_id = 6;
+}
+
+message MyMembershipListResponse {
+  repeated MyMembership memberships = 1;
 }
 
 message MembershipResponse {

@@ -32,11 +32,39 @@ export interface Account {
   id: string;
   phone: string;
   email: string | null;
+  name?: string | null;
   phoneVerifiedAt: string | null;
+  emailVerifiedAt?: string | null;
 }
 
 export function getMe(token: string): Promise<Account> {
   return authedFetch('/v1/accounts/me', token);
+}
+
+/** POST /v1/accounts/register — the detailed sign-up form (name/email/phone/password),
+ * an alternative to the phone+OTP flow below. Unauthenticated: no token yet. */
+export function registerAccount(input: { name: string; email: string; phone: string; password: string }): Promise<Account> {
+  return apiFetch('/v1/accounts/register', { method: 'POST', body: JSON.stringify(input) });
+}
+
+/** POST /v1/accounts/login — email + password sign-in, the counterpart to registerAccount. */
+export function loginAccount(email: string, password: string): Promise<{ sessionToken: string; account: Account }> {
+  return apiFetch('/v1/accounts/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+}
+
+/** Starts (or re-sends) a one-time sign-in/registration code for a phone number. */
+export function startOtp(phone: string): Promise<void> {
+  return apiFetch('/v1/accounts/otp/start', { method: 'POST', body: JSON.stringify({ phone }) });
+}
+
+/** Verifying the first-ever code for a phone number both creates the Account and signs it in. */
+export function verifyOtp(phone: string, code: string): Promise<{ sessionToken: string; account: Account }> {
+  return apiFetch('/v1/accounts/otp/verify', { method: 'POST', body: JSON.stringify({ phone, code }) });
+}
+
+/** DELETE /v1/accounts/me — erases the account and the data that belongs to it. */
+export function deleteAccount(token: string): Promise<void> {
+  return authedFetch('/v1/accounts/me', token, { method: 'DELETE' });
 }
 
 // ---- profile ----
@@ -157,6 +185,27 @@ export function deleteService(token: string, id: string): Promise<{ deleted: tru
   return authedFetch(`/v1/profiles/me/services/${id}`, token, { method: 'DELETE' });
 }
 
+// ---- services (an organization's work profile) ----
+// Same shape as the owner ones above, scoped to an organization's work
+// profile instead of the caller's personal one -- see
+// apps/rust-api/src/modules/booking's "Work endpoints".
+
+export function listOrgServices(token: string, organizationId: string): Promise<OwnerService[]> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/services`, token);
+}
+
+export function createOrgService(token: string, organizationId: string, input: ServiceInput): Promise<OwnerService> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/services`, token, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function updateOrgService(token: string, organizationId: string, id: string, input: ServiceInput): Promise<OwnerService> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/services/${id}`, token, { method: 'PATCH', body: JSON.stringify(input) });
+}
+
+export function deleteOrgService(token: string, organizationId: string, id: string): Promise<{ deleted: true }> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/services/${id}`, token, { method: 'DELETE' });
+}
+
 // ---- availability rules ----
 
 export interface OwnerAvailabilityRule {
@@ -186,6 +235,25 @@ export function deleteAvailabilityRule(token: string, id: string): Promise<{ del
   return authedFetch(`/v1/profiles/me/availability-rules/${id}`, token, { method: 'DELETE' });
 }
 
+export function listOrgAvailabilityRules(token: string, organizationId: string): Promise<OwnerAvailabilityRule[]> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/availability-rules`, token);
+}
+
+export function createOrgAvailabilityRule(
+  token: string,
+  organizationId: string,
+  input: AvailabilityRuleInput,
+): Promise<OwnerAvailabilityRule> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/availability-rules`, token, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteOrgAvailabilityRule(token: string, organizationId: string, id: string): Promise<{ deleted: true }> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/availability-rules/${id}`, token, { method: 'DELETE' });
+}
+
 // ---- business hours ----
 
 export interface OwnerBusinessHour {
@@ -210,6 +278,26 @@ export function upsertBusinessHour(
 
 export function deleteBusinessHour(token: string, day: string): Promise<{ deleted: true }> {
   return authedFetch(`/v1/profiles/me/business-hours/${day}`, token, { method: 'DELETE' });
+}
+
+export function listOrgBusinessHours(token: string, organizationId: string): Promise<OwnerBusinessHour[]> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/business-hours`, token);
+}
+
+export function upsertOrgBusinessHour(
+  token: string,
+  organizationId: string,
+  day: string,
+  input: { openMinute?: number; closeMinute?: number; isClosed?: boolean },
+): Promise<OwnerBusinessHour> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/business-hours/${day}`, token, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteOrgBusinessHour(token: string, organizationId: string, day: string): Promise<{ deleted: true }> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/business-hours/${day}`, token, { method: 'DELETE' });
 }
 
 // ---- offers ----
@@ -238,6 +326,22 @@ export function updateOffer(token: string, id: string, input: OfferInput): Promi
 
 export function deleteOffer(token: string, id: string): Promise<{ deleted: true }> {
   return authedFetch(`/v1/profiles/me/offers/${id}`, token, { method: 'DELETE' });
+}
+
+export function listOrgOffers(token: string, organizationId: string): Promise<OwnerOffer[]> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/offers`, token);
+}
+
+export function createOrgOffer(token: string, organizationId: string, input: OfferInput): Promise<OwnerOffer> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/offers`, token, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function updateOrgOffer(token: string, organizationId: string, id: string, input: OfferInput): Promise<OwnerOffer> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/offers/${id}`, token, { method: 'PATCH', body: JSON.stringify(input) });
+}
+
+export function deleteOrgOffer(token: string, organizationId: string, id: string): Promise<{ deleted: true }> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/offers/${id}`, token, { method: 'DELETE' });
 }
 
 // ---- links ----
@@ -280,6 +384,38 @@ export function deleteSocialLink(token: string, id: string): Promise<{ deleted: 
   return authedFetch(`/v1/profiles/me/links/social/${id}`, token, { method: 'DELETE' });
 }
 
+export function listOrgCustomLinks(token: string, organizationId: string): Promise<OwnerCustomLink[]> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/links/custom`, token);
+}
+
+export function createOrgCustomLink(
+  token: string,
+  organizationId: string,
+  input: { label: string; url: string; order?: number },
+): Promise<OwnerCustomLink> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/links/custom`, token, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function deleteOrgCustomLink(token: string, organizationId: string, id: string): Promise<{ deleted: true }> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/links/custom/${id}`, token, { method: 'DELETE' });
+}
+
+export function listOrgSocialLinks(token: string, organizationId: string): Promise<OwnerSocialLink[]> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/links/social`, token);
+}
+
+export function createOrgSocialLink(
+  token: string,
+  organizationId: string,
+  input: { platform: string; url: string; order?: number },
+): Promise<OwnerSocialLink> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/links/social`, token, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function deleteOrgSocialLink(token: string, organizationId: string, id: string): Promise<{ deleted: true }> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/links/social/${id}`, token, { method: 'DELETE' });
+}
+
 // ---- images ----
 
 export interface OwnerProfileImage {
@@ -298,6 +434,23 @@ export function uploadGalleryImage(token: string, kind: 'BANNER' | 'GALLERY', fi
 
 export function deleteImage(token: string, id: string): Promise<{ deleted: true }> {
   return authedFetch(`/v1/profiles/me/images/${id}`, token, { method: 'DELETE' });
+}
+
+export function listOrgImages(token: string, organizationId: string): Promise<OwnerProfileImage[]> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/images`, token);
+}
+
+export function uploadOrgGalleryImage(
+  token: string,
+  organizationId: string,
+  kind: 'BANNER' | 'GALLERY',
+  file: File,
+): Promise<OwnerProfileImage> {
+  return authedUpload(`/v1/organizations/${organizationId}/profile/images?kind=${kind}`, token, file);
+}
+
+export function deleteOrgImage(token: string, organizationId: string, id: string): Promise<{ deleted: true }> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/images/${id}`, token, { method: 'DELETE' });
 }
 
 // ---- appointments ----
@@ -326,6 +479,18 @@ export function cancelAppointment(token: string, id: string): Promise<OwnerAppoi
   return authedFetch(`/v1/profiles/me/appointments/${id}/cancel`, token, { method: 'POST' });
 }
 
+export function listOrgAppointments(token: string, organizationId: string): Promise<OwnerAppointment[]> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/appointments`, token);
+}
+
+export function confirmOrgAppointment(token: string, organizationId: string, id: string): Promise<OwnerAppointment> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/appointments/${id}/confirm`, token, { method: 'POST' });
+}
+
+export function cancelOrgAppointment(token: string, organizationId: string, id: string): Promise<OwnerAppointment> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/appointments/${id}/cancel`, token, { method: 'POST' });
+}
+
 // ---- contact messages ----
 
 export interface OwnerContactMessage {
@@ -344,6 +509,14 @@ export function listMyContactMessages(token: string): Promise<OwnerContactMessag
 
 export function markContactMessageRead(token: string, id: string): Promise<OwnerContactMessage> {
   return authedFetch(`/v1/profiles/me/contact-messages/${id}/read`, token, { method: 'POST' });
+}
+
+export function listOrgContactMessages(token: string, organizationId: string): Promise<OwnerContactMessage[]> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/contact-messages`, token);
+}
+
+export function markOrgContactMessageRead(token: string, organizationId: string, id: string): Promise<OwnerContactMessage> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile/contact-messages/${id}/read`, token, { method: 'POST' });
 }
 
 // ---- tenant memberships (Work Profile) ----
@@ -371,6 +544,57 @@ export interface OrganizationMembership {
 
 export function getMyOrganizationMemberships(token: string): Promise<OrganizationMembership[]> {
   return authedFetch('/v1/organizations/my-memberships', token);
+}
+
+export interface MembershipInvite {
+  id: string;
+  organizationId: string;
+  role: string;
+  status: string;
+  createdAt: string;
+}
+
+/** GET /v1/organizations/invites/mine — this account's pending invitations. */
+export function getMyInvites(token: string): Promise<MembershipInvite[]> {
+  return authedFetch('/v1/organizations/invites/mine', token);
+}
+
+export function acceptInvite(token: string, membershipId: string): Promise<MembershipInvite> {
+  return authedFetch(`/v1/organizations/invites/${membershipId}/accept`, token, { method: 'POST' });
+}
+
+export function declineInvite(token: string, membershipId: string): Promise<MembershipInvite> {
+  return authedFetch(`/v1/organizations/invites/${membershipId}/decline`, token, { method: 'POST' });
+}
+
+export interface OrgProfile {
+  id: string;
+  slug: string;
+  displayName: string;
+  headline: string | null;
+  isPublished: boolean;
+}
+
+/** GET /v1/organizations/:id/profile — that organization's public ("work") profile, if set up yet. */
+export async function getOrganizationProfile(token: string, organizationId: string): Promise<OrgProfile | null> {
+  try {
+    return await authedFetch<OrgProfile>(`/v1/organizations/${organizationId}/profile`, token);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+/** POST /v1/organizations/:id/profile — creates that organization's public profile.
+ * Requires the account to be an ACTIVE admin member of a verified (KYB-approved)
+ * organization (see OrganizationProfilesService::require_active_admin) — shows the
+ * API's own error verbatim if not. */
+export function createOrganizationProfile(
+  token: string,
+  organizationId: string,
+  input: { slug: string; displayName: string },
+): Promise<OrgProfile> {
+  return authedFetch(`/v1/organizations/${organizationId}/profile`, token, { method: 'POST', body: JSON.stringify(input) });
 }
 
 // ---- brand memberships (Work Profile) ----

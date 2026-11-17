@@ -1,4 +1,4 @@
-use newax_booking::{AppointmentResponse, AvailabilityRuleResponse, BookingService, FreeSlotResponse, ServiceResponse};
+use newax_booking::{AppointmentResponse, AvailabilityRuleResponse, BookingService, FreeSlotResponse, ProfileOwner, ServiceResponse};
 use sqlx::postgres::PgPoolOptions;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::info;
@@ -25,10 +25,14 @@ struct BookingGrpc {
 
 fn to_status(e: anyhow::Error) -> Status {
     let msg = e.to_string();
-    if msg.contains("not found") || msg.contains("No profile found") {
+    if msg.contains("not found") || msg.contains("No profile found") || msg.contains("has no public profile yet") {
         Status::not_found(msg)
     } else if msg.contains("already") {
         Status::already_exists(msg)
+    } else if msg.contains("not authorized") {
+        Status::permission_denied(msg)
+    } else if msg.contains("must be verified") {
+        Status::failed_precondition(msg)
     } else if msg.contains("Invalid") || msg.contains("not accepting") {
         Status::invalid_argument(msg)
     } else {
@@ -80,17 +84,29 @@ fn free_slot_to_proto(s: FreeSlotResponse) -> ProtoFreeSlot {
     ProtoFreeSlot { starts_at: s.starts_at, ends_at: s.ends_at }
 }
 
+/// account_id is always the *caller* -- organization_id, when set, means
+/// "resolve to the work profile of this organization (which the caller
+/// must administer)" instead of the caller's own personal profile.
+fn owner_of<'a>(account_id: &'a str, organization_id: &'a Option<String>) -> ProfileOwner<'a> {
+    match organization_id {
+        Some(org_id) if !org_id.is_empty() => ProfileOwner::Organization(account_id, org_id),
+        _ => ProfileOwner::Account(account_id),
+    }
+}
+
 #[tonic::async_trait]
 impl BookingRpc for BookingGrpc {
     async fn create_service(&self, req: Request<CreateServiceRequest>) -> Result<Response<ProtoService>, Status> {
         let r = req.into_inner();
-        let result = self.service.create_service(&r.account_id, &r.name, r.duration_minutes, r.price, r.currency.as_deref(), r.description.as_deref(), r.is_active).await.map_err(to_status)?;
+        let owner = owner_of(&r.account_id, &r.organization_id);
+        let result = self.service.create_service(&owner, &r.name, r.duration_minutes, r.price, r.currency.as_deref(), r.description.as_deref(), r.is_active).await.map_err(to_status)?;
         Ok(Response::new(service_to_proto(result)))
     }
 
     async fn list_my_services(&self, req: Request<AccountIdRequest>) -> Result<Response<ServiceListResponse>, Status> {
         let r = req.into_inner();
-        let services = self.service.list_my_services(&r.account_id).await.map_err(to_status)?;
+        let owner = owner_of(&r.account_id, &r.organization_id);
+        let services = self.service.list_my_services(&owner).await.map_err(to_status)?;
         Ok(Response::new(ServiceListResponse {
             services: services.into_iter().map(service_to_proto).collect(),
         }))
@@ -98,25 +114,29 @@ impl BookingRpc for BookingGrpc {
 
     async fn update_service(&self, req: Request<UpdateServiceRequest>) -> Result<Response<ProtoService>, Status> {
         let r = req.into_inner();
-        let result = self.service.update_service(&r.account_id, &r.service_id, r.name.as_deref(), r.duration_minutes, r.price, r.is_active, r.description.as_deref(), r.currency.as_deref()).await.map_err(to_status)?;
+        let owner = owner_of(&r.account_id, &r.organization_id);
+        let result = self.service.update_service(&owner, &r.service_id, r.name.as_deref(), r.duration_minutes, r.price, r.is_active, r.description.as_deref(), r.currency.as_deref()).await.map_err(to_status)?;
         Ok(Response::new(service_to_proto(result)))
     }
 
     async fn remove_service(&self, req: Request<RemoveServiceRequest>) -> Result<Response<Empty>, Status> {
         let r = req.into_inner();
-        self.service.remove_service(&r.account_id, &r.service_id).await.map_err(to_status)?;
+        let owner = owner_of(&r.account_id, &r.organization_id);
+        self.service.remove_service(&owner, &r.service_id).await.map_err(to_status)?;
         Ok(Response::new(Empty {}))
     }
 
     async fn create_availability_rule(&self, req: Request<CreateAvailabilityRuleRequest>) -> Result<Response<ProtoAvailabilityRule>, Status> {
         let r = req.into_inner();
-        let result = self.service.create_availability_rule(&r.account_id, &r.day, r.start_minute, r.end_minute, r.is_active).await.map_err(to_status)?;
+        let owner = owner_of(&r.account_id, &r.organization_id);
+        let result = self.service.create_availability_rule(&owner, &r.day, r.start_minute, r.end_minute, r.is_active).await.map_err(to_status)?;
         Ok(Response::new(availability_rule_to_proto(result)))
     }
 
     async fn list_my_availability_rules(&self, req: Request<AccountIdRequest>) -> Result<Response<AvailabilityRuleListResponse>, Status> {
         let r = req.into_inner();
-        let rules = self.service.list_my_availability_rules(&r.account_id).await.map_err(to_status)?;
+        let owner = owner_of(&r.account_id, &r.organization_id);
+        let rules = self.service.list_my_availability_rules(&owner).await.map_err(to_status)?;
         Ok(Response::new(AvailabilityRuleListResponse {
             rules: rules.into_iter().map(availability_rule_to_proto).collect(),
         }))
@@ -124,13 +144,15 @@ impl BookingRpc for BookingGrpc {
 
     async fn remove_availability_rule(&self, req: Request<RemoveAvailabilityRuleRequest>) -> Result<Response<Empty>, Status> {
         let r = req.into_inner();
-        self.service.remove_availability_rule(&r.account_id, &r.rule_id).await.map_err(to_status)?;
+        let owner = owner_of(&r.account_id, &r.organization_id);
+        self.service.remove_availability_rule(&owner, &r.rule_id).await.map_err(to_status)?;
         Ok(Response::new(Empty {}))
     }
 
     async fn update_availability_rule(&self, req: Request<UpdateAvailabilityRuleRequest>) -> Result<Response<ProtoAvailabilityRule>, Status> {
         let r = req.into_inner();
-        let result = self.service.update_availability_rule(&r.account_id, &r.rule_id, r.day.as_deref(), r.start_minute, r.end_minute, r.is_active).await.map_err(to_status)?;
+        let owner = owner_of(&r.account_id, &r.organization_id);
+        let result = self.service.update_availability_rule(&owner, &r.rule_id, r.day.as_deref(), r.start_minute, r.end_minute, r.is_active).await.map_err(to_status)?;
         Ok(Response::new(availability_rule_to_proto(result)))
     }
 
@@ -144,7 +166,8 @@ impl BookingRpc for BookingGrpc {
 
     async fn list_my_appointments(&self, req: Request<AccountIdRequest>) -> Result<Response<AppointmentListResponse>, Status> {
         let r = req.into_inner();
-        let appointments = self.service.list_my_appointments(&r.account_id).await.map_err(to_status)?;
+        let owner = owner_of(&r.account_id, &r.organization_id);
+        let appointments = self.service.list_my_appointments(&owner).await.map_err(to_status)?;
         Ok(Response::new(AppointmentListResponse {
             appointments: appointments.into_iter().map(appointment_to_proto).collect(),
         }))
@@ -152,13 +175,15 @@ impl BookingRpc for BookingGrpc {
 
     async fn confirm_appointment(&self, req: Request<ConfirmAppointmentRequest>) -> Result<Response<ProtoAppointment>, Status> {
         let r = req.into_inner();
-        let result = self.service.confirm_appointment(&r.account_id, &r.appointment_id).await.map_err(to_status)?;
+        let owner = owner_of(&r.account_id, &r.organization_id);
+        let result = self.service.confirm_appointment(&owner, &r.appointment_id).await.map_err(to_status)?;
         Ok(Response::new(appointment_to_proto(result)))
     }
 
     async fn cancel_appointment(&self, req: Request<CancelAppointmentRequest>) -> Result<Response<ProtoAppointment>, Status> {
         let r = req.into_inner();
-        let result = self.service.cancel_appointment(&r.account_id, &r.appointment_id).await.map_err(to_status)?;
+        let owner = owner_of(&r.account_id, &r.organization_id);
+        let result = self.service.cancel_appointment(&owner, &r.appointment_id).await.map_err(to_status)?;
         Ok(Response::new(appointment_to_proto(result)))
     }
 

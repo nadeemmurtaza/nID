@@ -116,3 +116,21 @@ export function PrivacyIcon() {
 
 /** Same shield-check shape as PrivacyIcon, used for the top-level "Verification" nav item, Privacy is now one of its sub-pages, not a separate top-level concept. */
 export const VerificationIcon = PrivacyIcon;
+
+export function WorkIcon() {
+  return (
+    <Icon>
+      <rect x="3.5" y="7.5" width="17" height="11" rx="2" />
+      <path d="M8.5 7.5V6a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v1.5" />
+    </Icon>
+  );
+}
+
+export function AccountIcon() {
+  return (
+    <Icon>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 8v4.5l3 2" />
+    </Icon>
+  );
+}

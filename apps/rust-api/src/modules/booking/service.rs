@@ -2,7 +2,11 @@
 //!
 //! Business logic moved to `crates/booking`, served by
 //! `services/booking` (see CONVENTIONS.md's crates/services split).
-//! Same public shape so `handlers.rs` needed zero changes.
+//! Same public shape so `handlers.rs` needed zero changes beyond adding
+//! the `organization_id: Option<&str>` parameter every "my_*" method now
+//! takes (`None` for the caller's own personal profile, matching the old
+//! behaviour exactly; `Some(id)` to reach an organization's work profile
+//! instead -- see crates/booking's ProfileOwner).
 
 use anyhow::{anyhow, Result};
 use newax_proto::booking::v1::{
@@ -83,6 +87,10 @@ async fn client() -> Result<BookingApiServiceClient<nid_service_auth::AuthedChan
         .map_err(|e| anyhow!("booking service unreachable: {e}"))
 }
 
+fn org_id_of(organization_id: Option<&str>) -> Option<String> {
+    organization_id.map(|s| s.to_string())
+}
+
 impl BookingService {
     pub fn new(db: DbPool, env: AppEnv) -> Self {
         Self { db, env }
@@ -91,6 +99,7 @@ impl BookingService {
     pub async fn create_service(
         &self,
         account_id: &str,
+        organization_id: Option<&str>,
         req: &crate::modules::booking::dto::CreateServiceRequest,
     ) -> Result<ServiceResponse> {
         let mut c = client().await?;
@@ -102,16 +111,18 @@ impl BookingService {
             currency: req.currency.clone(),
             description: req.description.clone(),
             is_active: req.is_active,
+            organization_id: org_id_of(organization_id),
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(service_from_proto(resp.into_inner()))
     }
 
-    pub async fn list_my_services(&self, account_id: &str) -> Result<Vec<ServiceResponse>> {
+    pub async fn list_my_services(&self, account_id: &str, organization_id: Option<&str>) -> Result<Vec<ServiceResponse>> {
         let mut c = client().await?;
         let resp = c.list_my_services(AccountIdRequest {
             account_id: account_id.to_string(),
+            organization_id: org_id_of(organization_id),
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;
@@ -121,6 +132,7 @@ impl BookingService {
     pub async fn update_service(
         &self,
         account_id: &str,
+        organization_id: Option<&str>,
         service_id: &str,
         req: &crate::modules::booking::dto::UpdateServiceRequest,
     ) -> Result<ServiceResponse> {
@@ -134,17 +146,19 @@ impl BookingService {
             is_active: req.is_active,
             description: req.description.clone(),
             currency: req.currency.clone(),
+            organization_id: org_id_of(organization_id),
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(service_from_proto(resp.into_inner()))
     }
 
-    pub async fn remove_service(&self, account_id: &str, service_id: &str) -> Result<()> {
+    pub async fn remove_service(&self, account_id: &str, organization_id: Option<&str>, service_id: &str) -> Result<()> {
         let mut c = client().await?;
         c.remove_service(RemoveServiceRequest {
             account_id: account_id.to_string(),
             service_id: service_id.to_string(),
+            organization_id: org_id_of(organization_id),
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;
@@ -154,6 +168,7 @@ impl BookingService {
     pub async fn create_availability_rule(
         &self,
         account_id: &str,
+        organization_id: Option<&str>,
         req: &crate::modules::booking::dto::CreateAvailabilityRuleRequest,
     ) -> Result<AvailabilityRuleResponse> {
         let mut c = client().await?;
@@ -163,27 +178,30 @@ impl BookingService {
             start_minute: req.start_minute,
             end_minute: req.end_minute,
             is_active: req.is_active,
+            organization_id: org_id_of(organization_id),
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(availability_rule_from_proto(resp.into_inner()))
     }
 
-    pub async fn list_my_availability_rules(&self, account_id: &str) -> Result<Vec<AvailabilityRuleResponse>> {
+    pub async fn list_my_availability_rules(&self, account_id: &str, organization_id: Option<&str>) -> Result<Vec<AvailabilityRuleResponse>> {
         let mut c = client().await?;
         let resp = c.list_my_availability_rules(AccountIdRequest {
             account_id: account_id.to_string(),
+            organization_id: org_id_of(organization_id),
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(resp.into_inner().rules.into_iter().map(availability_rule_from_proto).collect())
     }
 
-    pub async fn remove_availability_rule(&self, account_id: &str, rule_id: &str) -> Result<()> {
+    pub async fn remove_availability_rule(&self, account_id: &str, organization_id: Option<&str>, rule_id: &str) -> Result<()> {
         let mut c = client().await?;
         c.remove_availability_rule(RemoveAvailabilityRuleRequest {
             account_id: account_id.to_string(),
             rule_id: rule_id.to_string(),
+            organization_id: org_id_of(organization_id),
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;
@@ -193,6 +211,7 @@ impl BookingService {
     pub async fn update_availability_rule(
         &self,
         account_id: &str,
+        organization_id: Option<&str>,
         rule_id: &str,
         req: &crate::modules::booking::dto::UpdateAvailabilityRuleRequest,
     ) -> Result<AvailabilityRuleResponse> {
@@ -204,6 +223,7 @@ impl BookingService {
             start_minute: req.start_minute,
             end_minute: req.end_minute,
             is_active: req.is_active,
+            organization_id: org_id_of(organization_id),
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;
@@ -229,32 +249,35 @@ impl BookingService {
         Ok(resp.into_inner().slots.into_iter().map(free_slot_from_proto).collect())
     }
 
-    pub async fn list_my_appointments(&self, account_id: &str) -> Result<Vec<AppointmentResponse>> {
+    pub async fn list_my_appointments(&self, account_id: &str, organization_id: Option<&str>) -> Result<Vec<AppointmentResponse>> {
         let mut c = client().await?;
         let resp = c.list_my_appointments(AccountIdRequest {
             account_id: account_id.to_string(),
+            organization_id: org_id_of(organization_id),
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(resp.into_inner().appointments.into_iter().map(appointment_from_proto).collect())
     }
 
-    pub async fn confirm_appointment(&self, account_id: &str, appointment_id: &str) -> Result<AppointmentResponse> {
+    pub async fn confirm_appointment(&self, account_id: &str, organization_id: Option<&str>, appointment_id: &str) -> Result<AppointmentResponse> {
         let mut c = client().await?;
         let resp = c.confirm_appointment(ConfirmAppointmentRequest {
             account_id: account_id.to_string(),
             appointment_id: appointment_id.to_string(),
+            organization_id: org_id_of(organization_id),
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;
         Ok(appointment_from_proto(resp.into_inner()))
     }
 
-    pub async fn cancel_appointment(&self, account_id: &str, appointment_id: &str) -> Result<AppointmentResponse> {
+    pub async fn cancel_appointment(&self, account_id: &str, organization_id: Option<&str>, appointment_id: &str) -> Result<AppointmentResponse> {
         let mut c = client().await?;
         let resp = c.cancel_appointment(CancelAppointmentRequest {
             account_id: account_id.to_string(),
             appointment_id: appointment_id.to_string(),
+            organization_id: org_id_of(organization_id),
         })
         .await
         .map_err(|e| anyhow!(e.message().to_string()))?;

@@ -2,9 +2,24 @@
 
 import { useConfirm } from '@newax/design-tokens/ConfirmDialog';
 import { useEffect, useState } from 'react';
-import { ApiError, createOffer, deleteOffer, listMyOffers, updateOffer, type OwnerOffer } from '../../../lib/owner-api';
+import {
+  ApiError,
+  createOffer,
+  createOrgOffer,
+  deleteOffer,
+  deleteOrgOffer,
+  listMyOffers,
+  listOrgOffers,
+  updateOffer,
+  updateOrgOffer,
+  type OfferInput,
+  type OwnerOffer,
+} from '../../../lib/owner-api';
 
-export function OffersManager({ token }: { token: string }) {
+/** organizationId present -> this organization's work profile; absent ->
+ * the caller's own personal profile -- see ServicesManager.tsx's doc
+ * comment for the pattern this mirrors. */
+export function OffersManager({ token, organizationId }: { token: string; organizationId?: string }) {
   const { confirm, dialog } = useConfirm();
   const [offers, setOffers] = useState<OwnerOffer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -13,18 +28,32 @@ export function OffersManager({ token }: { token: string }) {
   const [validUntil, setValidUntil] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  function list() {
+    return organizationId ? listOrgOffers(token, organizationId) : listMyOffers(token);
+  }
+  function create(input: OfferInput) {
+    return organizationId ? createOrgOffer(token, organizationId, input) : createOffer(token, input);
+  }
+  function update(id: string, input: OfferInput) {
+    return organizationId ? updateOrgOffer(token, organizationId, id, input) : updateOffer(token, id, input);
+  }
+  function remove(id: string) {
+    return organizationId ? deleteOrgOffer(token, organizationId, id) : deleteOffer(token, id);
+  }
+
   useEffect(() => {
-    listMyOffers(token)
+    list()
       .then(setOffers)
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load offers.'));
-  }, [token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, organizationId]);
 
   async function handleCreate(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      const created = await createOffer(token, {
+      const created = await create({
         title,
         description: description || undefined,
         validUntil: validUntil ? new Date(validUntil).toISOString() : undefined,
@@ -41,14 +70,14 @@ export function OffersManager({ token }: { token: string }) {
   }
 
   async function handleToggleActive(offer: OwnerOffer): Promise<void> {
-    const updated = await updateOffer(token, offer.id, { isActive: !offer.isActive });
+    const updated = await update(offer.id, { isActive: !offer.isActive });
     setOffers((prev) => prev?.map((o) => (o.id === offer.id ? updated : o)) ?? null);
   }
 
   async function handleDelete(id: string): Promise<void> {
     if (!(await confirm({ title: 'Delete this offer?', body: 'It is removed from your public profile and cannot be restored.', confirmLabel: 'Delete offer' }))) return;
     try {
-      await deleteOffer(token, id);
+      await remove(id);
       setOffers((prev) => prev?.filter((o) => o.id !== id) ?? null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not delete that offer.');

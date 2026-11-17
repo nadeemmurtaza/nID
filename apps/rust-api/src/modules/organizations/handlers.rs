@@ -9,7 +9,7 @@ use crate::core::auth::api_key::AuthenticatedApiKey;
 use crate::core::auth::session::AccountSession;
 use crate::modules::organizations::dto::{
     BeneficialOwnerResponse, CreateOrganizationRequest, InviteMemberRequest,
-    MembershipResponse, OrganizationResponse,
+    MembershipResponse, MyMembershipResponse, OrganizationResponse,
 };
 use crate::modules::organizations::service::OrganizationsService;
 
@@ -99,7 +99,7 @@ pub async fn list_beneficial_owners(
 pub async fn list_my_memberships(
     account: AccountSession,
     State(state): State<Arc<OrganizationsState>>,
-) -> Result<Json<Vec<OrganizationResponse>>, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<Json<Vec<MyMembershipResponse>>, (StatusCode, Json<serde_json::Value>)> {
     let orgs = state.service.list_my_memberships(&account.id).await.map_err(error_response)?;
     Ok(Json(orgs))
 }

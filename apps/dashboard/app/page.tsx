@@ -8,6 +8,7 @@ import { CommandPalette, type Command } from '@newax/design-tokens/CommandPalett
 import { useHotkeys } from '@newax/design-tokens/hooks';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { HierarchyTab } from './components/HierarchyTab';
 import {
   apiFetch,
   createTenant,
@@ -99,13 +100,14 @@ export default function DashboardHome() {
   );
 }
 
-type TabId = 'overview' | 'organizations' | 'brands' | 'api-keys' | 'staff' | 'access' | 'departments' | 'roles' | 'invitations' | 'settings';
+type TabId = 'overview' | 'hierarchy' | 'organizations' | 'brands' | 'api-keys' | 'staff' | 'access' | 'departments' | 'roles' | 'invitations' | 'settings';
 
-// Grouped so ten flat items become three short lists (Hick's law). `key` is
+// Grouped so eleven flat items become three short lists (Hick's law). `key` is
 // the second key of the "g then ..." shortcut.
 const NAV: Array<{ heading: string; items: Array<{ id: TabId; label: string; key: string }> }> = [
   { heading: 'Workspace', items: [
     { id: 'overview', label: 'Overview', key: 'o' },
+    { id: 'hierarchy', label: 'Hierarchy', key: 'h' },
     { id: 'organizations', label: 'Organizations', key: 'z' },
     { id: 'brands', label: 'Brands', key: 'b' },
   ] },
@@ -222,6 +224,8 @@ function DashboardLayout({ credential }: { credential: string }) {
           />
         ) : activeTab === 'overview' ? (
           <OverviewTab credential={credential} />
+        ) : activeTab === 'hierarchy' ? (
+          <HierarchyTab credential={credential} />
         ) : activeTab === 'organizations' ? (
           <OrganizationsTab
             credential={credential}
@@ -1518,7 +1522,7 @@ function AccessTab({ credential }: { credential: string }) {
           { key: 'type', header: 'Type', value: (g) => g.accessType, render: (g) => g.accessType },
           { key: 'pct', header: 'Partnership %', numeric: true, value: (g) => g.partnershipPercentage ?? 0, render: (g) => (g.partnershipPercentage ? `${g.partnershipPercentage}%` : 'None') },
           { key: 'status', header: 'Status', value: (g) => g.status, render: (g) => g.status },
-          { key: 'granted', header: 'Granted', value: (g) => g.createdAt, render: (g) => new Date(g.createdAt).toLocaleDateString() },
+          { key: 'granted', header: 'Granted', value: (g) => g.grantedAt, render: (g) => new Date(g.grantedAt).toLocaleDateString() },
         ]}
         bulkActions={[{
           label: 'Revoke',

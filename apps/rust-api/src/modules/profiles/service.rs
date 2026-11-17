@@ -204,7 +204,10 @@ impl ProfilesService {
             return Err(anyhow!("This account already has a profile."));
         }
 
-        let category = req.category.as_deref().unwrap_or("GENERAL").to_string();
+        // "GENERAL" is not a ProfileCategory enum value (DOCTOR, BUSINESS,
+        // PROFESSIONAL, OTHER) -- any create() with no category given a
+        // database error instead of a profile.
+        let category = req.category.as_deref().unwrap_or("OTHER").to_string();
         let timezone = req.timezone.as_deref().unwrap_or("UTC").to_string();
 
         let profile: ProfileRow = sqlx::query_as(

@@ -513,6 +513,36 @@ export function declineInvite(
   });
 }
 
+// ---- Account-level hierarchy (tenant -> organization -> brand), all
+// keyed by the same ids as every other repo reads/writes against this
+// identity provider: nID is the single source of truth for tenantId/
+// organizationId/brandId, so the ids below are stable across the whole
+// ecosystem, not just this app. ----
+
+export interface TenantMembership {
+  tenantId: string;
+  tenantName: string;
+  tenantSlug: string;
+  role: string;
+}
+
+export function listMyTenantMemberships(credential: string): Promise<TenantMembership[]> {
+  return apiFetch<TenantMembership[]>('/v1/tenants/my-memberships', credential);
+}
+
+export interface OrganizationMembershipSummary {
+  organizationId: string;
+  organizationName: string;
+  tenantId: string;
+  countryCode: string | null;
+  role: string;
+  isAdmin: boolean;
+}
+
+export function listMyOrganizationMemberships(credential: string): Promise<OrganizationMembershipSummary[]> {
+  return apiFetch<OrganizationMembershipSummary[]>('/v1/organizations/my-memberships', credential);
+}
+
 // ---- Brand management ----
 
 export interface BrandRecord {
@@ -643,8 +673,9 @@ export interface AccessGrantRecord {
   partnershipPercentage: number | null;
   grantedBy: string;
   status: 'ACTIVE' | 'REVOKED' | 'PENDING';
-  createdAt: string;
-  updatedAt: string;
+  /** The backend's AccessGrantResponse has grantedAt only -- no createdAt/
+   * updatedAt (see apps/rust-api/src/modules/access/dto.rs). */
+  grantedAt: string;
   accountPhone: string | null;
   accountEmail: string | null;
 }

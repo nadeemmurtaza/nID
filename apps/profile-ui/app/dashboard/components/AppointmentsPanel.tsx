@@ -1,7 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ApiError, cancelAppointment, confirmAppointment, listMyAppointments, type OwnerAppointment } from '../../../lib/owner-api';
+import {
+  ApiError,
+  cancelAppointment,
+  cancelOrgAppointment,
+  confirmAppointment,
+  confirmOrgAppointment,
+  listMyAppointments,
+  listOrgAppointments,
+  type OwnerAppointment,
+} from '../../../lib/owner-api';
 
 function formatRange(startsAt: string, endsAt: string): string {
   const start = new Date(startsAt);
@@ -12,24 +21,27 @@ function formatRange(startsAt: string, endsAt: string): string {
   return `${dateLabel}, ${startLabel} – ${endLabel}`;
 }
 
-export function AppointmentsPanel({ token }: { token: string }) {
+/** organizationId present -> this organization's work profile; absent ->
+ * the caller's own personal profile -- see ServicesManager.tsx's doc
+ * comment for the pattern this mirrors. */
+export function AppointmentsPanel({ token, organizationId }: { token: string; organizationId?: string }) {
   const [appointments, setAppointments] = useState<OwnerAppointment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   function load(): void {
-    listMyAppointments(token)
-      .then(setAppointments)
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load appointments.'));
+    const list = organizationId ? listOrgAppointments(token, organizationId) : listMyAppointments(token);
+    list.then(setAppointments).catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load appointments.'));
   }
 
-  useEffect(load, [token]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(load, [token, organizationId]);
 
   async function handleConfirm(id: string): Promise<void> {
     setBusyId(id);
     setError(null);
     try {
-      await confirmAppointment(token, id);
+      await (organizationId ? confirmOrgAppointment(token, organizationId, id) : confirmAppointment(token, id));
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not confirm that appointment.');
@@ -42,7 +54,7 @@ export function AppointmentsPanel({ token }: { token: string }) {
     setBusyId(id);
     setError(null);
     try {
-      await cancelAppointment(token, id);
+      await (organizationId ? cancelOrgAppointment(token, organizationId, id) : cancelAppointment(token, id));
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not cancel that appointment.');
