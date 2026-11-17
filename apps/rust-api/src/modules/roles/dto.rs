@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Request body for POST /v1/roles
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateRoleRequest {
     pub name: String,
     pub slug: String,
@@ -18,6 +19,7 @@ pub struct CreateRoleRequest {
 /// Request body for PATCH /v1/roles/:id
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UpdateRoleRequest {
     #[serde(default)]
     pub name: Option<String>,
@@ -30,6 +32,7 @@ pub struct UpdateRoleRequest {
 /// Request body for POST /v1/roles/:id/assign
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct AssignRoleRequest {
     pub account_id: String,
     #[serde(default)]

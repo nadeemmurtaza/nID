@@ -25,6 +25,7 @@ pub struct RolesState {
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct RolesQuery {
     #[serde(default)]
     pub tenant_id: String,

@@ -7,6 +7,7 @@ import type { Brand } from '@nid/db';
 import { Prisma } from '@nid/db';
 import { PrismaService } from '../../core/db/prisma.service';
 import { OrganizationsService } from '../organizations/organizations.service';
+import { secretBox, webhookContext, billingWebhookContext } from '@nid/shared-types';
 
 export interface CreateBrandDto {
   organizationId: string;
@@ -395,10 +396,10 @@ export class BrandsService {
   ): Promise<string | undefined> {
     const tenant = await this.prisma.unscoped.tenant.findUnique({
       where: { id: tenantId },
-      select: { webhookUrl: true, webhookSecretPlaintext: true },
+      select: { webhookUrl: true, webhookSecretEnc: true },
     });
 
-    if (!tenant?.webhookUrl || !tenant.webhookSecretPlaintext) {
+    if (!tenant?.webhookUrl || !tenant.webhookSecretEnc) {
       // No webhook configured — not an error, just skip
       return undefined;
     }
@@ -412,7 +413,7 @@ export class BrandsService {
 
     // Sign the payload with HMAC-SHA256
     const { createHmac } = await import('crypto');
-    const signature = createHmac('sha256', tenant.webhookSecretPlaintext)
+    const signature = createHmac('sha256', secretBox().decrypt(webhookContext(tenantId), tenant.webhookSecretEnc))
       .update(payload)
       .digest('hex');
 

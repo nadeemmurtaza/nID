@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateBrandRequest {
     pub organization_id: String,
     pub name: String,
@@ -50,6 +51,7 @@ pub struct CreateBrandRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UpdateBrandRequest {
     #[serde(default)]
     pub name: Option<String>,
@@ -95,6 +97,7 @@ pub struct UpdateBrandRequest {
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct ListBrandsQuery {
     pub organization_id: String,
 }

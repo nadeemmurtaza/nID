@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Request body for POST /v1/verification-cases
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct CreateVerificationCaseRequest {
     pub subject_id: String,
     pub policy_name: String,
@@ -21,6 +22,7 @@ pub struct CreateVerificationCaseRequest {
 /// Request body for POST /v1/verification-cases/:id/resolve
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct ResolveCaseRequest {
     pub decision: String,
     #[serde(default)]
@@ -30,6 +32,7 @@ pub struct ResolveCaseRequest {
 /// Request body for POST /v1/verification-cases/:id/otp/submit
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct SubmitOtpRequest {
     pub code: String,
 }
@@ -37,6 +40,7 @@ pub struct SubmitOtpRequest {
 /// Request body for POST /v1/verification-cases/:id/claims/:method/report
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct SubmitSelfReportRequest {
     pub reported_value: String,
 }
@@ -44,6 +48,7 @@ pub struct SubmitSelfReportRequest {
 /// Request body for POST /v1/verification-cases/:id/claims/:method/agent-attest
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct SubmitAgentAttestationRequest {
     pub decision: String,
     #[serde(default)]
@@ -53,6 +58,7 @@ pub struct SubmitAgentAttestationRequest {
 /// Request body for POST /v1/verification-cases/:id/claims/:method/code
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct SubmitCodeRequest {
     pub code: String,
 }
@@ -60,6 +66,7 @@ pub struct SubmitCodeRequest {
 /// Request body for POST /v1/verification-cases/:id/claims/:method/location
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct SubmitLocationRequest {
     pub latitude: f64,
     pub longitude: f64,

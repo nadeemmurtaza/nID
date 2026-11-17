@@ -24,6 +24,7 @@ pub struct AccessState {
 /// Query parameters for access endpoints
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct AccessQuery {
     #[serde(default)]
     pub tenant_id: String,

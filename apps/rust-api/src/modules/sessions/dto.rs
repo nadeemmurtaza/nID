@@ -38,6 +38,7 @@ pub struct AcceptedResponse {
 /// Request body for POST /v1/sessions/:token/otp/submit
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct SubmitOtpRequest {
     pub code: String,
 }
@@ -45,6 +46,7 @@ pub struct SubmitOtpRequest {
 /// Request body for POST /v1/sessions/:token/claims/:method/report
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct SubmitSelfReportRequest {
     pub reported_value: String,
 }
@@ -52,6 +54,7 @@ pub struct SubmitSelfReportRequest {
 /// Request body for POST /v1/sessions/:token/claims/:method/code
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct SubmitCodeRequest {
     pub code: String,
 }
@@ -59,6 +62,7 @@ pub struct SubmitCodeRequest {
 /// Request body for POST /v1/sessions/:token/claims/:method/location
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct SubmitLocationRequest {
     pub latitude: f64,
     pub longitude: f64,

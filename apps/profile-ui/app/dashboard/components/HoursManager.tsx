@@ -71,7 +71,7 @@ export function HoursManager({ token }: { token: string }) {
         Display hours
       </h2>
       <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 10 }}>
-        Shown on your page as information — booking uses the bookable-hours windows instead.
+        Shown on your page as information, booking uses the bookable-hours windows instead.
       </p>
       {DAYS.map((day) => {
         const row = rows[day] ?? { open: '09:00', close: '17:00', closed: false };

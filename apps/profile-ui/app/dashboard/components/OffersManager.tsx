@@ -61,7 +61,7 @@ export function OffersManager({ token }: { token: string }) {
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Offers
       </h2>
-      {offers?.length === 0 && <p className="empty-state">No offers yet — add your first one below.</p>}
+      {offers?.length === 0 && <p className="empty-state">No offers yet, add your first one below.</p>}
       {offers?.map((offer) => (
         <div className="data-row" key={offer.id}>
           <div>

@@ -49,7 +49,7 @@ export function VerificationOverview({ token }: Props) {
           <span>
             <strong>Username eligibility</strong>
             <div className="meta">
-              Requires a verified identity AND a phone confirmed linked to your own CNIC — a name alone is not enough.
+              Requires a verified identity AND a phone confirmed linked to your own CNIC, a name alone is not enough.
             </div>
           </span>
           <span className={`verify-tag ${status.usernameEligible ? 'verified' : 'unverified'}`}>
@@ -86,7 +86,7 @@ export function VerificationOverview({ token }: Props) {
         )}
       </div>
 
-      <h3 className="section-title">CNIC + phone link — required, not optional</h3>
+      <h3 className="section-title">CNIC + phone link: required, not optional</h3>
       <div className={`section-card${status.cnicPhoneLinked ? '' : ' attention'}`}>
         <div className="data-row">
           <span>

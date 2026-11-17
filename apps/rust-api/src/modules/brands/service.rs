@@ -138,7 +138,7 @@ impl BrandsService {
         event_type: &str,
     ) -> Result<Option<String>> {
         let tenant: Option<(Option<String>, Option<String>)> = sqlx::query_as(
-            "SELECT webhook_url, webhook_secret_plaintext FROM tenant WHERE id = $1",
+            "SELECT webhook_url, webhook_secret_enc FROM tenant WHERE id = $1",
         )
         .bind(tenant_id)
         .fetch_optional(&mut *conn)

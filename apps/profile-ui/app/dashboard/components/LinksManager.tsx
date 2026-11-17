@@ -86,11 +86,11 @@ export function LinksManager({ token }: { token: string }) {
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Custom links
       </h2>
-      {customLinks?.length === 0 && <p className="empty-state">No custom links yet — add one below.</p>}
+      {customLinks?.length === 0 && <p className="empty-state">No custom links yet, add one below.</p>}
       {customLinks?.map((link) => (
         <div className="data-row" key={link.id}>
           <span>
-            {link.label} — <span className="meta">{link.url}</span>
+            {link.label}, <span className="meta">{link.url}</span>
           </span>
           <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDeleteCustom(link.id)}>
             Delete
@@ -108,11 +108,11 @@ export function LinksManager({ token }: { token: string }) {
       </form>
 
       <h2 className="section-title">Social links</h2>
-      {socialLinks?.length === 0 && <p className="empty-state">No social links yet — add one below.</p>}
+      {socialLinks?.length === 0 && <p className="empty-state">No social links yet, add one below.</p>}
       {socialLinks?.map((link) => (
         <div className="data-row" key={link.id}>
           <span>
-            {link.platform} — <span className="meta">{link.url}</span>
+            {link.platform}, <span className="meta">{link.url}</span>
           </span>
           <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDeleteSocial(link.id)}>
             Delete

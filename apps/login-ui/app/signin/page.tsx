@@ -10,7 +10,7 @@ import { Logomark } from '../components/logomark';
 type Step = 'phone' | 'code';
 
 /**
- * Screen 2 (Sign in) — redesigned to match Communicator's Login page
+ * Screen 2 (Sign in), redesigned to match Communicator's Login page
  * with logo circle header, Fin Orange accent, and sharp 4 px geometry.
  */
 export default function SignInPage() {

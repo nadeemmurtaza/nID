@@ -34,7 +34,7 @@ export function ContactForm({ slug }: { slug: string }) {
   if (sent) {
     return (
       <div className="section-card">
-        <p className="success-text">Message sent — thanks for reaching out.</p>
+        <p className="success-text">Message sent, thanks for reaching out.</p>
       </div>
     );
   }

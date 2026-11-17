@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Request body for POST /v1/accounts/otp/start
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct StartOtpRequest {
     pub phone: String,
 }
@@ -12,6 +13,7 @@ pub struct StartOtpRequest {
 /// Request body for POST /v1/accounts/otp/verify
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct VerifyOtpRequest {
     pub phone: String,
     pub code: String,
@@ -28,6 +30,7 @@ pub struct VerifyOtpResponse {
 /// Request body for POST /v1/accounts/me/email/start
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct StartEmailVerificationRequest {
     pub email: String,
 }
@@ -35,6 +38,7 @@ pub struct StartEmailVerificationRequest {
 /// Request body for POST /v1/accounts/me/email/verify
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct VerifyEmailRequest {
     pub code: String,
 }

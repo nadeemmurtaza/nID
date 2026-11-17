@@ -145,6 +145,7 @@ pub struct StaffMemberResponse {
 
 pub struct TenantsService {
     db: PgPool,
+    secrets: nid_shared_types::SecretBox,
 }
 
 impl TenantsService {
@@ -163,8 +164,8 @@ impl TenantsService {
         Ok(tx)
     }
 
-    pub fn new(db: PgPool) -> Self {
-        Self { db }
+    pub fn new(db: PgPool, secrets: nid_shared_types::SecretBox) -> Self {
+        Self { db, secrets }
     }
 
     pub async fn get_self(&self, tenant_id: &str, actor_type: &str) -> Result<TenantSelfResponse> {
@@ -259,7 +260,7 @@ impl TenantsService {
 
         let tenant: TenantRow = sqlx::query_as(
             r#"
-            INSERT INTO tenant (id, name, slug, data_residency_region, webhook_url, webhook_secret_plaintext, billing_webhook_url, billing_webhook_secret_plaintext)
+            INSERT INTO tenant (id, name, slug, data_residency_region, webhook_url, webhook_secret_enc, billing_webhook_url, billing_webhook_secret_enc)
             VALUES ($8, $1, $2, $3, $4, $5, $6, $7)
             RETURNING id, name, slug, data_residency_region, webhook_url, billing_webhook_url, created_at, updated_at
             "#,
@@ -268,9 +269,9 @@ impl TenantsService {
         .bind(slug)
         .bind(region)
         .bind(webhook_url)
-        .bind(&webhook_secret)
+        .bind(self.secrets.encrypt(&format!("tenant:{tenant_id}:webhook"), &webhook_secret))
         .bind(billing_webhook_url)
-        .bind(&billing_webhook_secret)
+        .bind(self.secrets.encrypt(&format!("tenant:{tenant_id}:billing"), &billing_webhook_secret))
         .bind(&tenant_id)
         .fetch_one(&mut *conn)
         .await

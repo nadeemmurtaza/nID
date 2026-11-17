@@ -135,6 +135,13 @@ where
             )
         })?;
 
+        if !crate::core::limits::within_account_quota(&account.id).await {
+            return Err((
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(AuthError { message: "Too many requests for this account.".to_string() }),
+            ));
+        }
+
         Ok(AccountSession {
             id: account.id,
             phone: account.phone,

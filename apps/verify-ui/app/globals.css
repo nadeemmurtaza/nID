@@ -2,6 +2,7 @@
    for the canonical source and the compatibility aliases (--bg, --fg,
    --accent, etc.) that keep every rule below working unchanged. */
 @import "@newax/design-tokens/tokens.css";
+@import "@newax/design-tokens/patterns.css";
 
 * {
   box-sizing: border-box;
@@ -145,7 +146,7 @@ button {
 }
 
 button:not(:disabled):hover {
-  filter: brightness(1.08);
+  background: var(--accent-hover);
 }
 
 button:not(:disabled):active {

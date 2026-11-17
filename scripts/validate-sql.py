@@ -31,7 +31,10 @@ for f in files:
         if "{" in sql and "format!" in src[max(0, m.start() - 40):m.start()]:
             dynamic.append((f, line)); continue
         # SET (e.g. transaction isolation) and set_config cannot be PREPAREd.
-        if sql.upper().startswith(("SELECT SET_CONFIG", "SET ")) or "pg_advisory" in sql:
+        if sql.upper().startswith(("SELECT SET_CONFIG", "SET ", "ALTER ", "CREATE ", "DROP ")) or "pg_advisory" in sql:
+            continue
+        # One-time upgrade code that reads columns a migration later removes.
+        if "validate-sql: skip" in sql:
             continue
         stmts.append((f, line, sql))
 

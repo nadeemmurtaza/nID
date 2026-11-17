@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Logomark } from './components/logomark';
 
 /**
- * Screen 1 (Welcome / entry) — redesigned to match Communicator's Login page
+ * Screen 1 (Welcome / entry), redesigned to match Communicator's Login page
  * so the identity provider shares the same visual language: animated logo
  * circle, Fin Orange accent, sharp 4 px geometry, solid white card.
  */
@@ -21,8 +21,8 @@ export default function HomePage() {
         </div>
 
         {/* Headline */}
-        <h1 className="entry-headline">Your work, connected.</h1>
-        <p className="lead">One identity for your personal and business spaces.</p>
+        <h1 className="entry-headline">Sign in once, use every NEWAX app.</h1>
+        <p className="lead">One NEWAX ID covers your personal and business accounts.</p>
 
         {/* Action Buttons */}
         <div className="entry-actions">

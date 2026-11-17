@@ -70,7 +70,7 @@ export function ServicesManager({ token }: { token: string }) {
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Services
       </h2>
-      {services?.length === 0 && <p className="empty-state">No services yet — add your first one below.</p>}
+      {services?.length === 0 && <p className="empty-state">No services yet, add your first one below.</p>}
       {services?.map((service) => (
         <div className="data-row" key={service.id}>
           <div>

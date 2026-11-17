@@ -17,11 +17,11 @@ import { DashboardNav } from './components/DashboardNav';
  *
  * app/dashboard/login is a route NESTED under this same layout (Next.js
  * applies a segment's layout.tsx to every route below it, including
- * sibling-looking ones like /dashboard/login) — it is NOT excluded just by
+ * sibling-looking ones like /dashboard/login), it is NOT excluded just by
  * living in its own subfolder. Without the isLoginRoute bypass below, an
  * unauthenticated visitor hits the "no token yet" branch, which used to
  * render nothing but "Loading…" forever, permanently hiding the very login
- * form that would let them get a token — the gate blocked its own escape
+ * form that would let them get a token, the gate blocked its own escape
  * hatch. */
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();

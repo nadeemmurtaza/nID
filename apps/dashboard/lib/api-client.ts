@@ -244,9 +244,9 @@ export interface UpdateTenantRequest {
   name?: string;
   dataResidencyRegion?: string;
   webhookUrl?: string | null;
-  webhookSecretPlaintext?: string | null;
+  webhookSecret?: string | null;
   billingWebhookUrl?: string | null;
-  billingWebhookSecretPlaintext?: string | null;
+  billingWebhookSecret?: string | null;
 }
 
 export interface TenantApiKey {

@@ -95,17 +95,17 @@ model Tenant {
   /// HMAC signing secret for outbound webhooks to this tenant. Unlike
   /// TenantApiKey.keyHash, this cannot be a one-way hash — nID has to sign
   /// with the real secret, so it must remain recoverable. Column-level
-  /// encryption at rest (KMS-backed) is a Phase 1 requirement carried over
-  /// from the plan's compliance section; storing it in plaintext here is a
-  /// known, called-out Phase 0 gap, not an oversight — do not treat this
-  /// column as safe to seed with a real secret before that lands.
-  webhookSecretPlaintext String?
+  /// encryption at rest is done in the application: AES-256-GCM ciphertext
+  /// (`v1.<nonce>.<ct>`) under a key held outside the database
+  /// (WEBHOOK_SECRET_KEY), bound to the tenant and field. See
+  /// crates/shared-types/src/secret_box.rs and apps/api/src/core/crypto.
+  webhookSecretEnc String?
   /// Billing outbound events sign with this secret, never webhookUrl's —
   /// an existing tenant's verification webhooks keep working untouched
   /// (spec §15). Same at-rest treatment, and same tracked gap, as
-  /// webhookSecretPlaintext: not hashed because signing needs the real value.
+  /// webhookSecretEnc: encrypted, not hashed, because signing needs the real value.
   billingWebhookUrl             String?
-  billingWebhookSecretPlaintext String?
+  billingWebhookSecretEnc String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct SendEmailInviteRequest {
     pub email: String,
     #[serde(default)]
@@ -20,6 +21,7 @@ pub struct SendEmailInviteRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct SendUsernameInviteRequest {
     pub username: String,
     #[serde(default)]
@@ -36,6 +38,7 @@ pub struct SendUsernameInviteRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct AcceptInvitationRequest {
     pub invitation_id: String,
 }
