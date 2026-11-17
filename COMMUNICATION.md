@@ -211,3 +211,49 @@ for the corresponding tech-stack compliance note:
   handle third parties (Communicator's Meta/TikTok integration).
   Nothing to change there; this doc just makes the existing pattern
   explicit.
+
+### Update 2026-11-16: a first real async-path slice, still not the real bus
+
+`core-newax` is still not reachable from this repo — same situation
+as above, re-checked, not just assumed stale. What changed:
+
+- **`crates/event-bus`** is a real NATS JetStream publish client,
+  explicitly flagged (see its own doc comment) as a local-dev stand-in
+  for `core-newax`'s bus, not the bus itself — same treatment
+  `CONVENTIONS.md` requires for the `<MODULE>_SERVICE_URL` gRPC
+  interim. Connection failure never blocks the write that triggered a
+  publish (nID stays the source of truth regardless of whether the
+  event bus is even running).
+- **Event contract**: `proto/nid/events/v1/identity_events.proto`
+  defines `TenantEvent`, `OrganizationEvent`, `BrandEvent`,
+  `CustomerEvent` on subjects `newax.identity.<entity>.<created|
+  updated|deleted>`, matching this doc's naming rule. Communicator
+  keeps a manually-synced copy of this `.proto` (`crates/identity-
+  sync`'s doc comment explains why, and that it needs to move once
+  `core-newax` can host one shared copy).
+- **Published from nID**: tenant create/update
+  (`crates/tenants`), organization create (`crates/organizations`),
+  brand create/update/delete (`apps/rust-api/src/modules/brands`,
+  still unsplit per `CONVENTIONS.md`'s table), and (as of this same
+  day, second pass) account-derived `customer_id` events —
+  `crates/accounts`'s `register`/`verify_otp`/`delete_account`. See
+  `RULE_VIOLATIONS_AUDIT.md` for what was deliberately left out
+  (`login`, `verify_email`) and why.
+- **Consumed by Communicator**: `crates/identity-sync` /
+  `services/identity-sync`, a durable JetStream pull consumer (not a
+  gRPC service) that upserts `synced_tenant`/`synced_organization`/
+  `synced_brand`/`synced_customer`, deduped on each event's
+  `event_id` via `identity_sync_processed_event`
+  (`backend-rs/migrations/0073_identity_sync.sql`) — never treated as
+  this repo's source of truth for those IDs.
+- **Not done**: the Module Gateway/Pingora synchronous path (§1's
+  "Role 2") is still unbuilt — this slice is the async path only, as
+  scoped going in. Also not done: running this against a live NATS
+  server (none was available in this session) — both sides compile
+  (`cargo check --workspace` in nID; the new crates/services in
+  Communicator) but the publish→consume round trip is unverified at
+  runtime. And a pre-existing, unrelated, previously-undocumented
+  violation was found and flagged rather than fixed: Communicator
+  already had unused webhook-based tenant/org/brand sync scaffolding
+  that itself bypasses this doc's event-bus mandate — see both repos'
+  `RULE_VIOLATIONS_AUDIT.md`.

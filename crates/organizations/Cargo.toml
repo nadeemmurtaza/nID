@@ -7,3 +7,6 @@ edition.workspace = true
 sqlx = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
+uuid = { workspace = true }
+newax-event-bus = { path = "../event-bus" }
+newax-proto = { path = "../proto" }

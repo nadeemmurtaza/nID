@@ -7,8 +7,12 @@ edition.workspace = true
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 sqlx = { workspace = true }
 anyhow = { workspace = true }
+bcrypt = { workspace = true }
 chrono = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
 tracing = { workspace = true }
+uuid = { workspace = true }
 nid-shared-types = { path = "../shared-types" }
+newax-event-bus = { path = "../event-bus" }
+newax-proto = { path = "../proto" }

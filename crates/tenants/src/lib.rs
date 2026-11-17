@@ -5,7 +5,28 @@
 
 use anyhow::{anyhow, Result};
 use nid_shared_types::{generate_api_key, sha256_hex};
+use newax_proto::identity_events::v1::TenantEvent;
 use sqlx::{FromRow, PgPool, Row};
+
+/// Publishes a tenant identity-change event (COMMUNICATION.md section 1,
+/// async path) to whichever subject matches `op` ("created"/"updated").
+/// Fire-and-forget: a disconnected event bus never fails the write that
+/// triggered it — see `newax-event-bus`'s doc comment.
+async fn publish_tenant_event(op: &str, tenant: &TenantRow) {
+    let event = TenantEvent {
+        event_id: uuid::Uuid::new_v4().to_string(),
+        occurred_at: chrono::Utc::now().to_rfc3339(),
+        id: tenant.id.clone(),
+        name: tenant.name.clone(),
+        slug: tenant.slug.clone(),
+        data_residency_region: tenant.data_residency_region.clone(),
+        deleted: false,
+    };
+    newax_event_bus::publisher()
+        .await
+        .publish(newax_event_bus::subjects::tenant(op), &event)
+        .await;
+}
 
 #[derive(Debug, Clone, FromRow)]
 struct TenantRow {
@@ -300,6 +321,7 @@ impl TenantsService {
         .await?;
 
         conn.commit().await?;
+        publish_tenant_event("created", &tenant).await;
 
         Ok(CreatedTenantResponse {
             id: tenant.id,
@@ -425,6 +447,7 @@ impl TenantsService {
         .await?;
 
         conn.commit().await?;
+        publish_tenant_event("updated", &tenant).await;
         Ok(TenantResponse {
             id: tenant.id,
             name: tenant.name,
