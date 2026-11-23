@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Qodo PR Agent
-        uses: the-pr-agent/pr-agent@e2456c079a50d31f1d9e754c78c266daa4b2266d
+        uses: the-pr-agent/pr-agent@cae539b3758183b4d808fa1d9cca8a2e1c86e54d
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
